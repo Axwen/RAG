@@ -1,0 +1,46 @@
+# ── 外部参考快照(按设计 §7 固定 commit,可随时重新拉取,不进版本库)──
+/references/
+
+# ── 学习资料 / 输入素材(大二进制)──
+/pdf/
+
+# ── 本地工具与会话状态 ──
+/.gstack/
+/.gstack-design-source
+/.claude/settings.local.json
+
+# ── 探针本地运行产物(临时日志/容器卷;curated 结果可手动 git add -f)──
+/docs/engineering/probe-results/*.log
+/docs/engineering/probe-results/tmp/
+/docs/engineering/probe-results/**/*.tmp
+
+# ── 机密:只允许来自环境变量或未跟踪文件,绝不进仓库 ──
+.env
+.env.*
+*.env
+*.key
+*.pem
+*secret*
+credentials*
+id_rsa
+id_rsa.pub
+
+# ── 未来代码产物(阶段 1 开始编码后生效)──
+node_modules/
+.next/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# ── OS / 编辑器 ──
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/

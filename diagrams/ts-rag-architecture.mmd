@@ -1,0 +1,155 @@
+graph LR
+  subgraph Experience[体验层]
+    WEB[Next.js Web 客服工作台]
+    ADMIN[Admin 控制台 deletions / evaluations / operations]
+    SDK[TypeScript SDK]
+  end
+
+  subgraph Control[TypeScript 控制层]
+    API[NestJS API / BFF]
+    AUTH[OIDC Guard + 统一授权决策]
+    SCOPE[ACL 作用域编译 acl_scope_key]
+    ORCH[Retrieval Orchestrator 混合检索 + 融合 + Rerank]
+    RECHECK[候选权威复核 批量 PG 校验]
+    RESOLVE[全序冲突消解 + 注入运行期检查]
+    ANSWER[AnswerModule 风险分级生成]
+    CIT[CitationModule 句级引用验证]
+    FINAL[AnswerFinalizer 唯一终态提交]
+    DOC[Document Service 两段式上传 + 审核]
+    QP[Quick Parse 会话临时候选/索引 不进入生产 Alias]
+    DEL[Deletion Orchestrator + Legal Hold 校验]
+  end
+
+  subgraph Async[异步数据面 worker:ingestion]
+    OUTBOX[Outbox Relay Publisher Confirm]
+    Q[RabbitMQ Exchange / Retry TTL+DLX / DLQ]
+    ING[Ingestion Worker]
+    PARSE[Python DeepDOC Parser Service 异步 parserTaskId]
+    SCAN[注入静态扫描 + 质量门禁]
+    CHUNK[分块 + Embedding 冻结 ChunkingManifest]
+    INDEX[Index Projection Worker]
+    SEARCH[Document + Chunk Sparse Projection]
+    VECTOR[Chunk Vector Projection]
+    GRAPH[Future Graph Projection]
+    RELEASE[Candidate Release Builder ReleaseManifest]
+    VALIDATE[Release Validator smoke check]
+    ALIAS[Alias Switcher + Reconciler ReleaseActivation]
+  end
+
+  subgraph Ops2[治理与运维 Worker]
+    EVAL[worker:evaluation 黄金集 + 发布门禁]
+    CLEAN[Cleanup Worker 临时对象 TTL + 孤儿清扫]
+    REPLAY[人工重放 新 executionGeneration]
+  end
+
+  subgraph Data[数据层]
+    PG[(PostgreSQL 事实源 / Outbox / 审计)]
+    LEDGER[(model_budget_ledger 预扣 / 结算 / lease)]
+    OS[(OpenSearch 版本化索引 + Alias)]
+    OBJ[(MinIO 本地 / OSS 未来适配)]
+    REDIS[(Redis 作用域缓存 / 限流 / SSE 续读窗)]
+    NEO4J[(Neo4j P1 Optional)]
+  end
+
+  subgraph Identity[身份]
+    KC[Keycloak OIDC]
+  end
+
+  subgraph Models[模型服务]
+    MODEL[Internal ModelAdapter 数据等级准入 + 预算门禁]
+    CLOUD[阿里云百炼 Chat / Embedding / Reranker]
+  end
+
+  subgraph Ops[观测层]
+    OTEL[OpenTelemetry traceparent 内建]
+    OBS[Prometheus + Grafana + Loki/Tempo 按需 Profile]
+  end
+
+  WEB --> API
+  ADMIN --> API
+  SDK --> API
+  API --> AUTH
+  AUTH -. Token 校验 / 撤权 fail closed .-> KC
+  AUTH --> SCOPE
+  SCOPE -->|编译允许作用域集合| PG
+  SCOPE -. aclRevision 失效缓存 .-> REDIS
+  AUTH --> ORCH
+  AUTH --> DOC
+  AUTH --> QP
+  AUTH --> DEL
+
+  ORCH -->|BM25 + kNN 按 acl_scope_key 过滤| OS
+  ORCH -->|查询 Embedding + Rerank| MODEL
+  ORCH --> RECHECK
+  RECHECK -->|文档级 ACL 例外 / 墓碑 / Legal Hold / 有效期| PG
+  RECHECK --> RESOLVE
+  RESOLVE -->|RetrievalSnapshot 冻结| PG
+  RESOLVE --> ANSWER
+  ANSWER -->|Chat 生成 高风险先缓冲| MODEL
+  ANSWER --> CIT
+  CIT -->|句级 Embedding + 高风险蕴含| MODEL
+  CIT --> FINAL
+  FINAL -->|回答快照 唯一长期正文副本| OBJ
+  FINAL -->|SSE 事件 runId+seq TTL 24h| REDIS
+  FINAL -->|元数据 + 载荷哈希 + 审计| PG
+  MODEL --> CLOUD
+  MODEL -->|调用前预扣 / 结算 / lease 回收| LEDGER
+  LEDGER --- PG
+  API -. 用户级限流 429 + Retry-After .-> REDIS
+
+  DOC -->|presign tmp 后服务端 promote| OBJ
+  DOC -->|object_claim + document_version + outbox_event 同事务| PG
+  QP -. 复用文件安全 / Parser / 注入检查 .-> PARSE
+  QP -. TTL 到期降级 .-> REDIS
+  PG --> OUTBOX
+  OUTBOX --> Q
+  Q --> ING
+  Q --> EVAL
+  ING --> PARSE
+  PARSE -->|ParseArtifact 原子提交| OBJ
+  ING --> SCAN
+  SCAN --> CHUNK
+  CHUNK --> INDEX
+  INDEX --> SEARCH
+  INDEX --> VECTOR
+  SEARCH --> RELEASE
+  VECTOR --> RELEASE
+  INDEX -. optional .-> GRAPH
+  GRAPH -. future projection .-> NEO4J
+  RELEASE --> VALIDATE
+  VALIDATE --> ALIAS
+  ALIAS -->|原子切换 Candidate 至 Active| OS
+  ALIAS -->|激活事实 + 对账 + 回滚| PG
+  INDEX --> PG
+  CHUNK -->|Embedding 调用| MODEL
+
+  Q -. DLQ .-> REPLAY
+  REPLAY -->|关闭 dead_letter 新 Generation| PG
+  CLEAN --> OBJ
+  CLEAN -->|删除证明| PG
+  EVAL --> OS
+  EVAL --> MODEL
+  EVAL -->|门禁报告| PG
+
+  DEL -->|deletion_request / deletion_target| PG
+  DEL --> OS
+  DEL --> OBJ
+  DEL --> REDIS
+  DEL --> Q
+
+  API -. Trace .-> OTEL
+  ORCH -. Trace .-> OTEL
+  FINAL -. Trace .-> OTEL
+  ING -. Trace .-> OTEL
+  OTEL --> OBS
+
+  classDef ts fill:#e8f1ff,stroke:#2563eb,color:#0f172a;
+  classDef data fill:#ecfdf5,stroke:#059669,color:#0f172a;
+  classDef model fill:#fff7ed,stroke:#ea580c,color:#0f172a;
+  classDef ops fill:#f5f3ff,stroke:#7c3aed,color:#0f172a;
+  classDef idp fill:#fef2f2,stroke:#dc2626,color:#0f172a;
+  class WEB,ADMIN,SDK,API,AUTH,SCOPE,ORCH,RECHECK,RESOLVE,ANSWER,CIT,FINAL,DOC,QP,DEL,OUTBOX,ING,SCAN,CHUNK,INDEX,SEARCH,VECTOR,GRAPH,RELEASE,VALIDATE,ALIAS,EVAL,CLEAN,REPLAY ts;
+  class PG,LEDGER,OS,OBJ,REDIS,Q,NEO4J data;
+  class PARSE,MODEL,CLOUD model;
+  class OTEL,OBS ops;
+  class KC idp;
