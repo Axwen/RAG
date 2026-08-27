@@ -109,6 +109,6 @@ type ModelCallContext = {
 T1 拆为两个可独立验收的部分：
 
 - `T1a Manifest/Prisma Core`：租户、知识空间、文档版本、基础 Manifest、Release、兼容矩阵和状态引用，不编码父子 Chunk 关系和最终 Chunk 字段。
-- `T1b Chunk/Index Schema`：`chunk_manifest`、父子分块字段、Chunk 定位和 OpenSearch mapping，依赖 PROBE-006 冻结 `ChunkingManifest`。
+- `T1b Chunk/Index Schema`：`chunk_manifest`、Chunk 定位和 OpenSearch mapping，依赖 PROBE-006 冻结 `ChunkingManifest`；PROBE-006 已冻结阶段 1 `parent_child=false`，因此不建立父子字段或父子展开路径。
 
 PROBE-006 `BLOCKED` 时禁止 T1b、T5、T6 进入正式索引实现；T1a 的契约和迁移准备不再被错误地描述为完全阻塞。生产检索主链仍必须等待全部探针通过并完成 Probe Decision Gate。
