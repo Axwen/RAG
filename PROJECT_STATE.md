@@ -123,7 +123,7 @@
 - ModelAdapter 数据分级门禁和 PostgreSQL Budget Ledger、Parser/Worker 生命周期、AMQP Publisher Confirm/prefetch 仍是实现集成条件，不能把探针结论当成业务实现证据。
 - fluxionai 承载模型映射、OpenRouter/fluxionai 数据留存与合规评估尚未完成；在关闭前只允许合成或严格脱敏数据进入云路径。
 - 每日 16 元、用户级配额和 24 至 36 周窗口仍需在真实链路下校准；完整 24 GiB Parser 余量也尚未验证。
-- 探针收尾改动尚未形成独立分支提交，T0 必须等待收尾提交完成且工作区干净后开始。
+- 探针收尾改动已于 2026-08-27 在 `chore/probe-closeout` 分支切分为 9 个提交（gitignore、探针脚本、探针结果与归档、ADR、决策门与探针票据、实施票据、评审记录、顶层状态、归档脱敏补齐），工作区干净，T0 的收尾提交前置条件已满足。该分支尚未合并回 `main`，也无远程仓库。
 - `~/.gstack` 评审日志持久化曾因审批服务 503 失败；项目内文档和 JSONL 是当前可靠副本。
 
 ## 当前阶段：探针收口与实现准备
@@ -148,7 +148,7 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 
 ## 下一步执行顺序
 
-1. 在 `chore/probe-closeout` 分支完成探针收尾提交；提交前检查凭证、提示词残片、JSON、Python、Shell、Markdown 链接和最终 diff，并确认工作区干净。
+1. **已完成**：探针收尾提交已在 `chore/probe-closeout` 分支切分为 9 个提交；提交前已校验无凭证残留、无供应商注入提示词正文入库、全部 JSON 合法、Markdown 相对链接零断裂，工作区干净。剩余动作是决定该分支是否合并回 `main`。
 2. 实现 [T0 Monorepo 基线](docs/engineering/tickets/T0-monorepo-foundation.md)，只搭建工具链、包边界、本地依赖、初始化与 CI，不提前实现领域业务。
 3. T0 完成后执行 DX Review 和一次实现准备增量 `plan-eng-review`，确认真实工具链、依赖图、任务批次与周期。
 4. 按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a/T14/T11(同步审计)/T12(Ledger 骨架) → T2/T10(Worker 基础) → T3 → T1b → T15 → T4/T13(parse) → T5 → T9(Harness/语料) → T6/拍板 rerank N → T7/T13(output)/T16 主链 → T8 及剩余评测、性能、治理收口。
