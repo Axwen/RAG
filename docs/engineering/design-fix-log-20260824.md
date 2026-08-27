@@ -3,7 +3,7 @@
 > 输入：一次全仓设计复审提出的 17 项问题（12 项架构层面、5 项事实一致性与治理），外加 3 项明确遗漏。
 > 输出：11 份新 ADR、1 张新探针 Ticket、2 张探针 Ticket 扩项，以及全部下游文档同步修订。
 > 性质：本文只做“发现 → 结论 → 落点”的追溯映射，不重复各文档正文。冲突时以 ADR 和[产品与架构边界](../design/企业级可信RAG基础MVP-产品与架构边界.md)为准。
-> 状态：文档层已闭合；所有新增数值（引用验证预算、每日费用、用户级配额、kNN 与分块参数）仍是待探针实测校准的初值。
+> 状态：历史修复日志。六个架构探针已完成外部事实验证；引用预算、云模型和分块参数已按实测更新，kNN 真实业务规模、服务层集成和生产治理遗留项见 [Probe Decision Gate](probe-decision-gate.md)。
 
 ## 一、架构层面的问题
 
@@ -21,11 +21,13 @@
 
 - 结论：改为分层预算。常规路径为句切分 + token 重叠 + 一次批量逐句 Embedding，P95 ≤ 600 ms；高风险路径追加一次 LLM 蕴含调用，P95 ≤ 1.5 s，且高风险正文在验证通过前不外发，缓冲上限 2,048 output tokens。蕴含与逐句 Embedding 费用显式并入“单次 ≤ 5 元”口径。
 - 落点：[ADR-0027](../adr/0027-tiered-citation-verification-budget.md)；技术设计方案 §6.4；闭合记录 §9.2、§14 性能表；测试计划性能报告分列两档；PROBE-005 新增必须验证项 7（600 ms / 1.5 s 真实可达性）。
+- **后续（2026-08-26，PROBE-005 实测）**：分层结构成立，但两个数值均不可达，已在 ADR-0027 内原地修订为常规 **P95 ≤ 2.0 s**、高风险 **P95 ≤ 3.5 s**，并新增「逐句 Embedding 与蕴含调用必须并发发起」硬约束。本条上文的 600 ms / 1.5 s 是 2026-08-24 当时的决策记录，已被取代。
 
 ### 4. 费用三个上限互不相容，预扣没有原子性载体
 
 - 结论：每日上限由 20 元改为 16 元（16 × 31 = 496 ≤ 500，三个上限自洽）；预扣载体是 PostgreSQL `model_budget_ledger`，事务内 CAS 写 `RESERVED` 并带 lease，超限在任何供应商请求之前拒绝，结算写实际用量并释放差额，流式取消按已产出 token 结算，进程被 SIGKILL 后由 lease 过期回收。Redis 只缓存剩余额度用于展示和快速拒绝。
 - 落点：[ADR-0029](../adr/0029-model-budget-ledger-and-limits.md)；技术设计方案 §10 第 7 步与路线图资源行；闭合记录 §14；边界文档 §16.2 与术语表“预算账本”；测试计划费用门禁与 SIGKILL lease 回收用例；PROBE-005 必须验证项 6 重写为账本全生命周期、新增项 8（一次典型高风险问答的真实总费用）。
+- **后续（2026-08-26，PROBE-005 Stage C 实测）**：三个上限数值仍自洽、不变，但成本构成被实测改写并已在 ADR-0029 内原地补充：(a) 结算口径优先取供应商直接返回的 `usage.cost`，本地价目表退为预扣估值与回退，汇率单独记录；(b) **rerank 是单次问答里最大的单项**（1024 候选 ¥0.1587），`rerankInputSize` 因此是预算参数，已作为必填字段加入 `RetrievalManifest`（闭合记录 §4.2），其默认值待用户拍板；(c)「已计费但无结果」分两类——429 不返回任何 `usage` 属零成本拒绝可自由重试，客户端超时/挂起则可能上游已计费，预扣不得直接释放，须留给对账或 lease 过期处置。
 
 ### 5. Embedding 版本迁移没有路径
 
@@ -106,16 +108,16 @@
 
 ### 20. 目录不在版本控制下
 
-- 结论：文档层无法自行解决，需用户决定。`git init` 涉及 `.gitignore` 取舍：`references/ragflow/` 自带 `.git`，另有 `pdf/` 目录与本地探针输出。未擅自执行，留待用户确认后再做。
-- 状态：**未处理，待用户决策。**
+- 结论：`git init` 涉及 `.gitignore` 取舍：`references/ragflow/`、`references/ragent/` 自带 `.git`，另有 `pdf/` 目录与本地探针输出。经用户确认后已执行。
+- 状态：**已处理（2026-08-25）。** 已 `git init`（分支 `main`）并建立初始文档基线提交；`.gitignore` 排除 `references/`（固定 commit 快照）、`pdf/`（学习素材）、`.gstack*` 本地工具状态、探针本地运行产物与机密文件模式。
 
 ## 四、遗留与后续
 
 - 修订后已做一次全仓校验：51 份文档的相对链接全部可解析（曾修正 6 张探针 Ticket 中 15 条 `../adr/`、`../design/` 层级错误的链接）；`20 元`、`200 ms`、`acl_subject_ids`、`五个探针` 的剩余命中只存在于 ADR 的问题陈述、显式否定断言和 JSONL 快照说明中，属于应当保留的历史上下文。
-- 待用户决策：`git init` 与 `.gitignore` 范围（第 20 项）。
-- 待实测校准：引用验证 600 ms / 1.5 s、每日 16 元、用户级配额默认值、kNN 参数、`ChunkingManifest` 默认值、是否启用 parent-child、24 至 36 周窗口重估。
+- 已处理：`git init` 与 `.gitignore` 范围（第 20 项，2026-08-25 完成）。
+- 已实测冻结：PROBE-003 的 kNN 初始参数与 PROBE-006 的 `wide-1024`/`parent_child=false`；它们仍需在真实业务规模和完整过滤链下回归。待实测校准：每日 16 元、用户级配额默认值和 24 至 36 周窗口重估。（引用验证预算已于 2026-08-26 由 PROBE-005 实测校准并冻结为 2.0 s / 3.5 s。）
 - 待触发执行：Design Review、DX Review（第 17 项的两个触发点）。
 - 复审后已补强并固化 ADR-0036：逐文档授权扩展点（阶段 1 预留不实现）、quick_parse `TEMPORARY` 引用、ModelAdapter 调用上下文、Pipeline/Release 关系、EvidenceSnapshot 删除目标、`CONFLICT` Finalizer 门禁、Redis 故障时的并发兜底，以及 T1a/T1b 拆分。逐文档授权与 quick_parse `TEMPORARY` 两点经用户确认：前者预留设计不实现，后者纳入实现。
 - 收尾一致性检查发现 ModelAdapter 文字虽覆盖“引用验证调用”，TypeScript 接口却只有 Chat/Embedding/Reranker 三个方法，存在实现时绕过统一准入层的歧义。已新增 `verifyCitation(input, context)` 方法，并同步 ADR-0025、ADR-0017、PROBE-005、测试计划、闭合记录、项目状态、主技术方案和架构图；quick_parse 图示同步改为“临时候选/索引，不进入生产 Alias”。
-- Failure Modes Registry 由 F-01 至 F-24 扩展为 F-01 至 F-29，新增 F-25 Release 内陈旧 ACL、F-26 lease 泄漏、F-27 注入、F-28 非确定性、F-29 单用户预算耗尽。
-- 实施任务由 T1-T12 扩展为 T1a/T1b、T2-T13：新增 T13 不可信内容与三处注入检测；T1a 承载基础 Manifest/Prisma，T1b 承载依赖 PROBE-006 的 Chunk/Index Schema；T5 补知识空间重建、T6 补两段授权与全序消解、T7 补分层验证预算、T12 补用户级限流与预算账本熔断。`tasks-eng-review-20260824.jsonl` 是复审前的评审快照，仍只含旧 T1-T12，任务范围以闭合记录第 16 节为准。
+- Failure Modes Registry 由 F-01 至 F-24 扩展为 F-01 至 F-29，新增 F-25 Release 内陈旧 ACL、F-26 lease 泄漏、F-27 注入、F-28 非确定性、F-29 单用户预算耗尽。**2026-08-26 再扩展至 F-30**：新增「云模型供应商限流（429）被当作契约裁决或排序结果」——PROBE-005 Stage C 的探针自身曾因未退避 429 而得出「`top_n` 不生效」的错误结论，也曾把撞上 429 的超额候选探测记成「供应商拒绝」（另一次运行返回 200，证明并无该上限）。
+- 当时实施任务由 T1-T12 扩展为 T1a/T1b、T2-T13：新增 T13 不可信内容与三处注入检测；T1a 承载基础 Manifest/Prisma，T1b 承载依赖 PROBE-006 的 Chunk/Index Schema；T5 补知识空间重建、T6 补两段授权与全序消解、T7 补分层验证预算、T12 补用户级限流与预算账本熔断。探针收尾后又补充 T0、T14-T16，当前范围以 [阶段 1 实施 Tickets](stage1-implementation-tickets.md) 为准；`tasks-eng-review-20260824.jsonl` 只保留为旧 T1-T12 评审快照。

@@ -77,7 +77,8 @@
 - RAG EVAL 固定语料、Manifest、模型、Prompt、索引快照和随机参数，覆盖 Recall@5、引用覆盖率与正确率、忠实度、拒答合理性、权威冲突和过期知识。
 - Playwright 只覆盖关键浏览器链路，状态机、失败注入和跨组件一致性优先由 API/容器集成测试覆盖。
 - 性能门禁固定 `worker:ingestion` 并发 4/in-flight 8、`worker:evaluation` 并发 1/in-flight 1、Parser 并发 1、OpenSearch fan-out 2/候选 1024/请求总超时 250 ms、高风险缓冲 2,048 output tokens；超限必须进入可观察降级而不是继续堆积。
-- 费用门禁按 PostgreSQL `model_budget_ledger` 预扣验证单次 <= 5 元、每日 <= 16 元、月度 <= 500 元，并验证交互 350 元、评测 100 元、应急 50 元预算池互不越界，以及 lease 过期回收与结算差额释放。
+- **Rerank 用例独立于上述 250 ms 门禁**（PROBE-005 Stage C 实测：8/64/256/1024 候选 → 0.89/0.95/1.45/3.4-6.6 s，¥0.0012/0.0099/0.0397/0.1587）：至少覆盖 (a) 送入候选数取自 `RetrievalManifest.rerankInputSize` 而不是环境变量，且超过该值时由 Adapter 侧自行截断——实测供应商对 2 倍冻结上限（2048 条）仍返回 200，不能依赖其拒绝；(b) 供应商 429 且不带 `retry-after` 时退避重试并在必要时截断候选降级，**限流不得被当作契约失败或排序结果**；(c) 断言 rerank 回显正文不出现在日志与快照中（`return_documents=false` 在该端点不生效）；(d) 排序质量用例必须把黄金文档放在候选末位，否则只回显输入顺序的假 Reranker 也能通过。
+- 费用门禁按 PostgreSQL `model_budget_ledger` 预扣验证单次 <= 5 元、每日 <= 16 元、月度 <= 500 元，并验证交互 350 元、评测 100 元、应急 50 元预算池互不越界，以及 lease 过期回收与结算差额释放。预扣估值必须按 `rerankInputSize` 计算（rerank 是单次问答最大单项），结算优先写回供应商返回的 `usage.cost` 而非价目表估值；并单独覆盖「客户端超时/挂起但上游可能已计费」时预扣不被直接释放（见 2026-08-26 修订的 [ADR-0029](../adr/0029-model-budget-ledger-and-limits.md)）。
 - 安全门禁使用独立于业务黄金集的注入样本集，覆盖直接注入、间接注入、编码与零宽字符混淆、表格/OCR 文本注入和跨文档串联注入；硬门禁是不越权泄漏、不触发工具或外链调用、不把未验证正文提交为最终快照，检出率与误报率只报告不阻断。
-- 性能报告拆分 presign/complete、作用域预过滤+Snapshot、BM25/向量、ACL 候选复核、融合/Rerank、TTFT、生成和引用验证（常规 600 ms / 高风险 1.5 s 分列）；`P50 1.2 s` 只能作为固定黄金集候选基线，不作为单一硬 SLO。
+- 性能报告拆分 presign/complete、作用域预过滤+Snapshot、BM25/向量、ACL 候选复核、融合/Rerank、TTFT、生成和引用验证（常规 2.0 s / 高风险 3.5 s 分列，见 2026-08-26 修订的 [ADR-0027](../adr/0027-tiered-citation-verification-budget.md)）；`P50 1.2 s` 只能作为固定黄金集候选基线，不作为单一硬 SLO。
 - 发布门禁：越权证据泄漏为 0；主链和回滚可运行；无据问题拒答或明确不确定；50 道黄金题固定版本可重复运行。

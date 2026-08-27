@@ -109,13 +109,15 @@ Workspace does not create a physical index by itself.
 | 对象 | 必填字段 | 不可变约束 |
 |---|---|---|
 | `IngestionManifest` | `id`, `tenantId`, `version`, `parserRef`, `chunkerRef`, `embeddingRef`, `indexSchemaRef`, `sourceFormats`, `contentHash`, `createdAt` | `APPROVED` 后不得修改；版本、向量维度、距离度量和 Chunk 规则变化必须新建 |
-| `RetrievalManifest` | `id`, `tenantId`, `version`, `sparsePolicy`, `vectorPolicy`, `fusionPolicy`, `rerankerRef`, `candidateBudget`, `contentHash` | 召回通道、预算、融合、Reranker 变化必须新建 |
+| `RetrievalManifest` | `id`, `tenantId`, `version`, `sparsePolicy`, `vectorPolicy`, `fusionPolicy`, `rerankerRef`, `candidateBudget`, `rerankInputSize`, `contentHash` | 召回通道、预算、融合、Reranker 变化必须新建 |
 | `AnswerManifest` | `id`, `tenantId`, `version`, `promptRef`, `modelRouteRef`, `citationPolicy`, `riskPolicy`, `fallbackPolicy`, `contentHash` | Prompt、模型路由、引用或风险策略变化必须新建 |
 | `PipelineManifest` | `id`, `tenantId`, `version`, `ingestionManifestId`, `retrievalManifestId`, `answerManifestId`, `compatibilityHash`, `approval`, `contentHash` | 只表达一个已批准兼容组合；不是 Release 的父对象，任何引用版本变化都新建 |
 | `ReleaseManifest` | `id`, `tenantId`, `knowledgeSpaceId`, `indexPartitionId`, `ingestionManifestId`, `memberSetUri`, `memberSetHash`, `memberCount`, `docIndexName`, `chunkIndexName`, `candidateAlias`, `indexSchemaVersion`, `embeddingVersion`, `contentHash` | 不写回激活时间、当前 Alias 或最终替代关系 |
 | `RetrievalSnapshot` | `id`, `tenantId`, `answerRunId`, `releaseRefs[]`, `retrievalManifestId`, `answerManifestId`, `approvedPipelineManifestIds[]`, `compatibilityHash`, `principalHash`, `scopeHash`, `aclRevision`, `candidateCountBeforeRecheck`, `candidateCountAfterRecheck`, `conflictResolution`, `evidenceSnapshotUri`, `evidenceSnapshotHash`, `createdAt` | 回答完成后不可修改；正文到期后只保留墓碑和指标 |
 | `ReleaseActivation` | `id`, `releaseManifestId`, `knowledgeSpaceId`, `previousReleaseId`, `aliasBefore`, `aliasAfter`, `activatedAt`, `reconciledAt`, `result`, `traceId` | 唯一记录激活事实；不允许由 `ReleaseManifest.status` 代替 |
 | `IndexActivationIntent` | `idempotencyKey`, `releaseManifestId`, `previousReleaseId`, `candidateAlias`, `requestedBy`, `outboxEventId`, `attemptCount`, `lastError`, `reconciliationState` | 只记录跨库操作意图和恢复信息，不是第二套激活事实源 |
+
+> **2026-08-26 补充（PROBE-005 Stage C 实测触发）**：`RetrievalManifest` 新增必填字段 `rerankInputSize`，与 `candidateBudget` 分离。`candidateBudget` 是 OpenSearch 融合候选上限（ADR-0035 冻结为 1024），`rerankInputSize` 是实际送入 Reranker 的候选数；两者的差别是可测量的费用与时延差别（1024 候选 ¥0.1587 / 3.4-6.6 s，64 候选 ¥0.0099 / 0.95 s），因此它既是检索调优参数也是预算参数（见 [ADR-0017](../adr/0017-mvp-cloud-model-and-budget.md) 第 4、5 节与 [ADR-0029](../adr/0029-model-budget-ledger-and-limits.md)）。它必须进 Manifest 而不是留在环境变量里，否则 `RetrievalSnapshot` 无法复现一次问答的真实 rerank 输入规模，黄金集回归也无法归因「召回变化」与「N 变化」。默认值待用户拍板，实现侧先按 N=64。
 
 ### 4.3 兼容矩阵
 
@@ -331,12 +333,15 @@ type AnswerEvent = {
 ```text
 普通：retrieve -> generate draft -> verify sentence/citation -> final snapshot
        answer.delta 可以发送，但 UI 必须标为草稿，未验证句不能标为事实
-       验证 = 句切分 + token 重叠 + 逐句批量向量，P95 <= 600 ms
+       验证 = 句切分 + token 重叠 + 逐句批量向量，P95 <= 2.0 s
 
 高风险：retrieve -> rerank -> evidence gate -> generate -> verify -> answer.delta
         验证前只发送 phase/evidence/warning；失败返回 REFUSED/EVIDENCE_ONLY
-        验证 = 常规路径 + 一次蕴含调用，P95 <= 1.5 s
+        验证 = 常规路径 + 一次蕴含调用，P95 <= 3.5 s
+        逐句批量向量与蕴含调用必须并发发起（串行实测下界约 4.3 s）
 ```
+
+> 两条验证预算于 2026-08-26 随 [ADR-0027](../adr/0027-tiered-citation-verification-budget.md) 的 PROBE-005 实测修订更新（原 600 ms / 1.5 s）。
 
 引用状态使用 `PENDING / VERIFIED / WEAK / CONFLICT / BLOCKED / EXPIRED`；`WEAK` 必须在界面显式标注，`CONFLICT` 按 [ADR-0033](../adr/0033-deterministic-evidence-conflict-resolution.md) 同时展示两条来源且不给出单一结论，`AnswerFinalizer` 不得将含未解决冲突的运行提交为 `ANSWERED`，只能提交 `PARTIAL`、`EVIDENCE_ONLY` 或 `REFUSED`。引用点击、预览和下载都重新执行当前 ACL，而不是信任历史快照授权。模型原始思考链不存储，只记录阶段、证据摘要、工具结果、版本、错误码和 Trace。
 
@@ -456,6 +461,7 @@ CODE PATHS                                      USER FLOWS
 | F-27 | 文档内注入指令改变系统行为或诱导外发 | 注入样本集安全测试 | 定界符 + 三处检测 + `EVIDENCE_ONLY`/`REFUSED` | 不越权、不外链、不执行文档内指令 | P0 |
 | F-28 | 同一输入因空间遍历顺序不同得到不同回答 | 确定性重复运行测试 | 全序排序键 + `CONFLICT` 显式判定 | 结果可复现；冲突被展示而非静默择一 | P1 |
 | F-29 | 单用户高频提问耗尽交互预算池 | 用户级限流测试 | Redis 并发/QPS/日限 + PG 硬预算闸门 | 返回 `429`，其他用户不受影响 | P1 |
+| F-30 | 云模型供应商限流（429）被当作契约裁决或排序结果 | ModelAdapter 限流/降级测试 | Adapter 统一退避重试（供应商不返回 `retry-after`）+ 截断候选降级；限流不进入排序或契约判定路径 | 回答延迟可解释，不把节流误报为供应商能力缺陷或错误排序 | P1 |
 
 P0 失败模式没有测试、没有错误处理或对用户静默时禁止进入发布门禁。
 
@@ -469,10 +475,11 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 | 作用域预过滤 + Snapshot 创建 | P95 <= 80 ms | PG query trace |
 | BM25 与向量并行召回 | P95 <= 250 ms | OpenSearch 真实容器，候选上限 1024 |
 | ACL 候选权威复核 | P95 <= 60 ms（不计入上一行 250 ms） | 单条批量 PG 查询，禁止逐候选查询 |
-| 融合 + Rerank Top5 | P95 <= 350 ms | 记录每路候选和模型耗时 |
+| 本地融合（不含云 rerank） | P95 <= 100 ms | 记录每路候选数与融合耗时；纯本地计算，不含任何供应商往返 |
+| 云 Rerank → Top5（独立计时，不与融合合并） | P95 <= 1.2 s @ N=64；N 变更时按实测重设 | 云 rerank 单独计时。**PROBE-005 Stage C 实测：64 候选 0.95 s、256 候选 1.45 s、1024 候选 3.4-6.6 s** —— 原「融合 + Rerank Top5 P95 <= 350 ms」在云 rerank 下任何档位都不可达，已按实测拆成本行与上一行 |
 | 首 token | P50 作为候选目标，首轮实测后重估 | 模型 Adapter 记录 TTFT，不与完整回答混淆 |
-| 引用验证（常规路径） | P95 <= 600 ms | 句切分 + token 重叠 + 逐句批量向量，分项计时 |
-| 引用验证（高风险路径） | P95 <= 1.5 s | 常规路径 + 一次蕴含调用，分项计时 |
+| 引用验证（常规路径） | P95 <= 2.0 s | 句切分 + token 重叠 + 逐句批量向量，分项计时 |
+| 引用验证（高风险路径） | P95 <= 3.5 s | 常规路径 + 一次蕴含调用（两者必须并发发起），分项计时 |
 | 完整回答 | 不设单一 SLO；拆分检索、TTFT、生成、验证 | AnswerRun span 汇总 |
 | 端到端候选目标 | P50 1.2 s 仅在固定黄金集和固定模型上报告；不作为单一硬 SLO | CI 报告检索、TTFT、生成、验证分项基线差异 |
 
@@ -484,8 +491,9 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 | `worker:evaluation` | 独立进程并发 1；最大 in-flight 1 | 独立 evaluation 队列和预算池；不消费 ingestion 队列 | 评测暂停或排队，不能抢占入库 |
 | DeepDOC Parser | 并发 1；单进程 RSS 警戒 8 GiB | 解析超时进入 Attempt 重试/DLQ | 超过警戒先取消/隔离，不启动第二实例 |
 | OpenSearch | JVM 初始 2 GiB；单请求候选 <= 1024；堆外向量内存单列记录 | fan-out <= 2 个 KnowledgeSpace；请求总超时 250 ms；kNN engine/参数由 PROBE-003 冻结 | 先降级超时通道，双通道失败返回 evidence unavailable |
-| Answer/Citation | 高风险生成缓冲上限 2,048 output tokens；常规验证超时 600 ms、高风险 1.5 s | 未验证正文不得提交 Finalizer | 返回 `EVIDENCE_ONLY`/`REFUSED`，释放缓冲 |
-| ModelAdapter | 单次预算 <= 5 元；每日 <= 16 元；月度 <= 500 元（16 × 31 = 496，三个上限自洽） | 交互池 350 元、评测池 100 元、应急保留 50 元；调用前在 PG `model_budget_ledger` 内预扣并取 lease | 预算不足停止评测，交互请求走允许的降级/拒答 |
+| 云 Reranker（独立计时/计费，**不计入上行 250 ms**） | 输入候选数 = `RetrievalManifest.rerankInputSize`，与 `candidateBudget`(1024) 分离；实现侧待拍板前按 N=64 | 实测 8/64/256/1024 候选 → 0.89/0.95/1.45/3.4-6.6 s、¥0.0012/0.0099/0.0397/0.1587；超时按上界而非均值设定；供应商 2048 候选仍返 200，上限保护必须在 Adapter 侧 | 退避重试 429（不带 `retry-after`）→ 截断候选降级 → 仅在仍不可用时跳过 rerank；回显正文禁入日志（`return_documents=false` 不生效） |
+| Answer/Citation | 高风险生成缓冲上限 2,048 output tokens；常规验证超时 2.0 s、高风险 3.5 s | 未验证正文不得提交 Finalizer | 返回 `EVIDENCE_ONLY`/`REFUSED`，释放缓冲 |
+| ModelAdapter | 单次预算 <= 5 元；每日 <= 16 元；月度 <= 500 元（16 × 31 = 496，三个上限自洽） | 交互池 350 元、评测池 100 元、应急保留 50 元；调用前在 PG `model_budget_ledger` 内预扣并取 lease；单次口径 = Chat + 查询 Embedding + **Reranker** + 逐句验证 Embedding + 蕴含调用；结算优先写回供应商返回的 `usage.cost` | 预算不足停止评测，交互请求走允许的降级/拒答 |
 | 用户级配额 | 并发 AnswerRun 1；并发 SSE 2；提问 10 次/分钟、200 次/日；上传 20 个/小时 | 频次计数由 Redis 软闸门承担；AnswerRun/SSE 由本地 semaphore + PostgreSQL 用户并发 lease 兜底；默认值待 PROBE-005 与首轮评测校准 | 返回 `429` 与 `Retry-After`，不降级验证或缩短候选集 |
 
 所有上限都必须作为配置 schema 校验并写入启动日志。动态调节只允许在硬上限内根据 RSS、队列等待、GC、OpenSearch heap 和模型费用进行降级，不允许运行时自动突破上限。
@@ -500,25 +508,25 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 | DeepDOC | 扫描 PDF、双栏、跨页表格、普通 Markdown | 启动、RSS、解析耗时、定位质量、表格告警、Artifact 原子提交 | 产出契约稳定；失败和取消可恢复；资源不超过本地预算 |
 | OpenSearch | 文档/Chunk 双索引、1024 向量、kNN engine/参数候选、Alias | 写入耗时、查询 P50/P95、带过滤 kNN 召回衰减、heap 与堆外内存峰值、Alias 切换、对账、重启恢复 | 版本化 Alias 和回滚可验证；作用域键/版本过滤不丢失；kNN 参数可冻结且内存在预算内 |
 | RabbitMQ | 成功、重复、超时、取消、DLQ、人工重放 | Confirm、ACK、retry delay、prefetch、队列积压、重复率 | 不丢消息、不无限 requeue；重放生成新 Generation |
-| 百炼 ModelAdapter | Chat/Embedding/Reranker/引用验证、流式取消、错误码、预算账本 | TTFT、逐句批量 Embedding、蕴含验证、费用、限流、超时、数据分级门禁、预扣/结算/lease 回收 | OpenAI-compatible 契约稳定；四类调用的错误映射与预算阻断可验证；分层验证预算实测可达 |
+| 云模型 ModelAdapter（供应商基线见 ADR-0017） | Chat/Embedding/Reranker/引用验证、流式取消、错误码、预算账本 | TTFT、逐句批量 Embedding、蕴含验证、费用、限流、超时、数据分级门禁、预扣/结算/lease 回收 | OpenAI-compatible 契约稳定；四类调用的错误映射与预算阻断可验证；分层验证预算实测可达 |
 | 分块与引用定位 | PROBE-002 解析产物、黄金集子集、候选分块参数组合 | Recall@5、引用可定位率、表格/条款截断率、索引体积、写入耗时、结果可复现性 | 存在一组可冻结参数同时满足 Recall@5 与引用可定位率；Chunk 序列确定性可复现 |
 
 探针失败时只允许调整 Adapter、资源配置或首批格式，不得绕过 PostgreSQL、Outbox、权限、引用和删除门禁。
 
 ## 16. 实施任务
 
-以下任务都来自本评审发现，不代表已经开始实现。它们是架构探针通过后的实施候选任务；正式开发前必须先完成 [架构探针阶段计划](architecture-probes-plan.md) 和 `Probe Decision Gate`，再根据实测结果冻结任务字段、资源预算和 DoD。
+以下任务都来自本评审发现，不代表已经开始实现。探针收尾后的当前任务范围、补充 Tickets 和依赖顺序以 [阶段 1 实施 Tickets](stage1-implementation-tickets.md) 为准；每张任务还必须按 [Probe Decision Gate](probe-decision-gate.md) 关闭对应的增量条件。
 
 - [ ] **T1a (P1, human: ~3d / CC: ~0.75d)** — Manifest/Prisma Core — 建立租户、知识空间、文档版本、基础 Manifest、Release 和兼容矩阵。
   - 来源：Architecture Review，版本任意组合和 Release 作用域会导致不可测试的状态空间。
   - 计划文件：`packages/database/prisma/schema.prisma`、`packages/contracts/src/manifests/`、`apps/api/src/modules/release/`。
   - 范围补充：`PipelineManifest` 是兼容批准组合，不是 Release 的父对象；`ReleaseManifest` 只引用 `ingestionManifestId`，`RetrievalSnapshot` 记录共同 Retrieval/Answer 策略和兼容校验（ADR-0036）。
   - 验证：Prisma 迁移测试、内容哈希/唯一约束测试、兼容/不兼容表驱动测试。
-- [ ] **T1b (P1, human: ~2d / CC: ~0.5d)** — Chunk/Index Schema — 建立 `chunk_manifest`、父子分块字段、Chunk 定位和最终 OpenSearch mapping。
-  - 来源：PROBE-006，分块参数和父子关系必须以实测冻结的 `ChunkingManifest` 为准。
+- [ ] **T1b (P1, human: ~2d / CC: ~0.5d)** — Chunk/Index Schema — 建立 `chunk_manifest`、`wide-1024` Chunk 定位和最终 OpenSearch mapping。
+  - 来源：PROBE-006 已冻结 `parent_child=false`；阶段 1 不建立父子分块字段或父子展开路径。
   - 计划文件：`packages/database/prisma/schema.prisma`、`packages/contracts/src/chunking/`、`apps/api/src/modules/search/`。
   - 依赖：PROBE-006 必须为 `PASS` 或 `PASS_WITH_ADJUSTMENT`；`BLOCKED` 时只允许保留契约草稿，不进入正式索引实现。
-  - 验证：确定性 Chunk 序列、页/坐标/section 定位、父子展开和 mapping 兼容测试。
+  - 验证：确定性 Chunk 序列、页/坐标/section 定位和 mapping 兼容测试，并断言阶段 1 mapping 不出现父子关系字段。
 - [ ] **T2 (P1, human: ~6d / CC: ~1.5d)** — Domain State — 实现正交状态命令、CAS 和可检索派生规则。
   - 来源：Architecture Review，审核、资产、任务、投影、删除和 AnswerRun 不能折叠成单一状态。
   - 计划文件：`packages/contracts/src/states/`、`apps/api/src/modules/document/`、`apps/api/src/modules/ingestion/`、`apps/api/src/modules/deletion/`。
@@ -534,16 +542,16 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 - [ ] **T5 (P1, human: ~5d / CC: ~1d)** — Release/OpenSearch — 实现候选构建、Alias 激活 Intent 和 Reconciler。
   - 来源：Architecture Review，OpenSearch Alias 与 PostgreSQL 激活事实存在分裂窗口。
   - 计划文件：`apps/api/src/modules/release/`、`apps/worker/src/profiles/ingestion/release/`、`apps/api/src/modules/search/`。
-  - 范围补充：包含从不可变 `ParseArtifact` 与 `chunk_manifest` 出发的知识空间重建（`POST /api/v1/knowledge-spaces/:spaceId/rebuild`），新 `embeddingVersion` 进新分区、旧分区保留用于回滚、重建受预算门禁与每租户并发 1 约束（ADR-0028）；正式索引 mapping 依赖 T1b/PROBE-006。
+  - 范围补充：包含从不可变 `ParseArtifact` 与 `chunk_manifest` 出发的知识空间重建（`POST /api/v1/knowledge-spaces/:spaceId/rebuild`），新 `embeddingVersion` 进新分区、旧分区保留用于回滚、重建受预算门禁与每租户并发 1 约束（ADR-0028）；正式索引 mapping 使用 PROBE-006 已冻结的 `wide-1024` 契约，并依赖 T1b 实现及 Probe Decision Gate 集成验证。
   - 验证：真实 OpenSearch 覆盖 Alias 切换失败、切换后 PG 确认丢失、smoke 失败回滚、删除优先阻断和重建后回滚到旧分区。
 - [ ] **T6 (P1, human: ~6d / CC: ~1.5d)** — Retrieval — 实现固定 Snapshot 的 ACL 前置混合检索。
   - 来源：Architecture/Performance Review，多空间查询、ACL 撤权和候选无界会产生越权及延迟尖峰。
   - 计划文件：`packages/rag-core/src/retrieval/`、`apps/api/src/modules/retrieval/`、`apps/api/src/modules/authorization/`。
-  - 验证：Supertest + OpenSearch 覆盖 fan-out 2、候选 1024、超时降级、多空间冲突全序消解、`AnswerFinalizer` 冲突门禁和撤权后候选复核竞态；正式索引实现依赖 T1b/PROBE-006。
+  - 验证：Supertest + OpenSearch 覆盖 fan-out 2、候选 1024、超时降级、多空间冲突全序消解、`AnswerFinalizer` 冲突门禁和撤权后候选复核竞态；正式索引字段使用 PROBE-006 已冻结的 `wide-1024`，完整混合检索和生产过滤链按 Probe Decision Gate 关闭。
 - [ ] **T7 (P1, human: ~6d / CC: ~1.5d)** — Answer/Citation — 建立候选生成、引用验证和最终提交三段边界。
   - 来源：Code Quality/Test Review，Answer、Citation 和 Finalizer 混写会让未验证正文成为最终事实。
   - 计划文件：`apps/api/src/modules/answer/`、`apps/api/src/modules/citation/`、`apps/api/src/modules/answer-finalizer/`、`apps/web/src/features/chat/`。
-  - 范围补充：常规路径为句切分 + token 重叠 + 一次批量逐句 Embedding（P95 ≤ 600 ms），高风险路径追加一次蕴含调用（P95 ≤ 1.5 s）；两条路径的调用都必须经 `ModelAdapter` 并计入单次 5 元口径（ADR-0027、ADR-0029）。
+  - 范围补充：常规路径为句切分 + token 重叠 + 一次批量逐句 Embedding（P95 ≤ 2.0 s），高风险路径追加一次蕴含调用（P95 ≤ 3.5 s，且与逐句 Embedding 并发发起）；两条路径的调用都必须经 `ModelAdapter` 并计入单次 5 元口径（ADR-0027、ADR-0029）。数值于 2026-08-26 按 PROBE-005 实测修订（原 600 ms / 1.5 s）。
   - 验证：E2E 覆盖普通草稿、高风险缓冲、2,048 tokens 上限、验证失败、分层预算超时、SSE 续读和当前 ACL 引用回跳。
 - [ ] **T8 (P1, human: ~6d / CC: ~1.5d)** — Deletion/Replay — 实现删除目标、墓碑、Legal Hold 和分级 Replay。
   - 来源：Architecture/Test Review，旧 Release、DLQ、Snapshot 和备份可能在删除后重新暴露正文。
@@ -557,18 +565,24 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
   - 来源：Performance Review，评测负载不得抢占用户入库主链。
   - 计划文件：`apps/worker/src/main.ts`、`apps/worker/src/profiles/`、`infra/compose/`、`packages/config/`。
   - 验证：并行压测确认独立队列、并发、in-flight、RSS、prefetch 和预算池，超限只排队/暂停。
+  - 时点：Worker Profile 启动入口和配置必须在 T3/T4 前完成；完整并行压测可在 T9 链路具备后收口。
 - [ ] **T11 (P1, human: ~4d / CC: ~1d)** — Audit/Telemetry — 分离同步领域审计和异步运行遥测。
   - 来源：Code Quality/Test Review，遥测故障不能阻止业务状态提交，也不能造成领域审计缺失。
   - 计划文件：`apps/api/src/modules/audit/`、`apps/api/src/modules/telemetry/`、`packages/observability/`。
   - 验证：关闭 Trace/指标消费者后状态与审计仍提交，Outbox 恢复后遥测补投且不重复。
+  - 时点：同步领域审计随 T2/T3 的业务事务落地；异步遥测消费者和恢复验证可以后置。
 - [ ] **T12 (P1, human: ~4d / CC: ~1d)** — Performance/Budget — 落地查询、缓存、延迟和费用硬门禁。
   - 来源：Performance Review，N+1、无界候选、缓存过期授权和模型费用失控均会破坏本地可用性。
   - 计划文件：`packages/config/`、`apps/api/src/modules/retrieval/`、`apps/api/src/modules/model/`、`tests/performance/`。
   - 验证：配置 schema、批量查询计数、Redis 作用域缓存按 `aclRevision` 失效、分项延迟报告、用户级限流以及 5/16/500 元预算账本熔断。
+  - 时点：Budget Ledger schema、预扣/结算/lease 必须在 ModelAdapter 前完成；检索性能随 T6 验证，完整性能报告在 T9 后收口。
 - [ ] **T13 (P1, human: ~4d / CC: ~1d)** — Untrusted Content — 落地不可信内容隔离与三处注入检测。
   - 来源：设计复审第 9 项，注入原先只有控制项与测试项，没有检测位置、状态字段、失败行为和 DoD（ADR-0032）。
   - 计划文件：`packages/rag-core/src/safety/`、`apps/worker/src/profiles/ingestion/scan/`、`apps/api/src/modules/retrieval/`、`apps/api/src/modules/answer/`、`evals/injection/`。
   - 验证：独立注入样本集覆盖直接注入、间接注入、编码与零宽字符混淆、表格/OCR 文本注入和跨文档串联；断言 `suspected` 候选不进生成上下文、不触发外链或工具调用、`QUARANTINED` 资产不可发布、未验证正文不成为最终快照。
+  - 时点：分别随 T4 解析扫描、T6 上下文准入和 T7 输出检查交付，不允许最后集中补齐。
+
+补充任务：T0 Monorepo 基线、T14 Identity/Authorization、T15 ModelAdapter、T16 Web/Admin Surfaces 的范围和依赖见 [阶段 1 实施 Tickets](stage1-implementation-tickets.md)。
 
 探针 Tickets：
 
@@ -604,7 +618,7 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 - Architecture：Manifest、状态机、消息、删除、SSE、Parser 和作用域已闭合。
 - Code Quality：尚无本项目业务实现；通过契约优先、模块化单体和 Adapter 数量控制避免提前抽象。
 - Test：已生成覆盖图和失败模式登记；实现时不得以 Mock 替代真实中间件 E2E。
-- Performance：已定义硬上限、降级和测量方法；六个架构探针后必须重估。
+- Performance：已定义硬上限、降级和测量方法；六个架构探针已完成，必须在增量工程复审中按实测重估。
 - Review status：`DONE_WITH_CONCERNS`，架构方向和协议已闭合，剩余关注是探针实测、实现验证和容量重估。
 
 ### Completion Summary
@@ -616,8 +630,8 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 - Performance Review：5 项问题，全部固化为资源、查询、缓冲、缓存和费用硬上限。
 - NOT in scope：已写入第 1 节。
 - What already exists：已写入第 2 节，参考仓库只作固定快照和 Harness 对照。
-- TODOS.md：0 项；所有当前有价值的工作都已进入 T1a/T1b、T2-T13，没有另建模糊延期项。
-- Failure modes：登记 F-01 至 F-29；设计层面 0 个未处理 critical gap，实际测试尚未执行。
+- TODOS.md：0 项；当前有价值的工作已进入 T0、T1a/T1b、T2-T16，没有另建模糊延期项。
+- Failure modes：登记 F-01 至 F-30（F-30 于 2026-08-26 按 PROBE-005 Stage C 实测新增：供应商 429 被误当作契约裁决或排序结果，探针自身曾因此得出「`top_n` 不生效」的错误结论）；设计层面 0 个未处理 critical gap，六个探针实测已完成，业务实现与集成测试尚未开始。
 - Outside voice：已运行独立 CEO challenge 和设计文档对抗性审查，已批准发现均已折入方案。
 - Parallelization：4 条 Lane，其中 3 条可并行，1 条为依赖合并后的顺序主链。
 - Lake Score：26/26 项推荐选择完整方案，没有用 Happy Path 换取短期进度。
@@ -628,7 +642,7 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 |---|---|---|---:|---|---|
 | CEO Review | `/plan-ceo-review` | 产品范围与策略 | 1 | CLEAR | 完整基座、客服单主链，高级能力后置 |
 | Codex/Outside Voice | 独立 challenge | 独立反证 | 2 | CLEAR WITH MINOR CONCERNS | 关键矛盾已修订，文档评分 9.0/10 |
-| Eng Review | `/plan-eng-review` | 架构、测试与性能 | 1 | CLEAN (PLAN) | 26 项发现均已固化，0 个设计层 critical gap；实现/实测尚未开始 |
+| Eng Review | `/plan-eng-review` | 架构、测试与性能 | 1 | CLEAN (PLAN) | 26 项发现均已固化，0 个设计层 critical gap；探针实测已完成，业务实现与集成测试尚未开始 |
 | Design Review | `/plan-design-review` | UI/UX 缺口 | 0 | NOT RUN | 当前为架构方案，进入页面实现前再执行 |
 | DX Review | `/plan-devex-review` | 本地开发体验 | 0 | NOT RUN | 实现仓库、Compose 和启动链建立后执行 |
 
@@ -640,8 +654,8 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 
 **CROSS-MODEL:** 两次独立审查与工程评审共同认为 TS 模块化单体、PostgreSQL/OpenSearch/RabbitMQ/MinIO/Keycloak、固定 DeepDOC Adapter 和客服单主链方向成立；主要风险集中在协议一致性和实测，而不是需要换架构。
 
-**VERDICT:** CEO + OUTSIDE VOICE + ENG CLEARED，允许进入六个架构探针和纵向实现；`DONE_WITH_CONCERNS` 表示尚无实现与实测，不表示仍有架构选择未决定。
+**VERDICT:** CEO + OUTSIDE VOICE + ENG CLEARED。六个架构探针现已完成外部事实验证，允许进入受 Probe Decision Gate 约束的纵向实现；`DONE_WITH_CONCERNS` 表示尚无业务实现和集成验证，不表示仍有架构方向未决定。
 
-六个架构探针的登录/撤权、资源峰值、解析质量、OpenSearch 延迟与 kNN 参数、模型费用、分块冻结参数和周期重估仍是实施验证项，不是开放架构决策。
+六个架构探针已经给出登录/撤权、资源峰值、解析质量、OpenSearch 延迟与 kNN 初始参数、模型费用和分块冻结参数；真实业务规模、完整过滤链、服务层集成和周期重估仍是实施验证项，不是开放架构决策。
 
-NO UNRESOLVED DECISIONS
+当前没有待解决的“架构方向”选择，但仍有实现门禁和生产治理条件，不能以本记录的设计审查结论代替：`rerankInputSize` 产品取舍、ModelAdapter 数据分级门禁与 PostgreSQL 预算账本集成、Parser/Worker 和 AMQP 线级测试、真实业务语料检索回归，以及 fluxionai 模型身份和数据留存评估。逐项关闭条件见 [Probe Decision Gate](probe-decision-gate.md)。
