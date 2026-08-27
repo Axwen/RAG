@@ -1,0 +1,25 @@
+{
+  "probe_id": "PROBE-001",
+  "status": "PASS",
+  "executed_at": "2026-08-25T05:34:13Z",
+  "versions": {
+    "keycloak_image": "quay.io/keycloak/keycloak:26.2.5"
+  },
+  "measurements": {
+    "issuer": "http://127.0.0.1:18080/realms/rag-probe",
+    "stable_subject": "e5a3ddc9-e37a-4dd7-b7fb-3cce84e204af",
+    "jwks_key_count": 2,
+    "authorization_code_pkce": true,
+    "jwt_signature_claims_verified": true,
+    "expired_token_http_status": 401,
+    "revoked_token_http_status": 401,
+    "refresh_after_disable_http_status": 400,
+    "revocation_propagation_ms": 70,
+    "unavailable_fail_closed": true,
+    "unavailable_userinfo_http_status": 502,
+    "recovery_succeeded": true
+  },
+  "failures": [],
+  "decisions_required": [],
+  "recommendation": "Use OIDC/JWKS for identity and keep workspace membership, document ACL and authoritative revocation checks in the API."
+}

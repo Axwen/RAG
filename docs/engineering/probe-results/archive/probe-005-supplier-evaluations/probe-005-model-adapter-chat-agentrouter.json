@@ -1,0 +1,134 @@
+{
+  "probe_id": "PROBE-005",
+  "stage": "B-chat",
+  "status": "BLOCKED",
+  "executed_at": "2026-08-25T10:49:43Z",
+  "provider": "agentrouter",
+  "model": "gpt-5.6-sol",
+  "base": "https://agentrouter.org/v1",
+  "measurements": {
+    "stage": "B-chat",
+    "provider": "agentrouter",
+    "model": "gpt-5.6-sol",
+    "base": "https://agentrouter.org/v1",
+    "checks": {
+      "contract": {
+        "http": 401,
+        "seconds": 1.346,
+        "error": {
+          "error": {
+            "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+          },
+          "message": "UNAUTHENTICATED",
+          "success": false,
+          "type": "unauthorized_client_error"
+        }
+      },
+      "stream": {
+        "full": {
+          "cancel_after": null,
+          "deltas": 0,
+          "ttft_seconds": null,
+          "total_seconds": 1.278,
+          "cancelled": false,
+          "usage_in_stream": null,
+          "finish_reason": null,
+          "text_chars": 0,
+          "http": 401,
+          "error": {
+            "error": {
+              "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+            },
+            "message": "UNAUTHENTICATED",
+            "success": false,
+            "type": "unauthorized_client_error"
+          }
+        },
+        "cancelled": {
+          "cancel_after": 5,
+          "deltas": 0,
+          "ttft_seconds": null,
+          "total_seconds": 1.274,
+          "cancelled": false,
+          "usage_in_stream": null,
+          "finish_reason": null,
+          "text_chars": 0,
+          "http": 401,
+          "error": {
+            "error": {
+              "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+            },
+            "message": "UNAUTHENTICATED",
+            "success": false,
+            "type": "unauthorized_client_error"
+          }
+        },
+        "cancel_worked": false,
+        "usage_on_stream": false,
+        "settle_on_cancel_possible": false
+      },
+      "structured_output": {
+        "json_schema": {
+          "http": 401,
+          "seconds": 1.243,
+          "rejected_cleanly": true,
+          "error": {
+            "error": {
+              "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+            },
+            "message": "UNAUTHENTICATED",
+            "success": false,
+            "type": "unauthorized_client_error"
+          }
+        },
+        "json_object": {
+          "http": 401,
+          "seconds": 1.262,
+          "rejected_cleanly": true,
+          "error": {
+            "error": {
+              "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+            },
+            "message": "UNAUTHENTICATED",
+            "success": false,
+            "type": "unauthorized_client_error"
+          }
+        }
+      },
+      "error_mapping": {
+        "bad_key_status": 401,
+        "bad_key_is_401": true,
+        "bad_key_body_head": "{\"error\": {\"message\": \"unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3\"}, \"message\": \"UNAUTHENTICATED\", \"success\": false, \"type\": \"unauthorized_client_erro",
+        "unknown_model_status": 401,
+        "unknown_model_rejected": true,
+        "timeout_mapped": true,
+        "timeout_error": "URLError: <urlopen error _ssl.c:983: The handshake operation timed out>",
+        "timeout_seconds": 0.705
+      }
+    },
+    "simulated": {
+      "data_class_gating": "ADR-0025：UNKNOWN/敏感等级必须在 ModelAdapter 准入层（而非调用点）阻断 Chat/Embedding/Reranker/引用验证四条路径。设计期仓库无业务代码，本探针只发送合成文本，门禁为 SIMULATED，随 ModelAdapter 实现的集成测试复验。",
+      "budget_ledger": "ADR-0029：调用前在同一 PostgreSQL 事务写入 RESERVED 并取 lease，结算写回实际用量并释放差额，流式取消按已产生 token 结算，进程被杀后 lease 过期回收。无 DB/业务代码，SIMULATED；本探针 LIVE 记录真实 usage 与取消时已产生的增量，供预扣/结算口径校准。",
+      "citation_verification": "ADR-0027 分层引用验证（常规 P95<=600ms / 高风险含蕴含调用P95<=1.5s）依赖逐句 Embedding 批量 + 高风险蕴含调用，属独立测量，需与 Stage A 的批量延迟曲线合并计算，本 stage 未单独压测。",
+      "relay_governance": "中转站（agentrouter.org）是数据路径上的额外第三方处理方，可能记录/留存 prompt。探针仅合成文本可接受；生产承载真实客服数据前必须评估留存与合规，否则冲突 ADR-0017/0025「敏感数据不出域」。"
+    },
+    "cost": {
+      "measured_prompt_tokens_partial": 0,
+      "measured_completion_tokens_partial": 0,
+      "price_cny_per_1m_in": 0.0,
+      "price_cny_per_1m_out": 0.0,
+      "estimated_cny_partial": null,
+      "note": "仅统计供应商回报了 usage 的调用；单价来自环境变量/参数，未提供则只记录用量。单次问答成本口径需叠加 Stage A 的查询/逐句 Embedding 与高风险蕴含调用。"
+    }
+  },
+  "failures": [
+    "基本 Chat 调用失败 HTTP 401：{'error': {'message': 'unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3'}, 'message': 'UNAUTHENTICATED', 'success': ",
+    "流式路径不可用（无增量输出），与流式取消/TTFT 目标冲突",
+    "流式无法中途取消：ADR-0029 的取消按已产生 token 结算不成立",
+    "json_schema 与 json_object 均无法产出可校验结构化输出：结构化输出失败必须返回受控错误，不能把未校验响应交给 Answer/Citation"
+  ],
+  "decisions_required": [
+    "流式路径未回传 usage（include_usage 被忽略）：取消结算只能按已收字符估算 token，需在 Adapter 侧本地计量并接受误差。"
+  ],
+  "recommendation": "BLOCKED"
+}

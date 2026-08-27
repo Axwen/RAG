@@ -1,0 +1,215 @@
+{
+  "probe_id": "PROBE-002",
+  "status": "PASS",
+  "executed_at": "2026-08-26T10:47:32Z",
+  "resource_context": {
+    "source": "PROBE-000",
+    "docker_engine_visible_memory_gib": 23.47,
+    "interpretation": "高于日常 22 GiB 上限、低于建议 24 GiB Parser profile；本结果不证明完整 24 GiB 容量余量"
+  },
+  "versions": {
+    "parser": "ragflow-deepdoc@618c4599/v0.27.0",
+    "tokenizer_mode": "infinity",
+    "models": {
+      "layout.onnx": true,
+      "tsr.onnx": true,
+      "det.onnx": true,
+      "rec.onnx": true,
+      "updown_concat_xgb.model": true
+    }
+  },
+  "measurements": {
+    "artifacts": {
+      "markdown": {
+        "http_status": 200,
+        "kind": "markdown",
+        "contract": {
+          "ok": true,
+          "missing_fields": [],
+          "has_blocks": true,
+          "has_content_hash": true,
+          "has_version": true
+        },
+        "positions": {
+          "applicable": false
+        },
+        "quality": {
+          "table_count": 1,
+          "table_warnings": [],
+          "block_count": 11,
+          "located_block_count": 0,
+          "location_rate": null
+        },
+        "resource": {
+          "parse_seconds": 0.001,
+          "peak_rss_mib": 299.4
+        },
+        "wall_seconds": 0.002,
+        "tokenizer_mode": "infinity"
+      },
+      "native_single.pdf": {
+        "http_status": 200,
+        "kind": "pdf",
+        "contract": {
+          "ok": true,
+          "missing_fields": [],
+          "has_blocks": true,
+          "has_content_hash": true,
+          "has_version": true
+        },
+        "positions": {
+          "applicable": true,
+          "block_count": 7,
+          "located": 7,
+          "tagged": 7,
+          "location_rate": 1.0
+        },
+        "quality": {
+          "table_count": 0,
+          "table_warnings": [],
+          "block_count": 7,
+          "located_block_count": 7,
+          "location_rate": 1.0
+        },
+        "resource": {
+          "parse_seconds": 2.732,
+          "peak_rss_mib": 874.3
+        },
+        "wall_seconds": 2.734,
+        "tokenizer_mode": "infinity"
+      },
+      "double_column.pdf": {
+        "http_status": 200,
+        "kind": "pdf",
+        "contract": {
+          "ok": true,
+          "missing_fields": [],
+          "has_blocks": true,
+          "has_content_hash": true,
+          "has_version": true
+        },
+        "positions": {
+          "applicable": true,
+          "block_count": 20,
+          "located": 20,
+          "tagged": 20,
+          "location_rate": 1.0
+        },
+        "quality": {
+          "table_count": 0,
+          "table_warnings": [],
+          "block_count": 20,
+          "located_block_count": 20,
+          "location_rate": 1.0
+        },
+        "resource": {
+          "parse_seconds": 1.165,
+          "peak_rss_mib": 949.2
+        },
+        "wall_seconds": 1.167,
+        "tokenizer_mode": "infinity"
+      },
+      "cross_page_table.pdf": {
+        "http_status": 200,
+        "kind": "pdf",
+        "contract": {
+          "ok": true,
+          "missing_fields": [],
+          "has_blocks": true,
+          "has_content_hash": true,
+          "has_version": true
+        },
+        "positions": {
+          "applicable": true,
+          "block_count": 1,
+          "located": 1,
+          "tagged": 0,
+          "location_rate": 1.0
+        },
+        "quality": {
+          "table_count": 1,
+          "table_warnings": [],
+          "block_count": 1,
+          "located_block_count": 1,
+          "location_rate": 1.0
+        },
+        "resource": {
+          "parse_seconds": 5.121,
+          "peak_rss_mib": 993.1
+        },
+        "wall_seconds": 5.123,
+        "tokenizer_mode": "infinity"
+      },
+      "scanned.pdf": {
+        "http_status": 200,
+        "kind": "pdf",
+        "contract": {
+          "ok": true,
+          "missing_fields": [],
+          "has_blocks": true,
+          "has_content_hash": true,
+          "has_version": true
+        },
+        "positions": {
+          "applicable": true,
+          "block_count": 7,
+          "located": 7,
+          "tagged": 7,
+          "location_rate": 1.0
+        },
+        "quality": {
+          "table_count": 0,
+          "table_warnings": [],
+          "block_count": 7,
+          "located_block_count": 7,
+          "location_rate": 1.0
+        },
+        "resource": {
+          "parse_seconds": 1.998,
+          "peak_rss_mib": 1111.7
+        },
+        "wall_seconds": 2.011,
+        "tokenizer_mode": "infinity"
+      }
+    },
+    "checks": {
+      "idempotency": {
+        "same_content_hash": true,
+        "same_block_count": true,
+        "same_layout_sequence": true,
+        "note": "DeepDOC determinism verified LIVE; tenant+hash+version registry dedup is service-layer, SIMULATED."
+      },
+      "no_half_artifact": {
+        "clean_failure": true,
+        "http_status": 500,
+        "note": "malformed PDF rejected with no artifact (expected)"
+      },
+      "lifecycle_simulated": {
+        "states": [
+          "QUEUED",
+          "RUNNING",
+          "COMPLETED",
+          "FAILED",
+          "CANCELED"
+        ],
+        "note": "parserTaskId lifecycle is owned by the Parser Service + PostgreSQL (ADR-0014), not by DeepDOC. The throwaway wrapper parses synchronously, so lifecycle/cancel/crash-recovery are SIMULATED here and MUST be re-verified at Parser-Service integration test time. DeepDOC itself is proven side-effect-free: a failed parse returns HTTP 500 with no artifact, i.e. no half-Artifact is emitted (verified LIVE via the malformed-input probe below)."
+      }
+    },
+    "health": {
+      "status": "ok",
+      "parser_version": "ragflow-deepdoc@618c4599/v0.27.0",
+      "tokenizer_mode": "infinity",
+      "models": {
+        "layout.onnx": true,
+        "tsr.onnx": true,
+        "det.onnx": true,
+        "rec.onnx": true,
+        "updown_concat_xgb.model": true
+      },
+      "peak_rss_mib": 299.4
+    }
+  },
+  "failures": [],
+  "decisions_required": [],
+  "recommendation": "PASS"
+}

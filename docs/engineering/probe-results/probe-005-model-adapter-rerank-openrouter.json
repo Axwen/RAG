@@ -1,0 +1,225 @@
+{
+  "probe_id": "PROBE-005",
+  "stage": "C-rerank",
+  "status": "PASS_WITH_ADJUSTMENT",
+  "executed_at": "2026-08-26T03:37:41Z",
+  "provider": "openrouter",
+  "model": "qwen/qwen3-reranker-8b",
+  "endpoint": "https://openrouter.ai/api/v1/rerank",
+  "measurements": {
+    "stage": "C-rerank",
+    "provider": "openrouter",
+    "model": "qwen/qwen3-reranker-8b",
+    "endpoint": "https://openrouter.ai/api/v1/rerank",
+    "checks": {
+      "contract": {
+        "http": 200,
+        "seconds": 0.884,
+        "sent_documents": 8,
+        "top_n": 5,
+        "results": 5,
+        "has_index": true,
+        "has_score": true,
+        "echoes_document": true,
+        "scores_descending": true,
+        "indices_in_range": true,
+        "model_echo": "accounts/fireworks/models/qwen3-reranker-8b",
+        "upstream_provider": "Fireworks",
+        "response_id": "gen-rerank-1787715389-khaIVayLv2sHLLV3spA8",
+        "request_id": null,
+        "usage": {
+          "total_tokens": 813,
+          "cost": 0.0001626
+        },
+        "error": null
+      },
+      "ranking_quality": {
+        "cases": [
+          {
+            "query": "订单发货后多久能收到快递",
+            "http": 200,
+            "seconds": 1.23,
+            "candidates": 9,
+            "gold_index": 8,
+            "top1_index": 8,
+            "gold_is_top1": true,
+            "gold_score": 0.9991958737373352,
+            "best_distractor_score": 0.562176525592804,
+            "margin": 0.437,
+            "usage": {
+              "total_tokens": 913,
+              "cost": 0.0001826
+            }
+          },
+          {
+            "query": "怎么申请开发票",
+            "http": 200,
+            "seconds": 0.895,
+            "candidates": 9,
+            "gold_index": 8,
+            "top1_index": 8,
+            "gold_is_top1": true,
+            "gold_score": 0.9944451451301575,
+            "best_distractor_score": 0.00035419364576227963,
+            "margin": 0.9941,
+            "usage": {
+              "total_tokens": 893,
+              "cost": 0.0001786
+            }
+          },
+          {
+            "query": "密码输错太多次账号被锁了怎么办",
+            "http": 200,
+            "seconds": 0.873,
+            "candidates": 9,
+            "gold_index": 8,
+            "top1_index": 8,
+            "gold_is_top1": true,
+            "gold_score": 0.9937100410461426,
+            "best_distractor_score": 0.013222822919487953,
+            "margin": 0.9805,
+            "usage": {
+              "total_tokens": 951,
+              "cost": 0.0001902
+            }
+          }
+        ],
+        "queries": 3,
+        "http_ok": 3,
+        "gold_top1_count": 3,
+        "gold_top1_rate": 1.0
+      },
+      "candidate_scale": {
+        "curve": [
+          {
+            "candidates": 8,
+            "http": 200,
+            "seconds": 0.892,
+            "results": 5,
+            "top1_index": 0,
+            "gold_is_top1": true,
+            "usage": {
+              "total_tokens": 862,
+              "cost": 0.0001724
+            },
+            "error": null
+          },
+          {
+            "candidates": 64,
+            "http": 200,
+            "seconds": 0.948,
+            "results": 5,
+            "top1_index": 0,
+            "gold_is_top1": true,
+            "usage": {
+              "total_tokens": 6889,
+              "cost": 0.0013778
+            },
+            "error": null
+          },
+          {
+            "candidates": 256,
+            "http": 200,
+            "seconds": 1.452,
+            "results": 5,
+            "top1_index": 0,
+            "gold_is_top1": true,
+            "usage": {
+              "total_tokens": 27553,
+              "cost": 0.0055106
+            },
+            "error": null
+          },
+          {
+            "candidates": 1024,
+            "http": 200,
+            "seconds": 3.493,
+            "results": 5,
+            "top1_index": 0,
+            "gold_is_top1": true,
+            "usage": {
+              "total_tokens": 110209,
+              "cost": 0.0220418
+            },
+            "error": null
+          }
+        ],
+        "frozen_cap": 1024
+      },
+      "options": {
+        "top_n_requested": 3,
+        "top_n_http": 200,
+        "top_n_returned": 3,
+        "top_n_honoured": true,
+        "top_n_seconds": 1.229,
+        "no_documents_http": 200,
+        "no_documents_seconds": 0.887,
+        "documents_suppressed": false,
+        "no_documents_results": 3
+      },
+      "long_document": {
+        "http": 200,
+        "seconds": 1.203,
+        "sent_chars": 6042,
+        "results": 3,
+        "long_doc_is_top1": true,
+        "echoed_chars": 6042,
+        "echo_truncated": false,
+        "usage": {
+          "total_tokens": 4210,
+          "cost": 0.000842
+        },
+        "error": null
+      },
+      "error_mapping": {
+        "bad_key_status": 401,
+        "bad_key_is_401": true,
+        "unknown_model_status": 400,
+        "unknown_model_is_4xx": true,
+        "unknown_model_error": "{'error': {'message': 'Model qwen/definitely-not-a-model-xyz does not exist', 'code': 400}}",
+        "empty_documents_status": 400,
+        "empty_documents_error": "{'error': {'message': '[\\n  {\\n    \"origin\": \"array\",\\n    \"code\": \"too_small\",\\n    \"minimum\": 1,\\n    \"inclusive\": true,\\n    \"path\": [\\n      \"documents\"\\n  ",
+        "oversize_candidates": 2048,
+        "oversize_status": 200,
+        "oversize_seconds": 6.62,
+        "oversize_outcome": "accepted",
+        "oversize_retry_after": null,
+        "oversize_rejected": false,
+        "oversize_results": 5,
+        "oversize_usage": {
+          "total_tokens": 220417,
+          "cost": 0.0440834
+        }
+      }
+    },
+    "simulated": {
+      "data_class_gate": "ADR-0025 的 UNKNOWN/敏感等级准入必须在 ModelAdapter 层阻断，rerank 路径与 Chat/Embedding 同等适用；无业务代码，随实现复验。",
+      "budget_ledger": "ADR-0029 预扣/lease/结算/回收为服务侧协议；本探针只提供真实 usage（total_tokens + cost）作为结算口径输入。",
+      "retrieval_integration": "融合候选构造、Top5 截断与 ACL 权威复核属 PROBE-003/T6 范围，本 stage 只测 rerank 端点本身。"
+    },
+    "rate_limit_events": [
+      {
+        "attempt": 1,
+        "documents": 2048,
+        "retry_after": null,
+        "seconds": 4.903
+      }
+    ],
+    "cost": {
+      "measured_total_tokens_partial": 373710,
+      "measured_usd_partial": 0.074742,
+      "usd_to_cny_assumed": 7.2,
+      "estimated_cny_partial": 0.5381,
+      "note": "只统计带 usage 的校验调用；汇率为假设值，不是供应商结算汇率。"
+    }
+  },
+  "failures": [],
+  "decisions_required": [
+    "1024 候选单次 rerank 实测 3.493s：必须作为检索链路独立计时项，且 Adapter 需按该延迟设置超时与降级（截断候选数而非放弃 rerank）。",
+    "满额 1024 候选 rerank 单次成本 ¥0.1587（实测 usage.cost $0.0220418，汇率假设 7.2）：仅 rerank 一项就把 ADR-0029 每日 16 元压到约 100 次问答/日；对比 8 候选仅 ¥0.0012/次、0.892s。PROBE-003 冻结的 1024 是**融合候选**上限，不等于必须全量 rerank：需决策 rerank 输入是否截断到更小的 N（成本与延迟同时线性下降），该 N 应写入 ADR-0017 Adapter 约束与 ADR-0029 成本模型。",
+    "2048 条候选未被供应商拒绝（HTTP 200，耗时 6.62s）：与 Embedding 腿同一结论——候选上限保护必须做在 ModelAdapter 侧。",
+    "运行中出现 1 次 HTTP 429 限流（被限流调用的候选数 [2048]，retry-after 头=None，退避重试后成功）：大候选 rerank 会触发限流，且供应商未给出 retry-after 头。检索链路必须把 429 视为常规分支——按「退避重试 + 截断候选数」降级，不得让一次限流打穿问答请求；本探针对所有调用做 429 退避重试，否则限流会被误记为供应商契约缺陷（2026-08-26 03:34Z 那次运行未加退避，top_n 与 return_documents 两项检查被紧随 1024 大调用后的 429 污染，结论一度失真）。",
+    "`return_documents=false` 未生效（响应仍回显全文）：大候选集下响应体积与日志脱敏风险由 Adapter 侧承担，不得把回显正文写入日志。"
+  ],
+  "recommendation": "PASS_WITH_ADJUSTMENT"
+}

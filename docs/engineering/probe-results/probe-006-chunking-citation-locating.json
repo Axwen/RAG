@@ -1,0 +1,790 @@
+{
+  "probe_id": "PROBE-006",
+  "status": "PASS_WITH_ADJUSTMENT",
+  "executed_at": "2026-08-26T11:17:20Z",
+  "resource_context": {
+    "source": "PROBE-000",
+    "docker_engine_visible_memory_gib": 23.47,
+    "interpretation": "本轮结果不外推为完整 24 GiB profile 的容量证明"
+  },
+  "environment_fingerprint": "sha256:d6a4a28fa1a06b873a1e15dbf712ac3b8cd7c2108d998f372dafe8a2a1a67fcd",
+  "input_fingerprint": "sha256:54b61077ec35fd732e3a06fe50324c78b6231758a1dc0e75ade1b63962bb4138",
+  "fingerprint_basis": "2026-08-27 根据已持久化 ParseArtifact、黄金题、候选 Manifest 与原报告记录的环境字段回填；原始运行未记录 Python 版本",
+  "versions": {
+    "python": "not_recorded",
+    "parser": [
+      "ragflow-deepdoc@618c4599/v0.27.0"
+    ],
+    "tokenizer_mode": [
+      "infinity"
+    ],
+    "opensearch": "2.19.1",
+    "embedding_model": "qwen/qwen3-embedding-8b"
+  },
+  "environment": {
+    "opensearch": "http://127.0.0.1:19200",
+    "embedding_base": "https://openrouter.ai/api/v1",
+    "embedding_model": "qwen/qwen3-embedding-8b",
+    "embedding_dimensions": 1024
+  },
+  "inputs": {
+    "artifact_dir": "docs/engineering/probe-results/probe-002-artifacts",
+    "artifact_count": 5,
+    "golden_path": "scripts/probes/fixtures/chunking/probe-006-golden-subset.json",
+    "golden_count": 6,
+    "candidate_count": 4
+  },
+  "measurements": {
+    "candidate_count": 4,
+    "eligible_count": 1,
+    "selected_candidate": "wide-1024"
+  },
+  "candidates": [
+    {
+      "name": "compact-256",
+      "manifest": {
+        "name": "compact-256",
+        "max_chars": 256,
+        "overlap_chars": 32,
+        "rows_per_chunk": 8,
+        "tolerance_factor": 3,
+        "parent_child": false
+      },
+      "chunking": {
+        "citation_locatable_rate": 1.0,
+        "chunk_count": 10,
+        "citation_chunks": 10,
+        "split_rates": {
+          "table": 0.5,
+          "code": 0.0,
+          "list": 0.0
+        },
+        "truncation_rate": 0.1667,
+        "deterministic": true
+      },
+      "retrieval": {
+        "recall_at_5": 0.6667,
+        "questions": 6,
+        "query_seconds": [
+          0.024,
+          0.0078,
+          0.0056,
+          0.0056,
+          0.0164,
+          0.0073
+        ],
+        "query_p95_seconds": 0.0221,
+        "rows": [
+          {
+            "id": "refund-status",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_505ed3482268619647551e85",
+              "chk_0616a902968e63d0d226df9b",
+              "chk_9e8cc0b86bf7372ed0858ad5",
+              "chk_ad4c660d2bd2a57aeed9e52d",
+              "chk_4aeb7b1a5a2b6d1ff1d3325a"
+            ],
+            "expected": {
+              "sample.md": [
+                4
+              ]
+            }
+          },
+          {
+            "id": "refund-days",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_505ed3482268619647551e85",
+              "chk_ad4c660d2bd2a57aeed9e52d",
+              "chk_0616a902968e63d0d226df9b",
+              "chk_9e8cc0b86bf7372ed0858ad5",
+              "chk_c67e48224441f95502db915c"
+            ],
+            "expected": {
+              "sample.md": [
+                4
+              ]
+            }
+          },
+          {
+            "id": "shipping-refund",
+            "matched": false,
+            "returned_chunk_ids": [
+              "chk_505ed3482268619647551e85",
+              "chk_0616a902968e63d0d226df9b",
+              "chk_ad4c660d2bd2a57aeed9e52d",
+              "chk_4aeb7b1a5a2b6d1ff1d3325a",
+              "chk_9e8cc0b86bf7372ed0858ad5"
+            ],
+            "expected": {
+              "sample.md": [
+                6
+              ]
+            }
+          },
+          {
+            "id": "escalation",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_505ed3482268619647551e85",
+              "chk_0616a902968e63d0d226df9b",
+              "chk_4aeb7b1a5a2b6d1ff1d3325a",
+              "chk_ad4c660d2bd2a57aeed9e52d",
+              "chk_83514645de5398e0200daf7f"
+            ],
+            "expected": {
+              "sample.md": [
+                8
+              ]
+            }
+          },
+          {
+            "id": "manager-approval",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_0616a902968e63d0d226df9b",
+              "chk_505ed3482268619647551e85",
+              "chk_ad4c660d2bd2a57aeed9e52d",
+              "chk_4aeb7b1a5a2b6d1ff1d3325a",
+              "chk_83514645de5398e0200daf7f"
+            ],
+            "expected": {
+              "sample.md": [
+                8
+              ]
+            }
+          },
+          {
+            "id": "location-sentence",
+            "matched": false,
+            "returned_chunk_ids": [
+              "chk_a6b8cf9345326e7e5c0a1cbb",
+              "chk_b13ef480d8f2695436b7f6ca",
+              "chk_c67e48224441f95502db915c",
+              "chk_505ed3482268619647551e85",
+              "chk_ad4c660d2bd2a57aeed9e52d"
+            ],
+            "expected": {
+              "sample.md": [
+                10
+              ]
+            }
+          }
+        ],
+        "embedding": {
+          "usage": [
+            {
+              "prompt_tokens": 64,
+              "total_tokens": 64,
+              "cost": 6.4e-07,
+              "is_byok": false,
+              "cost_details": {
+                "upstream_inference_cost": 6.4e-07,
+                "upstream_inference_prompt_cost": 6.4e-07,
+                "upstream_inference_completions_cost": 0
+              }
+            }
+          ],
+          "batch_seconds": [
+            1.6021
+          ]
+        },
+        "embedding_write": {
+          "usage": [
+            {
+              "prompt_tokens": 1249,
+              "total_tokens": 1249,
+              "cost": 1.249e-05,
+              "is_byok": false,
+              "cost_details": {
+                "upstream_inference_cost": 1.249e-05,
+                "upstream_inference_prompt_cost": 1.249e-05,
+                "upstream_inference_completions_cost": 0
+              }
+            }
+          ],
+          "batch_seconds": [
+            1.9987
+          ]
+        }
+      },
+      "failures": [],
+      "index": {
+        "estimated_bytes": 22798,
+        "write_seconds": null,
+        "stored_bytes": null,
+        "request_bytes": 229326,
+        "seconds": 0.0185,
+        "items": 10
+      }
+    },
+    {
+      "name": "balanced-512",
+      "manifest": {
+        "name": "balanced-512",
+        "max_chars": 512,
+        "overlap_chars": 64,
+        "rows_per_chunk": 16,
+        "tolerance_factor": 3,
+        "parent_child": false
+      },
+      "chunking": {
+        "citation_locatable_rate": 1.0,
+        "chunk_count": 7,
+        "citation_chunks": 7,
+        "split_rates": {
+          "table": 0.5,
+          "code": 0.0,
+          "list": 0.0
+        },
+        "truncation_rate": 0.1667,
+        "deterministic": true
+      },
+      "retrieval": {
+        "recall_at_5": 0.6667,
+        "questions": 6,
+        "query_seconds": [
+          0.0093,
+          0.0075,
+          0.0073,
+          0.0069,
+          0.0096,
+          0.0079
+        ],
+        "query_p95_seconds": 0.0095,
+        "rows": [
+          {
+            "id": "refund-status",
+            "matched": false,
+            "returned_chunk_ids": [
+              "chk_0f8e82de75e5e60dc203e367",
+              "chk_9a9032e3322a3c2ea61d0597",
+              "chk_8b6700de7c1cccc630a19dcf",
+              "chk_718cc22fc76ffdf1cbebb1a9",
+              "chk_c1a7dfa7316730796b3490e6"
+            ],
+            "expected": {
+              "sample.md": [
+                4
+              ]
+            }
+          },
+          {
+            "id": "refund-days",
+            "matched": false,
+            "returned_chunk_ids": [
+              "chk_0f8e82de75e5e60dc203e367",
+              "chk_c1a7dfa7316730796b3490e6",
+              "chk_8b6700de7c1cccc630a19dcf",
+              "chk_9a9032e3322a3c2ea61d0597",
+              "chk_338977f7db5fb1bbbd63ebcc"
+            ],
+            "expected": {
+              "sample.md": [
+                4
+              ]
+            }
+          },
+          {
+            "id": "shipping-refund",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_9a9032e3322a3c2ea61d0597",
+              "chk_0f8e82de75e5e60dc203e367",
+              "chk_c1a7dfa7316730796b3490e6",
+              "chk_8b6700de7c1cccc630a19dcf",
+              "chk_338977f7db5fb1bbbd63ebcc"
+            ],
+            "expected": {
+              "sample.md": [
+                6
+              ]
+            }
+          },
+          {
+            "id": "escalation",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_9a9032e3322a3c2ea61d0597",
+              "chk_c1a7dfa7316730796b3490e6",
+              "chk_0f8e82de75e5e60dc203e367",
+              "chk_338977f7db5fb1bbbd63ebcc",
+              "chk_8b6700de7c1cccc630a19dcf"
+            ],
+            "expected": {
+              "sample.md": [
+                8
+              ]
+            }
+          },
+          {
+            "id": "manager-approval",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_9a9032e3322a3c2ea61d0597",
+              "chk_c1a7dfa7316730796b3490e6",
+              "chk_0f8e82de75e5e60dc203e367",
+              "chk_338977f7db5fb1bbbd63ebcc",
+              "chk_8b6700de7c1cccc630a19dcf"
+            ],
+            "expected": {
+              "sample.md": [
+                8
+              ]
+            }
+          },
+          {
+            "id": "location-sentence",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_338977f7db5fb1bbbd63ebcc",
+              "chk_9a9032e3322a3c2ea61d0597",
+              "chk_8b6700de7c1cccc630a19dcf",
+              "chk_c1a7dfa7316730796b3490e6",
+              "chk_3eca3112e2d22fef321ff5a6"
+            ],
+            "expected": {
+              "sample.md": [
+                10
+              ]
+            }
+          }
+        ],
+        "embedding": {
+          "usage": [
+            {
+              "prompt_tokens": 64,
+              "total_tokens": 64,
+              "cost": 6.4e-07,
+              "is_byok": false,
+              "cost_details": {
+                "upstream_inference_cost": 6.4e-07,
+                "upstream_inference_prompt_cost": 6.4e-07,
+                "upstream_inference_completions_cost": 0
+              }
+            }
+          ],
+          "batch_seconds": [
+            1.7207
+          ]
+        },
+        "embedding_write": {
+          "usage": [
+            {
+              "prompt_tokens": 1245,
+              "total_tokens": 1245,
+              "cost": 1.245e-05,
+              "is_byok": false,
+              "cost_details": {
+                "upstream_inference_cost": 1.245e-05,
+                "upstream_inference_prompt_cost": 1.245e-05,
+                "upstream_inference_completions_cost": 0
+              }
+            }
+          ],
+          "batch_seconds": [
+            11.3571
+          ]
+        }
+      },
+      "failures": [],
+      "index": {
+        "estimated_bytes": 21770,
+        "write_seconds": null,
+        "stored_bytes": null,
+        "request_bytes": 160521,
+        "seconds": 0.0121,
+        "items": 7
+      }
+    },
+    {
+      "name": "wide-1024",
+      "manifest": {
+        "name": "wide-1024",
+        "max_chars": 1024,
+        "overlap_chars": 128,
+        "rows_per_chunk": 32,
+        "tolerance_factor": 3,
+        "parent_child": false,
+        "tokenizer_mode": "infinity",
+        "embedding_dimensions": 1024,
+        "embedding_version": "qwen/qwen3-embedding-8b",
+        "index_schema_version": "opensearch-knn-lucene-hnsw-v1"
+      },
+      "chunking": {
+        "citation_locatable_rate": 1.0,
+        "chunk_count": 5,
+        "citation_chunks": 5,
+        "split_rates": {
+          "table": 0.0,
+          "code": 0.0,
+          "list": 0.0
+        },
+        "truncation_rate": 0.0,
+        "deterministic": true
+      },
+      "retrieval": {
+        "recall_at_5": 1.0,
+        "questions": 6,
+        "query_seconds": [
+          0.009,
+          0.0076,
+          0.0062,
+          0.0088,
+          0.0061,
+          0.0123
+        ],
+        "query_p95_seconds": 0.0115,
+        "rows": [
+          {
+            "id": "refund-status",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_ac3ba11b0a463526882c4dba",
+              "chk_9df14ce540bf11ea61b66317",
+              "chk_3648081cdc1787e374d255a2",
+              "chk_512824905e19b1723eb67e16",
+              "chk_3e14b9c41c5f01a2652eddbd"
+            ],
+            "expected": {
+              "sample.md": [
+                4
+              ]
+            }
+          },
+          {
+            "id": "refund-days",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_ac3ba11b0a463526882c4dba",
+              "chk_3648081cdc1787e374d255a2",
+              "chk_9df14ce540bf11ea61b66317",
+              "chk_512824905e19b1723eb67e16",
+              "chk_3e14b9c41c5f01a2652eddbd"
+            ],
+            "expected": {
+              "sample.md": [
+                4
+              ]
+            }
+          },
+          {
+            "id": "shipping-refund",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_ac3ba11b0a463526882c4dba",
+              "chk_3648081cdc1787e374d255a2",
+              "chk_512824905e19b1723eb67e16",
+              "chk_9df14ce540bf11ea61b66317",
+              "chk_3e14b9c41c5f01a2652eddbd"
+            ],
+            "expected": {
+              "sample.md": [
+                6
+              ]
+            }
+          },
+          {
+            "id": "escalation",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_ac3ba11b0a463526882c4dba",
+              "chk_512824905e19b1723eb67e16",
+              "chk_3e14b9c41c5f01a2652eddbd",
+              "chk_3648081cdc1787e374d255a2",
+              "chk_9df14ce540bf11ea61b66317"
+            ],
+            "expected": {
+              "sample.md": [
+                8
+              ]
+            }
+          },
+          {
+            "id": "manager-approval",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_ac3ba11b0a463526882c4dba",
+              "chk_512824905e19b1723eb67e16",
+              "chk_3648081cdc1787e374d255a2",
+              "chk_9df14ce540bf11ea61b66317",
+              "chk_3e14b9c41c5f01a2652eddbd"
+            ],
+            "expected": {
+              "sample.md": [
+                8
+              ]
+            }
+          },
+          {
+            "id": "location-sentence",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_3e14b9c41c5f01a2652eddbd",
+              "chk_512824905e19b1723eb67e16",
+              "chk_3648081cdc1787e374d255a2",
+              "chk_ac3ba11b0a463526882c4dba",
+              "chk_9df14ce540bf11ea61b66317"
+            ],
+            "expected": {
+              "sample.md": [
+                10
+              ]
+            }
+          }
+        ],
+        "embedding": {
+          "usage": [
+            {
+              "prompt_tokens": 64,
+              "total_tokens": 64,
+              "cost": 6.4e-07,
+              "is_byok": false,
+              "cost_details": {
+                "upstream_inference_cost": 6.4e-07,
+                "upstream_inference_prompt_cost": 6.4e-07,
+                "upstream_inference_completions_cost": 0
+              }
+            }
+          ],
+          "batch_seconds": [
+            4.1637
+          ]
+        },
+        "embedding_write": {
+          "usage": [
+            {
+              "prompt_tokens": 1244,
+              "total_tokens": 1244,
+              "cost": 1.244e-05,
+              "is_byok": false,
+              "cost_details": {
+                "upstream_inference_cost": 1.244e-05,
+                "upstream_inference_prompt_cost": 1.244e-05,
+                "upstream_inference_completions_cost": 0
+              }
+            }
+          ],
+          "batch_seconds": [
+            1.6884
+          ]
+        }
+      },
+      "failures": [],
+      "index": {
+        "estimated_bytes": 21131,
+        "write_seconds": null,
+        "stored_bytes": null,
+        "request_bytes": 114678,
+        "seconds": 0.0135,
+        "items": 5
+      }
+    },
+    {
+      "name": "balanced-512-parent-child",
+      "manifest": {
+        "name": "balanced-512-parent-child",
+        "max_chars": 512,
+        "overlap_chars": 64,
+        "rows_per_chunk": 16,
+        "tolerance_factor": 3,
+        "parent_child": true
+      },
+      "chunking": {
+        "citation_locatable_rate": 1.0,
+        "chunk_count": 13,
+        "citation_chunks": 13,
+        "split_rates": {
+          "table": 1.0,
+          "code": 0.0,
+          "list": 0.0
+        },
+        "truncation_rate": 0.3333,
+        "deterministic": true
+      },
+      "retrieval": {
+        "recall_at_5": 0.6667,
+        "questions": 6,
+        "query_seconds": [
+          0.0078,
+          0.0072,
+          0.0066,
+          0.0294,
+          0.0086,
+          0.0062
+        ],
+        "query_p95_seconds": 0.0242,
+        "rows": [
+          {
+            "id": "refund-status",
+            "matched": false,
+            "returned_chunk_ids": [
+              "chk_9d353779b6b8933616c8b5c8",
+              "chk_9d353779b6b8933616c8b5c8",
+              "chk_9d12a52bc6c4d8176ba6339f",
+              "chk_3f5c56292e28a35919857aaf",
+              "chk_9d12a52bc6c4d8176ba6339f"
+            ],
+            "expected": {
+              "sample.md": [
+                4
+              ]
+            }
+          },
+          {
+            "id": "refund-days",
+            "matched": false,
+            "returned_chunk_ids": [
+              "chk_9d353779b6b8933616c8b5c8",
+              "chk_9d353779b6b8933616c8b5c8",
+              "chk_aa1130c0efe0cc34c8e0923d",
+              "chk_aa1130c0efe0cc34c8e0923d",
+              "chk_f6caa90939a815470b56dc45"
+            ],
+            "expected": {
+              "sample.md": [
+                4
+              ]
+            }
+          },
+          {
+            "id": "shipping-refund",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_9d12a52bc6c4d8176ba6339f",
+              "chk_3f5c56292e28a35919857aaf",
+              "chk_9d12a52bc6c4d8176ba6339f",
+              "chk_aa1130c0efe0cc34c8e0923d",
+              "chk_aa1130c0efe0cc34c8e0923d"
+            ],
+            "expected": {
+              "sample.md": [
+                6
+              ]
+            }
+          },
+          {
+            "id": "escalation",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_9d12a52bc6c4d8176ba6339f",
+              "chk_3f5c56292e28a35919857aaf",
+              "chk_9d12a52bc6c4d8176ba6339f",
+              "chk_aa1130c0efe0cc34c8e0923d",
+              "chk_aa1130c0efe0cc34c8e0923d"
+            ],
+            "expected": {
+              "sample.md": [
+                8
+              ]
+            }
+          },
+          {
+            "id": "manager-approval",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_9d12a52bc6c4d8176ba6339f",
+              "chk_3f5c56292e28a35919857aaf",
+              "chk_9d12a52bc6c4d8176ba6339f",
+              "chk_aa1130c0efe0cc34c8e0923d",
+              "chk_aa1130c0efe0cc34c8e0923d"
+            ],
+            "expected": {
+              "sample.md": [
+                8
+              ]
+            }
+          },
+          {
+            "id": "location-sentence",
+            "matched": true,
+            "returned_chunk_ids": [
+              "chk_94347a3f1d1a3d7f850c4002",
+              "chk_94347a3f1d1a3d7f850c4002",
+              "chk_f6caa90939a815470b56dc45",
+              "chk_f6caa90939a815470b56dc45",
+              "chk_9d12a52bc6c4d8176ba6339f"
+            ],
+            "expected": {
+              "sample.md": [
+                10
+              ]
+            }
+          }
+        ],
+        "embedding": {
+          "usage": [
+            {
+              "prompt_tokens": 64,
+              "total_tokens": 64,
+              "cost": 6.4e-07,
+              "is_byok": false,
+              "cost_details": {
+                "upstream_inference_cost": 6.4e-07,
+                "upstream_inference_prompt_cost": 6.4e-07,
+                "upstream_inference_completions_cost": 0
+              }
+            }
+          ],
+          "batch_seconds": [
+            1.7243
+          ]
+        },
+        "embedding_write": {
+          "usage": [
+            {
+              "prompt_tokens": 1245,
+              "total_tokens": 1245,
+              "cost": 1.245e-05,
+              "is_byok": false,
+              "cost_details": {
+                "upstream_inference_cost": 1.245e-05,
+                "upstream_inference_prompt_cost": 1.245e-05,
+                "upstream_inference_completions_cost": 0
+              }
+            }
+          ],
+          "batch_seconds": [
+            1.8038
+          ]
+        }
+      },
+      "failures": [],
+      "index": {
+        "estimated_bytes": 43281,
+        "write_seconds": null,
+        "stored_bytes": null,
+        "request_bytes": 160849,
+        "seconds": 0.0332,
+        "items": 7
+      }
+    }
+  ],
+  "frozen_chunking_manifest": {
+    "name": "wide-1024",
+    "max_chars": 1024,
+    "overlap_chars": 128,
+    "rows_per_chunk": 32,
+    "tolerance_factor": 3,
+    "parent_child": false,
+    "tokenizer_mode": "infinity",
+    "embedding_dimensions": 1024,
+    "embedding_version": "qwen/qwen3-embedding-8b",
+    "index_schema_version": "opensearch-knn-lucene-hnsw-v1"
+  },
+  "ingestion_manifest_fields": [
+    "parserRef",
+    "chunkerRef",
+    "embeddingRef",
+    "indexSchemaRef",
+    "contentHash"
+  ],
+  "failures": [],
+  "decisions_taken": [
+    "冻结候选：wide-1024",
+    "parent-child 未优于叶块检索，阶段 1 不启用父子分块"
+  ],
+  "decisions_required": [],
+  "recommendation": "采用 wide-1024，阶段 1 不启用 parent-child"
+}

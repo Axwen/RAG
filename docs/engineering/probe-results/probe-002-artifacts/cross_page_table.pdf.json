@@ -1,0 +1,44 @@
+{
+  "kind": "pdf",
+  "filename": "cross_page_table.pdf",
+  "content_hash": "84b3ef68826e8ce5c18c1f621fd734d196fb6fb70de80a30ed97cd4cb8007cc6",
+  "parser_version": "ragflow-deepdoc@618c4599/v0.27.0",
+  "tokenizer_mode": "infinity",
+  "normalized_content": "<table><caption>跨页表格样本</caption>\n<tr><td  >订单状态</td><td  >允许退款</td><td  >时效(工作日)</td><td  >备注</td></tr>\n<tr><td  >已下单未发货</td><td  >是</td><td  >1</td><td  >全额退款</td></tr>\n<tr><td  >已发货未签收</td><td  >是</td><td  >3</td><td  >扣除运费</td></tr>\n<tr><td  >已签收七日内</td><td  >是</td><td  >5</td><td  >需商品完好</td></tr>\n<tr><td  >已签收超七日</td><td  >否</td><td></td><td  >转售后工单</td></tr>\n<tr><td  >预售订单</td><td  >是</td><td  >7</td><td  >定金规则</td></tr>\n<tr><td  >跨境订单</td><td  >是</td><td  >10</td><td  >含清关</td></tr>\n<tr><td  >虚拟商品</td><td  >否</td><td></td><td  >不支持退款 按主品判定</td></tr>\n<tr><td  >组合套餐</td><td  >是</td><td  >5</td><td></td></tr>\n</table>",
+  "blocks": [
+    {
+      "layout_type": "table",
+      "text": "<table><caption>跨页表格样本</caption>\n<tr><td  >订单状态</td><td  >允许退款</td><td  >时效(工作日)</td><td  >备注</td></tr>\n<tr><td  >已下单未发货</td><td  >是</td><td  >1</td><td  >全额退款</td></tr>\n<tr><td  >已发货未签收</td><td  >是</td><td  >3</td><td  >扣除运费</td></tr>\n<tr><td  >已签收七日内</td><td  >是</td><td  >5</td><td  >需商品完好</td></tr>\n<tr><td  >已签收超七日</td><td  >否</td><td></td><td  >转售后工单</td></tr>\n<tr><td  >预售订单</td><td  >是</td><td  >7</td><td  >定金规则</td></tr>\n<tr><td  >跨境订单</td><td  >是</td><td  >10</td><td  >含清关</td></tr>\n<tr><td  >虚拟商品</td><td  >否</td><td></td><td  >不支持退款 按主品判定</td></tr>\n<tr><td  >组合套餐</td><td  >是</td><td  >5</td><td></td></tr>\n</table>",
+      "page_number": 1,
+      "bbox": {
+        "x0": 51.73894755045573,
+        "x1": 448.4273681640625,
+        "top": 68.89540608723958,
+        "bottom": 254.28485107421875
+      },
+      "position_tag": null,
+      "positions": [
+        [
+          1,
+          51,
+          448,
+          68,
+          254
+        ]
+      ],
+      "has_image": true
+    }
+  ],
+  "quality": {
+    "table_count": 1,
+    "table_warnings": [],
+    "block_count": 1,
+    "located_block_count": 1,
+    "location_rate": 1.0
+  },
+  "resource": {
+    "parse_seconds": 5.121,
+    "peak_rss_mib": 993.1
+  },
+  "_wall_seconds": 5.123
+}

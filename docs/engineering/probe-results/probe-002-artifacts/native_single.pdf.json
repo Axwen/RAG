@@ -1,0 +1,176 @@
+{
+  "kind": "pdf",
+  "filename": "native_single.pdf",
+  "content_hash": "b4a2abd434945d3849a20854e8c7d829ae556ccb7ae1a23a09b5cd5c68ac9d6d",
+  "parser_version": "ragflow-deepdoc@618c4599/v0.27.0",
+  "tokenizer_mode": "infinity",
+  "normalized_content": "退款政策概述（合成样本）\n\n客服在处理退款时先确认订单状态，再按时效表判断处理路径。所有金额单位为元。\n\n已下单未发货可全额退款，含运费，时效一个工作日。\n\n已发货未签收可退款但扣除运费，时效三个工作日。\n\n已签收七日内需商品完好方可退款，时效五个工作日。\n\n涉及金额超过五百元的争议升级到主管审批，一线客服无法判定时升级到二线。\n\n定位测试句：本句包含数字12345 与英文token DEEPDOC。",
+  "blocks": [
+    {
+      "layout_type": "title",
+      "text": "退款政策概述（合成样本）",
+      "page_number": 1,
+      "bbox": {
+        "x0": 70.0,
+        "x1": 252.3333282470703,
+        "top": 72.0,
+        "bottom": 86.66666412353516
+      },
+      "position_tag": "@@1\t70.0\t252.3\t72.0\t86.7##",
+      "positions": [
+        [
+          1,
+          70.0,
+          252.3,
+          72.0,
+          86.7
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "客服在处理退款时先确认订单状态，再按时效表判断处理路径。所有金额单位为元。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 71.66666412353516,
+        "x1": 468.6666564941406,
+        "top": 118.33333587646484,
+        "bottom": 130.6666717529297
+      },
+      "position_tag": "@@1\t71.7\t468.7\t118.3\t130.7##",
+      "positions": [
+        [
+          1,
+          71.7,
+          468.7,
+          118.3,
+          130.7
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "已下单未发货可全额退款，含运费，时效一个工作日。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 71.0,
+        "x1": 327.0,
+        "top": 144.6666717529297,
+        "bottom": 157.0
+      },
+      "position_tag": "@@1\t71.0\t327.0\t144.7\t157.0##",
+      "positions": [
+        [
+          1,
+          71.0,
+          327.0,
+          144.7,
+          157.0
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "已发货未签收可退款但扣除运费，时效三个工作日。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 71.66666412353516,
+        "x1": 316.3333435058594,
+        "top": 170.0,
+        "bottom": 182.3333282470703
+      },
+      "position_tag": "@@1\t71.7\t316.3\t170.0\t182.3##",
+      "positions": [
+        [
+          1,
+          71.7,
+          316.3,
+          170.0,
+          182.3
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "已签收七日内需商品完好方可退款，时效五个工作日。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 71.66666412353516,
+        "x1": 327.0,
+        "top": 195.6666717529297,
+        "bottom": 208.0
+      },
+      "position_tag": "@@1\t71.7\t327.0\t195.7\t208.0##",
+      "positions": [
+        [
+          1,
+          71.7,
+          327.0,
+          195.7,
+          208.0
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "涉及金额超过五百元的争议升级到主管审批，一线客服无法判定时升级到二线。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 71.0,
+        "x1": 447.3333435058594,
+        "top": 221.0,
+        "bottom": 233.3333282470703
+      },
+      "position_tag": "@@1\t71.0\t447.3\t221.0\t233.3##",
+      "positions": [
+        [
+          1,
+          71.0,
+          447.3,
+          221.0,
+          233.3
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "定位测试句：本句包含数字12345 与英文token DEEPDOC。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 71.66666412353516,
+        "x1": 348.0,
+        "top": 257.0,
+        "bottom": 269.3333435058594
+      },
+      "position_tag": "@@1\t71.7\t348.0\t257.0\t269.3##",
+      "positions": [
+        [
+          1,
+          71.7,
+          348.0,
+          257.0,
+          269.3
+        ]
+      ],
+      "has_image": true
+    }
+  ],
+  "quality": {
+    "table_count": 0,
+    "table_warnings": [],
+    "block_count": 7,
+    "located_block_count": 7,
+    "location_rate": 1.0
+  },
+  "resource": {
+    "parse_seconds": 2.732,
+    "peak_rss_mib": 874.3
+  },
+  "_wall_seconds": 2.734
+}

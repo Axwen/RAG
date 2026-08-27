@@ -1,0 +1,428 @@
+{
+  "probe_id": "PROBE-005",
+  "stage": "B-chat",
+  "api": "chat.completions",
+  "status": "PASS_WITH_ADJUSTMENT",
+  "executed_at": "2026-08-26T07:35:21Z",
+  "provider": "stepfun",
+  "model": "step-3.5-flash-2603",
+  "base": "https://api.stepfun.com/v1",
+  "user_agent": "(default)",
+  "measurements": {
+    "stage": "B-chat",
+    "api": "chat.completions",
+    "provider": "stepfun",
+    "model": "step-3.5-flash-2603",
+    "base": "https://api.stepfun.com/v1",
+    "user_agent": "(default)",
+    "checks": {
+      "contract": {
+        "http": 200,
+        "seconds": 2.111,
+        "transient_timeouts": 0,
+        "response_id": true,
+        "model_echo": "step-3.5-flash-2603",
+        "model_echo_matches": true,
+        "finish_reason": "stop",
+        "content_chars": 53,
+        "reasoning_chars": 292,
+        "reasoning_field_present": true,
+        "max_tokens_requested": 1200,
+        "truncated": false,
+        "usage_present": true,
+        "usage": {
+          "prompt_tokens": 165,
+          "completion_tokens": 238,
+          "total_tokens": 403,
+          "reasoning_tokens": 0,
+          "cached_tokens": 0
+        },
+        "request_id_header": null,
+        "cites_snippet_ids": true
+      },
+      "stream": {
+        "full": {
+          "cancel_after": null,
+          "deltas": 11,
+          "ttft_seconds": 1.855,
+          "ttft_any_seconds": 0.394,
+          "reasoning_deltas": 79,
+          "reasoning_chars": 288,
+          "total_seconds": 1.981,
+          "cancelled": false,
+          "usage_in_stream": {
+            "prompt_tokens": 165,
+            "completion_tokens": 237,
+            "total_tokens": 402,
+            "reasoning_tokens": 0,
+            "cached_tokens": 64
+          },
+          "finish_reason": "stop",
+          "text_chars": 58,
+          "http": 200,
+          "error": null
+        },
+        "cancelled": {
+          "cancel_after": 5,
+          "deltas": 5,
+          "ttft_seconds": 1.727,
+          "ttft_any_seconds": 0.301,
+          "reasoning_deltas": 79,
+          "reasoning_chars": 297,
+          "total_seconds": 1.766,
+          "cancelled": true,
+          "usage_in_stream": {
+            "prompt_tokens": 165,
+            "completion_tokens": 216,
+            "total_tokens": 381,
+            "reasoning_tokens": 0,
+            "cached_tokens": 0
+          },
+          "finish_reason": null,
+          "text_chars": 21,
+          "http": 200,
+          "error": null
+        },
+        "cancel_worked": true,
+        "usage_on_stream": true,
+        "settle_on_cancel_possible": true
+      },
+      "structured_output": {
+        "json_schema": {
+          "http": 200,
+          "seconds": 2.522,
+          "transient_timeouts": 0,
+          "attempt_http_codes": [
+            200
+          ],
+          "max_tokens_requested": 1200,
+          "finish_reason": "stop",
+          "truncated": false,
+          "content_chars": 143,
+          "reasoning_chars": 288,
+          "parses_as_json": true,
+          "schema_valid": true
+        },
+        "json_object": {
+          "http": 200,
+          "seconds": 4.112,
+          "transient_timeouts": 0,
+          "attempt_http_codes": [
+            200
+          ],
+          "max_tokens_requested": 1200,
+          "finish_reason": "stop",
+          "truncated": false,
+          "content_chars": 130,
+          "reasoning_chars": 712,
+          "parses_as_json": true,
+          "schema_valid": true
+        }
+      },
+      "latency_profile": {
+        "samples": [
+          {
+            "http": 200,
+            "total_seconds": 3.061,
+            "ttft_seconds": 2.938,
+            "ttft_any_seconds": 0.695,
+            "reasoning_chars": 354,
+            "text_chars": 53,
+            "completion_tokens": 280,
+            "error": null
+          },
+          {
+            "http": 200,
+            "total_seconds": 1.952,
+            "ttft_seconds": 1.719,
+            "ttft_any_seconds": 0.291,
+            "reasoning_chars": 297,
+            "text_chars": 62,
+            "completion_tokens": 244,
+            "error": null
+          },
+          {
+            "http": 200,
+            "total_seconds": 2.554,
+            "ttft_seconds": 2.404,
+            "ttft_any_seconds": 0.6,
+            "reasoning_chars": 288,
+            "text_chars": 58,
+            "completion_tokens": 237,
+            "error": null
+          },
+          {
+            "http": 200,
+            "total_seconds": 2.703,
+            "ttft_seconds": 2.101,
+            "ttft_any_seconds": 0.323,
+            "reasoning_chars": 288,
+            "text_chars": 58,
+            "completion_tokens": 237,
+            "error": null
+          },
+          {
+            "http": 200,
+            "total_seconds": 2.665,
+            "ttft_seconds": 2.447,
+            "ttft_any_seconds": 0.31,
+            "reasoning_chars": 360,
+            "text_chars": 53,
+            "completion_tokens": 283,
+            "error": null
+          }
+        ],
+        "sample_count": 5,
+        "ok_count": 5,
+        "full_generation_seconds": {
+          "n": 5,
+          "min": 1.952,
+          "median": 2.665,
+          "max": 3.061
+        },
+        "visible_ttft_seconds": {
+          "n": 5,
+          "min": 1.719,
+          "median": 2.404,
+          "max": 2.938
+        },
+        "over_high_risk_budget_3_5s": 0,
+        "over_regular_budget_2_0s": 4,
+        "note": "同一 payload 的流式完整生成，n=5；ADR-0027 以 P95 表述，n 太小只能给区间与越界次数，不能自称 P95。"
+      },
+      "error_mapping": {
+        "bad_key_status": 401,
+        "bad_key_is_401": true,
+        "bad_key_body_head": "{\"error\": {\"message\": \"Incorrect API key provided\", \"type\": \"invalid_api_key\"}}",
+        "unknown_model_status": 404,
+        "unknown_model_rejected": true,
+        "timeout_mapped": true,
+        "timeout_error": "TimeoutError: The read operation timed out",
+        "timeout_seconds": 0.735
+      },
+      "reasoning_accounting": {
+        "efforts": {
+          "(unset)": {
+            "runs": [
+              {
+                "http": 200,
+                "seconds": 2.058,
+                "content_chars": 4,
+                "reasoning_chars": 359,
+                "completion_tokens": 194,
+                "reasoning_tokens_reported": 0,
+                "finish_reason": "stop"
+              },
+              {
+                "http": 200,
+                "seconds": 2.588,
+                "content_chars": 4,
+                "reasoning_chars": 359,
+                "completion_tokens": 194,
+                "reasoning_tokens_reported": 0,
+                "finish_reason": "stop"
+              },
+              {
+                "http": 200,
+                "seconds": 1.962,
+                "content_chars": 4,
+                "reasoning_chars": 291,
+                "completion_tokens": 158,
+                "reasoning_tokens_reported": 0,
+                "finish_reason": "stop"
+              }
+            ],
+            "ok_count": 3,
+            "reasoning_chars_min": 291,
+            "reasoning_chars_max": 359,
+            "reasoning_chars_median": 359,
+            "http_codes": [
+              200,
+              200,
+              200
+            ],
+            "reasoning_tokens_reported": [
+              0,
+              0,
+              0
+            ],
+            "finish_reasons": [
+              "stop",
+              "stop",
+              "stop"
+            ]
+          },
+          "low": {
+            "runs": [
+              {
+                "http": 200,
+                "seconds": 0.833,
+                "content_chars": 4,
+                "reasoning_chars": 45,
+                "completion_tokens": 29,
+                "reasoning_tokens_reported": 0,
+                "finish_reason": "stop"
+              },
+              {
+                "http": 200,
+                "seconds": 0.724,
+                "content_chars": 4,
+                "reasoning_chars": 45,
+                "completion_tokens": 29,
+                "reasoning_tokens_reported": 0,
+                "finish_reason": "stop"
+              },
+              {
+                "http": 200,
+                "seconds": 0.762,
+                "content_chars": 4,
+                "reasoning_chars": 48,
+                "completion_tokens": 32,
+                "reasoning_tokens_reported": 0,
+                "finish_reason": "stop"
+              }
+            ],
+            "ok_count": 3,
+            "reasoning_chars_min": 45,
+            "reasoning_chars_max": 48,
+            "reasoning_chars_median": 45,
+            "http_codes": [
+              200,
+              200,
+              200
+            ],
+            "reasoning_tokens_reported": [
+              0,
+              0,
+              0
+            ],
+            "finish_reasons": [
+              "stop",
+              "stop",
+              "stop"
+            ]
+          },
+          "high": {
+            "runs": [
+              {
+                "http": 200,
+                "seconds": 1.892,
+                "content_chars": 4,
+                "reasoning_chars": 295,
+                "completion_tokens": 160,
+                "reasoning_tokens_reported": 0,
+                "finish_reason": "stop"
+              },
+              {
+                "http": 200,
+                "seconds": 2.861,
+                "content_chars": 4,
+                "reasoning_chars": 355,
+                "completion_tokens": 195,
+                "reasoning_tokens_reported": 0,
+                "finish_reason": "stop"
+              },
+              {
+                "http": 200,
+                "seconds": 4.839,
+                "content_chars": 4,
+                "reasoning_chars": 588,
+                "completion_tokens": 302,
+                "reasoning_tokens_reported": 0,
+                "finish_reason": "stop"
+              }
+            ],
+            "ok_count": 3,
+            "reasoning_chars_min": 295,
+            "reasoning_chars_max": 588,
+            "reasoning_chars_median": 355,
+            "http_codes": [
+              200,
+              200,
+              200
+            ],
+            "reasoning_tokens_reported": [
+              0,
+              0,
+              0
+            ],
+            "finish_reasons": [
+              "stop",
+              "stop",
+              "stop"
+            ]
+          }
+        },
+        "samples_per_level": 3,
+        "reasoning_tokens_broken_out": false,
+        "reasoning_text_returned": true,
+        "reasoning_effort_accepted": true,
+        "reasoning_effort_effective": true,
+        "reasoning_char_range": {
+          "(unset)": [
+            291,
+            359
+          ],
+          "low": [
+            45,
+            48
+          ],
+          "high": [
+            295,
+            588
+          ]
+        },
+        "note": "每档 3 次采样；判定「生效」要求 low 的上界与 high 的下界分离（>1.5x），单样本对比会凭噪声造出结论。"
+      },
+      "provenance": {
+        "http": 200,
+        "seconds": 2.996,
+        "transient_timeouts": 0,
+        "requested_model": "step-3.5-flash-2603",
+        "model_echo": "step-3.5-flash-2603",
+        "self_reported_identity": "Step",
+        "finish_reason": "stop",
+        "reasoning_chars": 488,
+        "max_tokens_requested": 512,
+        "identity_consistent": true,
+        "identity_unobtainable_truncated": false
+      }
+    },
+    "availability": {
+      "non_stream_calls": 13,
+      "hangs_over_90s": 0,
+      "hang_rate": 0.0,
+      "rpm_ceiling_paced_to": 8,
+      "rate_limit_429_absorbed": 0,
+      "rate_limit_wait_seconds": 0.0,
+      "note": "每个非流式调用最多重试 3 次；hang = 超过 90s 读超时（远超正常响应时间）。429 按 RPM 上限限速 + 退避重试吸收，**不作为供应商契约结论**（未限速的运行曾把 provenance 与 high 档采样吃掉）。"
+    },
+    "reasoning_effort_pinned": "low",
+    "simulated": {
+      "data_class_gating": "ADR-0025：UNKNOWN/敏感等级必须在 ModelAdapter 准入层（而非调用点）阻断 Chat/Embedding/Reranker/引用验证四条路径。设计期仓库无业务代码，本探针只发送合成文本，门禁为 SIMULATED，随 ModelAdapter 实现的集成测试复验。",
+      "budget_ledger": "ADR-0029：调用前在同一 PostgreSQL 事务写入 RESERVED 并取 lease，结算写回实际用量并释放差额，流式取消按已产生 token 结算，进程被杀后 lease 过期回收。无 DB/业务代码，SIMULATED；本探针 LIVE 记录真实 usage 与取消时已产生的增量，供预扣/结算口径校准。",
+      "citation_verification": "ADR-0027 分层引用验证（2026-08-26 修订后：常规 P95<=2.0s / 高风险含蕴含调用 P95<=3.5s，且逐句 Embedding 与蕴含调用必须并发发起）依赖逐句 Embedding 批量 + 高风险蕴含调用，属独立测量，需与 Stage A 的批量延迟曲线合并计算，本 stage 未单独压测。",
+      "provider_governance": "StepFun（阶跃星辰）是第一方模型厂商而非中转站，但仍是数据路径上的外部处理方，可能记录/留存 prompt。探针仅合成文本可接受；生产承载真实客服数据前必须评估留存与合规，否则冲突 ADR-0017/0025「敏感数据不出域」。"
+    },
+    "cost": {
+      "one_answer_prompt_tokens": 165,
+      "one_answer_completion_tokens": 238,
+      "one_answer_estimated_cny": 0.000633,
+      "measured_prompt_tokens_partial": 1320,
+      "measured_completion_tokens_partial": 3265,
+      "price_cny_per_1m_in": 0.72,
+      "price_cny_per_1m_out": 2.16,
+      "price_source": "StepFun 官方定价页 $0.10/1M in（cache miss）、$0.02 cache hit、$0.30/1M out，按汇率 7.2 折算 ¥0.72/¥2.16",
+      "estimated_cny_partial": 0.008003,
+      "note": "仅统计供应商回报了 usage 的调用（结构化输出两次未逐行留存 usage，故合计为下界）；单价来自 CHAT_PRICE_CNY_PER_1M_IN/OUT，未设则为 0。**单次问答成本口径**需在 one_answer_* 之上叠加 Stage A 的查询/逐句 Embedding、Stage C 的 rerank 与高风险蕴含调用。注意 CoT 计入 completion_tokens 却不单列，无法拆分思考成本。"
+    }
+  },
+  "failures": [],
+  "decisions_required": [
+    "高风险 3.5s 预算本轮全部满足，但常规 2.0s 预算有 4/5 次越界（完整生成 n=5：1.952–3.061s（中位 2.665s）；可读答案首字 1.719–2.938s）：常规问答腿需按上界而非中位数设超时，且逐句 Embedding 与蕴含调用必须并发发起（ADR-0027 硬约束）。历史运行曾达 7.7-9.7s，抖动须计入选型。",
+    "**推理内容先流完才出正文**：首个任意事件 0.394s、可读答案首字 1.855s（差 1.46s，其间只有 79 个 reasoning_content 增量）。UI 只能先显示「思考中」进度，不能把 reasoning_content 当答案渲染（未经引用校验的内容不得呈现，ADR-0027/0032）。",
+    "**推理用量不可分摊**：`message.reasoning_content` 实测数百字，但 `usage.completion_tokens_details.reasoning_tokens` 恒为 0 —— CoT 计费折进 `completion_tokens` 却不单列。ADR-0029 账本因此无法把成本拆成「思考 vs 答案」，只能按 completion_tokens 总量结算；且 Adapter 必须把 CoT 计入 max_tokens 预留，否则正文被静默截断（实测 CoT 字数 {'(unset)': [291, 359], 'low': [45, 48], 'high': [295, 588]}）。",
+    "`reasoning_effort` **实测有效**（各档 CoT 字数 min-max：{'(unset)': [291, 359], 'low': [45, 48], 'high': [295, 588]}，每档 3 次采样，low 上界与 high 下界分离）：可作为高风险腿压时延的候选手段，但需与「低 effort 是否降低蕴含判断质量」一并在 PROBE-006 评测，**未评测前不得为了达标 ADR-0027 而默认调低**。"
+  ],
+  "recommendation": "PASS_WITH_ADJUSTMENT"
+}

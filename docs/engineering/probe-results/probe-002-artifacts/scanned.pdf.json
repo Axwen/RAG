@@ -1,0 +1,176 @@
+{
+  "kind": "pdf",
+  "filename": "scanned.pdf",
+  "content_hash": "c04320f1bbc5c8389b67cf7296f7e90f5150fdb7c5ca2636d14c7fa2bee2612e",
+  "parser_version": "ragflow-deepdoc@618c4599/v0.27.0",
+  "tokenizer_mode": "infinity",
+  "normalized_content": "扫描件退款须知（合成样本）\n\n客服在处理退款时先确认订单状态，再按时效表判断处理路径。所有金额单位为元。\n\n已下单未发货可全额退款，含运费，时效一个工作日。\n\n已发货未签收可退款但扣除运费，时效三个工作日。\n\n已签收七日内需商品完好方可退款，时效五个工作日。\n\n涉及金额超过五百元的争议升级到主管审批，一线客服无法判定时升级到二线。\n\n扫描定位测试句：编号67890，tokenOCRPROBE。",
+  "blocks": [
+    {
+      "layout_type": "title",
+      "text": "扫描件退款须知（合成样本）",
+      "page_number": 1,
+      "bbox": {
+        "x0": 43.33333206176758,
+        "x1": 303.0,
+        "top": 48.33333206176758,
+        "bottom": 68.33333587646484
+      },
+      "position_tag": "@@1\t43.3\t303.0\t48.3\t68.3##",
+      "positions": [
+        [
+          1,
+          43.3,
+          303.0,
+          48.3,
+          68.3
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "客服在处理退款时先确认订单状态，再按时效表判断处理路径。所有金额单位为元。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 43.33333206176758,
+        "x1": 565.3333129882812,
+        "top": 98.33333587646484,
+        "bottom": 115.66666412353516
+      },
+      "position_tag": "@@1\t43.3\t565.3\t98.3\t115.7##",
+      "positions": [
+        [
+          1,
+          43.3,
+          565.3,
+          98.3,
+          115.7
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "已下单未发货可全额退款，含运费，时效一个工作日。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 44.33333206176758,
+        "x1": 377.3333435058594,
+        "top": 133.3333282470703,
+        "bottom": 148.3333282470703
+      },
+      "position_tag": "@@1\t44.3\t377.3\t133.3\t148.3##",
+      "positions": [
+        [
+          1,
+          44.3,
+          377.3,
+          133.3,
+          148.3
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "已发货未签收可退款但扣除运费，时效三个工作日。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 44.33333206176758,
+        "x1": 364.0,
+        "top": 165.6666717529297,
+        "bottom": 181.6666717529297
+      },
+      "position_tag": "@@1\t44.3\t364.0\t165.7\t181.7##",
+      "positions": [
+        [
+          1,
+          44.3,
+          364.0,
+          165.7,
+          181.7
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "已签收七日内需商品完好方可退款，时效五个工作日。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 45.33333206176758,
+        "x1": 378.3333435058594,
+        "top": 201.0,
+        "bottom": 215.6666717529297
+      },
+      "position_tag": "@@1\t45.3\t378.3\t201.0\t215.7##",
+      "positions": [
+        [
+          1,
+          45.3,
+          378.3,
+          201.0,
+          215.7
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "涉及金额超过五百元的争议升级到主管审批，一线客服无法判定时升级到二线。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 42.66666793823242,
+        "x1": 537.0,
+        "top": 232.3333282470703,
+        "bottom": 250.0
+      },
+      "position_tag": "@@1\t42.7\t537.0\t232.3\t250.0##",
+      "positions": [
+        [
+          1,
+          42.7,
+          537.0,
+          232.3,
+          250.0
+        ]
+      ],
+      "has_image": true
+    },
+    {
+      "layout_type": "text",
+      "text": "扫描定位测试句：编号67890，tokenOCRPROBE。",
+      "page_number": 1,
+      "bbox": {
+        "x0": 43.33333206176758,
+        "x1": 363.3333435058594,
+        "top": 277.0,
+        "bottom": 292.0
+      },
+      "position_tag": "@@1\t43.3\t363.3\t277.0\t292.0##",
+      "positions": [
+        [
+          1,
+          43.3,
+          363.3,
+          277.0,
+          292.0
+        ]
+      ],
+      "has_image": true
+    }
+  ],
+  "quality": {
+    "table_count": 0,
+    "table_warnings": [],
+    "block_count": 7,
+    "located_block_count": 7,
+    "location_rate": 1.0
+  },
+  "resource": {
+    "parse_seconds": 1.998,
+    "peak_rss_mib": 1111.7
+  },
+  "_wall_seconds": 2.011
+}

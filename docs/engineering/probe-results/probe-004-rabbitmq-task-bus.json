@@ -1,0 +1,86 @@
+{
+  "probe_id": "PROBE-004",
+  "status": "PASS",
+  "executed_at": "2026-08-25T06:15:19Z",
+  "versions": {
+    "rabbitmq_image": "rabbitmq:3.13-management"
+  },
+  "measurements": {
+    "rabbitmq_version": "3.13.7",
+    "management_version": "3.13.7",
+    "checks": {
+      "routed_confirm": true,
+      "unroutable_detected": true,
+      "idempotent_relay_effect_once": true,
+      "delayed_retry_ttl_dlx": true,
+      "cancel_before_execute_no_side_effects": true,
+      "permanent_error_dlq_correlated": true,
+      "quarantine_no_infinite_requeue": true,
+      "replay_new_generation_preserves_chain": true
+    },
+    "detail": {
+      "routing": {
+        "routed_confirm": true,
+        "unroutable_detected": true,
+        "delivered_count": 2,
+        "duplicates_dropped": 1,
+        "effect_once": true
+      },
+      "retry": {
+        "prod_retry_ladder": [
+          "30s",
+          "5m",
+          "30m"
+        ],
+        "probe_ttl_ms": 1500,
+        "message_redelivered_after_ttl": true,
+        "landed_in_work_queue": 1
+      },
+      "cancel": {
+        "drained_before_execute": true,
+        "acked_count": 3,
+        "side_effects": 0,
+        "no_side_effects_ok": true
+      },
+      "permanent": {
+        "dead_lettered": true,
+        "x_death_present": true,
+        "x_death_origin_queue": "perm.q",
+        "x_death_reason": "rejected",
+        "correlated_ok": true
+      },
+      "quarantine": {
+        "quarantined_count": 1,
+        "work_queue_drained": true,
+        "quarantine_holds": 1,
+        "no_infinite_requeue_ok": true
+      },
+      "replay": {
+        "replayed": true,
+        "new_generation": "g-new-2",
+        "old_generation_preserved": true,
+        "requeued_to_work": true,
+        "replay_ok": true
+      }
+    },
+    "backlog_snapshot": {
+      "work.q": 0,
+      "retry.work.q": 0,
+      "retry.30s.q": 1,
+      "cancel.q": 0,
+      "perm.q": 0,
+      "dead.q": 0,
+      "quar.work.q": 0,
+      "quar.hold.q": 0,
+      "replay.work.q": 0,
+      "replay.dead.q": 0
+    },
+    "container_rss_mb": 163.0
+  },
+  "failures": [],
+  "decisions_required": [
+    "Publisher Confirm 与消费者 prefetch QoS 属 AMQP 线级特性,本探针用 management HTTP API 的 routed 标志与去重模拟代替;正式实现的 Outbox Relay/Worker 需用真实 AMQP 客户端(如 amqplib)在集成测试中复测确认与 prefetch=1/4。",
+    "重试阶梯用短 TTL(1.5s)验证 TTL+DLX 机制;生产 30s/5m/30m 阶梯与单调度器去重需在 Worker 集成测试固化。"
+  ],
+  "recommendation": "RabbitMQ 只做投递/延迟/死信;逻辑任务、Attempt、Generation、取消、DLQ 关联与 replay 由 PostgreSQL 权威;重试用 TTL+DLX 阶梯,quarantine 走 ACK+旁路不 requeue,replay 生成新 Generation 并保留死信链。"
+}

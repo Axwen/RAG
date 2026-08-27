@@ -1,0 +1,144 @@
+{
+  "probe_id": "PROBE-003",
+  "status": "PASS",
+  "executed_at": "2026-08-25T05:57:18Z",
+  "versions": {
+    "opensearch_image": "opensearchproject/opensearch:2.19.1",
+    "opensearch_version": "2.19.1"
+  },
+  "measurements": {
+    "cluster_status": "green",
+    "frozen_knn_params": {
+      "engine": "lucene",
+      "method": "hnsw",
+      "m": 16,
+      "ef_construction": 128,
+      "ef_search": 512,
+      "space_type": "cosinesimil",
+      "dimension": 1024,
+      "rationale": "pure-ANN recall@5=1.0, p95=28.01ms, engine off-heap=0KB"
+    },
+    "engine_offheap_kb": {
+      "lucene": 0,
+      "faiss": 4978
+    },
+    "param_sweep": [
+      {
+        "engine": "lucene",
+        "m": 16,
+        "ef_construction": 128,
+        "ef_search": 100,
+        "recall_at_5": 0.9933,
+        "filtered_recall_at_5": 1.0,
+        "exact_path_recall_at_5": 0.9933,
+        "recall_decay": -0.0067,
+        "query_p50_ms": 8.25,
+        "query_p95_ms": 25.09,
+        "pure_ann_p50_ms": 6.88,
+        "pure_ann_p95_ms": 29.15,
+        "index_size_bytes": 30254906,
+        "build_ms": 1495.0,
+        "knn_graph_memory_kb": 0
+      },
+      {
+        "engine": "lucene",
+        "m": 16,
+        "ef_construction": 128,
+        "ef_search": 512,
+        "recall_at_5": 1.0,
+        "filtered_recall_at_5": 1.0,
+        "exact_path_recall_at_5": 1.0,
+        "recall_decay": 0.0,
+        "query_p50_ms": 7.09,
+        "query_p95_ms": 28.01,
+        "pure_ann_p50_ms": 7.83,
+        "pure_ann_p95_ms": 29.72,
+        "index_size_bytes": 30254906,
+        "build_ms": 1495.0,
+        "knn_graph_memory_kb": 0
+      },
+      {
+        "engine": "faiss",
+        "m": 16,
+        "ef_construction": 128,
+        "ef_search": 100,
+        "recall_at_5": 0.9933,
+        "filtered_recall_at_5": 1.0,
+        "exact_path_recall_at_5": 1.0,
+        "recall_decay": -0.0067,
+        "query_p50_ms": 6.41,
+        "query_p95_ms": 25.51,
+        "pure_ann_p50_ms": 6.44,
+        "pure_ann_p95_ms": 22.97,
+        "index_size_bytes": 30392235,
+        "build_ms": 1089.5,
+        "knn_graph_memory_kb": 4978
+      },
+      {
+        "engine": "faiss",
+        "m": 16,
+        "ef_construction": 128,
+        "ef_search": 512,
+        "recall_at_5": 1.0,
+        "filtered_recall_at_5": 1.0,
+        "exact_path_recall_at_5": 1.0,
+        "recall_decay": 0.0,
+        "query_p50_ms": 5.64,
+        "query_p95_ms": 24.6,
+        "pure_ann_p50_ms": 6.51,
+        "pure_ann_p95_ms": 26.14,
+        "index_size_bytes": 30392235,
+        "build_ms": 1089.5,
+        "knn_graph_memory_kb": 0
+      }
+    ],
+    "checks": {
+      "wrong_dimension_rejected": true,
+      "invalid_engine_rejected": true,
+      "partition_isolated": true,
+      "index_fields_ok": true,
+      "has_acl_subject_ids": false,
+      "has_acl_revision": false,
+      "alias_atomic_ok": true,
+      "reconciler_ok": true,
+      "activation_guards_ok": true
+    },
+    "alias_detail": {
+      "atomic_switch_status": 200,
+      "before_switch": [
+        "chunks_lucene_m16_efc128"
+      ],
+      "after_switch": [
+        "chunks_faiss_m16_efc128"
+      ],
+      "rollback_target": [
+        "chunks_lucene_m16_efc128"
+      ],
+      "atomic_ok": true
+    },
+    "reconciler_detail": {
+      "drift_detected": true,
+      "reconciled_to": "chunks_faiss_m16_efc128",
+      "reconciler_ok": true
+    },
+    "activation_guards_detail": {
+      "healthy": true,
+      "deleting": false,
+      "legal_hold": false,
+      "expired": false
+    },
+    "partition_isolation_detail": {
+      "emb_v2_docs_in_v1_index": 0,
+      "partition_isolated": true
+    },
+    "jvm_heap_used_mb": 562.4,
+    "knn_graph_memory_kb": 4978,
+    "container_rss_mb": 2602.0
+  },
+  "failures": [],
+  "decisions_required": [
+    "冻结参数基于 1500 条合成高斯向量;engine=lucene 与 ef_search 需在真实 embedding、接近 1024 候选上限的语料上复测后再最终定档(随 PROBE-006 一并复核)。",
+    "带 acl_scope_key filter 的查询在本量级被 OpenSearch 短路成 exact search(off-heap=0);真实规模下需复核过滤路径是否转为近似及其召回衰减。"
+  ],
+  "recommendation": "混合检索用 acl_scope_key 作用域预过滤 + 索引外 PG 权威复核;kNN 冻结 lucene/hnsw m=16 ef_c=128 ef_s=512;Release 用 Candidate Alias 原子切换 + Intent/Reconciler 兜底。"
+}

@@ -1,0 +1,164 @@
+{
+  "probe_id": "PROBE-005",
+  "stage": "B-chat-responses",
+  "api": "responses",
+  "status": "PASS_WITH_ADJUSTMENT",
+  "executed_at": "2026-08-26T02:34:36Z",
+  "provider": "agentrouter",
+  "model": "gpt-5.6-sol",
+  "base": "https://agentrouter.org/v1",
+  "user_agent": "claude-cli/2.0.0 (external, cli)",
+  "measurements": {
+    "stage": "B-chat-responses",
+    "api": "responses",
+    "provider": "agentrouter",
+    "model": "gpt-5.6-sol",
+    "base": "https://agentrouter.org/v1",
+    "user_agent": "claude-cli/2.0.0 (external, cli)",
+    "checks": {
+      "contract": {
+        "http": 200,
+        "seconds": 9.373,
+        "transient_timeouts": 0,
+        "response_id": true,
+        "model_echo": "gpt-5.6-sol",
+        "model_echo_matches": true,
+        "status": "completed",
+        "content_chars": 54,
+        "usage_present": true,
+        "usage": {
+          "prompt_tokens": 162,
+          "completion_tokens": 43,
+          "total_tokens": 205,
+          "reasoning_tokens": 0,
+          "cached_tokens": 0
+        },
+        "request_id_header": "20260826103015273231069gdf6zGQm2idi3",
+        "cites_snippet_ids": true,
+        "injected_instructions_echo": "你是企业客服助手。只依据【资料】回答，不得编造；若资料不足请明确说明，并在每条结论后用 [D1]/[D2]/[D3] 标注来源。"
+      },
+      "stream": {
+        "full": {
+          "cancel_after": null,
+          "deltas": 38,
+          "ttft_seconds": 5.277,
+          "total_seconds": 5.947,
+          "cancelled": false,
+          "usage_in_stream": {
+            "prompt_tokens": 162,
+            "completion_tokens": 42,
+            "total_tokens": 204,
+            "reasoning_tokens": 0,
+            "cached_tokens": 0
+          },
+          "finish_reason": "completed",
+          "text_chars": 52,
+          "http": 200,
+          "error": null,
+          "event_types": {
+            "response.created": 1,
+            "response.in_progress": 1,
+            "response.output_item.added": 1,
+            "response.content_part.added": 1,
+            "response.output_text.delta": 38,
+            "response.output_text.done": 1,
+            "response.content_part.done": 1,
+            "response.output_item.done": 1,
+            "responsesapi.websocket_timing": 1,
+            "response.completed": 1
+          }
+        },
+        "cancelled": {
+          "cancel_after": 5,
+          "deltas": 5,
+          "ttft_seconds": 4.252,
+          "total_seconds": 4.272,
+          "cancelled": true,
+          "usage_in_stream": null,
+          "finish_reason": "in_progress",
+          "text_chars": 6,
+          "http": 200,
+          "error": null,
+          "event_types": {
+            "response.created": 1,
+            "response.in_progress": 1,
+            "response.output_item.added": 1,
+            "response.content_part.added": 1,
+            "response.output_text.delta": 5
+          }
+        },
+        "cancel_worked": true,
+        "usage_on_stream": true,
+        "settle_on_cancel_possible": true
+      },
+      "structured_output": {
+        "json_schema": {
+          "http": 200,
+          "seconds": 11.121,
+          "transient_timeouts": 0,
+          "parses_as_json": true,
+          "schema_valid": true
+        },
+        "json_object": {
+          "http": 200,
+          "seconds": 14.639,
+          "transient_timeouts": 1,
+          "parses_as_json": true,
+          "schema_valid": true
+        }
+      },
+      "error_mapping": {
+        "bad_key_status": 401,
+        "bad_key_is_401": true,
+        "bad_key_body_head": "{\"error\": {\"message\": \"无效的令牌 (request id: 20260826103242574485080g7cmjaixNtB3b)\", \"type\": \"new_api_error\"}}",
+        "unknown_model_status": 503,
+        "unknown_model_rejected": false,
+        "timeout_mapped": true,
+        "timeout_error": "URLError: <urlopen error _ssl.c:983: The handshake operation timed out>",
+        "timeout_seconds": 0.706
+      },
+      "provenance": {
+        "http": 200,
+        "seconds": 14.542,
+        "transient_timeouts": 1,
+        "requested_model": "gpt-5.6-sol",
+        "model_echo": "gpt-5.6-sol",
+        "self_reported_identity": "GPT-5 Codex",
+        "injected_instructions_present": true,
+        "injected_instructions_chars": 21334,
+        "injected_instructions_sha256": null,
+        "identity_consistent": false
+      }
+    },
+    "availability": {
+      "non_stream_calls": 6,
+      "hangs_over_90s": 2,
+      "hang_rate": 0.333,
+      "note": "每个非流式调用最多重试 3 次；hang = 超过 90s 读超时（同类请求正常 5-8s）。"
+    },
+    "simulated": {
+      "data_class_gating": "ADR-0025：UNKNOWN/敏感等级必须在 ModelAdapter 准入层（而非调用点）阻断 Chat/Embedding/Reranker/引用验证四条路径。设计期仓库无业务代码，本探针只发送合成文本，门禁为 SIMULATED，随 ModelAdapter 实现的集成测试复验。",
+      "budget_ledger": "ADR-0029：调用前在同一 PostgreSQL 事务写入 RESERVED 并取 lease，结算写回实际用量并释放差额，流式取消按已产生 token 结算，进程被杀后 lease 过期回收。无 DB/业务代码，SIMULATED；本探针 LIVE 记录真实 usage 与取消时已产生的增量，供预扣/结算口径校准。",
+      "citation_verification": "ADR-0027 分层引用验证（常规 P95<=600ms / 高风险含蕴含调用P95<=1.5s）依赖逐句 Embedding 批量 + 高风险蕴含调用，属独立测量，需与 Stage A 的批量延迟曲线合并计算，本 stage 未单独压测。",
+      "relay_governance": "中转站是数据路径上的额外第三方处理方，可能记录/留存 prompt。探针仅合成文本可接受；生产承载真实客服数据前必须评估留存与合规，否则冲突 ADR-0017/0025「敏感数据不出域」。"
+    },
+    "cost": {
+      "measured_prompt_tokens_partial": 324,
+      "measured_completion_tokens_partial": 85,
+      "price_cny_per_1m_in": 0.0,
+      "price_cny_per_1m_out": 0.0,
+      "estimated_cny_partial": null,
+      "note": "仅统计供应商回报了 usage 的调用（Responses 的 input/output_tokens）；单价来自环境变量/参数。单次问答成本口径需叠加 Stage A 的查询/逐句 Embedding 与高风险蕴含调用。"
+    }
+  },
+  "failures": [],
+  "decisions_required": [
+    "端点以 User-Agent 做准入门禁：仅在 UA 含 `claude-cli` 时返回 200，curl/OpenAI-SDK/默认 urllib 全部 401。服务端（NestJS/worker）用标准 OpenAI SDK 直连会被拒，除非伪装 CLI 身份——脆弱且疑似违反 ToS，不应写入企业架构。此为供应商适配层面的硬决策项。",
+    "流式 TTFT≈5.277s 偏高（疑似推理模型缓冲 reasoning tokens）：高风险引用验证 P95<=1.5s 目标需据此复核或改配非推理模型。",
+    "未知模型未被 4xx 拒绝：Adapter 需自校验模型白名单。",
+    "未传 instructions 时端点会**注入自己的 system prompt**（21334 字符，正文已脱敏，历史结果未保留正文哈希）：会污染 grounded-answer 提示词。ModelAdapter 必须**始终显式传入自己的 instructions**（本探针已实测显式传入可完全覆盖），并禁止依赖端点默认值。",
+    "模型身份不可核验：请求 `gpt-5.6-sol`、回显 `gpt-5.6-sol`，但模型自称“GPT-5 Codex”。「可信 RAG」要求承载模型与提供方可审计，需供应商出具模型映射说明，否则不能进入生产。",
+    "**间歇性挂起**：6 次非流式调用中 2 次超过 90s 读超时（挂起率 0.333，同类请求正常 5-8s），靠重试才恢复。该端点可用性不满足企业 SLA；Adapter 必须设短超时 + 重试 + 熔断，且此不稳定性需计入供应商选型。"
+  ],
+  "recommendation": "PASS_WITH_ADJUSTMENT"
+}
