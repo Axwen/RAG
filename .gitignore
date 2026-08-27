@@ -13,11 +13,13 @@
 /docs/engineering/probe-results/*.log
 /docs/engineering/probe-results/tmp/
 /docs/engineering/probe-results/**/*.tmp
+/scripts/probes/runtime/
 
 # ── 机密:只允许来自环境变量或未跟踪文件,绝不进仓库 ──
 .env
 .env.*
 *.env
+!.env.example
 *.key
 *.pem
 *secret*
