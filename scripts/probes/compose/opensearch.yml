@@ -1,0 +1,22 @@
+services:
+  opensearch-probe:
+    image: ${OPENSEARCH_IMAGE:-opensearchproject/opensearch:2.19.1}
+    environment:
+      discovery.type: single-node
+      # 探针单节点:关闭安全插件与内存锁,JVM heap 固定 2 GiB(堆外向量内存单独观测)
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      bootstrap.memory_lock: "false"
+      OPENSEARCH_JAVA_OPTS: "-Xms2g -Xmx2g"
+      # kNN 堆外原生内存上限占比(circuit breaker),便于观测 faiss/lucene 原生占用
+      knn.memory.circuit_breaker.limit: "50%"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    ports:
+      - "127.0.0.1:19200:9200"
+    # 容器内存上限与 JVM heap 分开:2 GiB heap + 堆外 + 系统,给 4 GiB 上限观测峰值
+    deploy:
+      resources:
+        limits:
+          memory: 4g

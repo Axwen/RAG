@@ -1,0 +1,15 @@
+services:
+  rabbitmq-probe:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:3.13-management}
+    hostname: rabbitmq-probe
+    environment:
+      RABBITMQ_DEFAULT_USER: ${PROBE_RABBITMQ_USER:-probe}
+      # 密码由 run 脚本用 openssl 生成并经环境变量注入,绝不写入仓库或日志。
+      RABBITMQ_DEFAULT_PASS: ${PROBE_RABBITMQ_PASS:?PROBE_RABBITMQ_PASS is required}
+    ports:
+      - "127.0.0.1:15672:15672"  # management HTTP API
+      - "127.0.0.1:5672:5672"    # AMQP(本探针只用 HTTP API)
+    deploy:
+      resources:
+        limits:
+          memory: 1g

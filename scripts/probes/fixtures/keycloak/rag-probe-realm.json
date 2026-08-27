@@ -1,0 +1,43 @@
+{
+  "realm": "rag-probe",
+  "enabled": true,
+  "displayName": "RAG Architecture Probe",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 15,
+  "clients": [
+    {
+      "clientId": "rag-probe-public",
+      "name": "RAG Probe Public Client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://127.0.0.1:18181/callback"],
+      "webOrigins": ["http://127.0.0.1:18181"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "probe-user",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "probe-user@example.invalid",
+      "firstName": "Probe",
+      "lastName": "User",
+      "credentials": []
+    },
+    {
+      "username": "probe-disabled-user",
+      "enabled": false,
+      "emailVerified": true,
+      "email": "probe-disabled-user@example.invalid",
+      "firstName": "Probe",
+      "lastName": "Disabled",
+      "credentials": []
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "questions": [
+    {
+      "id": "refund-status",
+      "question": "已发货未签收的订单可以退款吗？",
+      "targets": [{"artifact": "sample.md", "contains": "已发货未签收"}]
+    },
+    {
+      "id": "refund-days",
+      "question": "已签收七日内退款需要几个工作日？",
+      "targets": [{"artifact": "sample.md", "contains": "已签收七日内"}]
+    },
+    {
+      "id": "shipping-refund",
+      "question": "什么情况下退款包含运费？",
+      "targets": [{"artifact": "sample.md", "contains": "全额含运费"}]
+    },
+    {
+      "id": "escalation",
+      "question": "客服无法判定时应当升级到哪里？",
+      "targets": [{"artifact": "sample.md", "contains": "升级到二线"}]
+    },
+    {
+      "id": "manager-approval",
+      "question": "超过五百元的争议由谁审批？",
+      "targets": [{"artifact": "sample.md", "contains": "主管审批"}]
+    },
+    {
+      "id": "location-sentence",
+      "question": "结构化定位测试段落中的英文 token 是什么？",
+      "targets": [{"artifact": "sample.md", "contains": "DEEPDOC"}]
+    }
+  ]
+}

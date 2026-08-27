@@ -1,0 +1,6 @@
+# Vendored RAGFlow DeepDOC source is copied in from references/ragflow at build
+# time by run-probe-002-deepdoc.sh. It is a fixed-snapshot copy — do NOT commit
+# it (references/ is the read-only source of truth).
+vendored/
+# Generated synthetic PDF fixtures (produced in-container).
+generated-fixtures/

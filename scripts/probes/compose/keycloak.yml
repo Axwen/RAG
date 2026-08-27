@@ -1,0 +1,13 @@
+services:
+  keycloak-probe:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.2.5}
+    command: ["start-dev", "--http-port=8080", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: probe-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${PROBE_KEYCLOAK_ADMIN_PASSWORD:?PROBE_KEYCLOAK_ADMIN_PASSWORD is required}
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - ../runtime/keycloak:/opt/keycloak/data/import:ro
