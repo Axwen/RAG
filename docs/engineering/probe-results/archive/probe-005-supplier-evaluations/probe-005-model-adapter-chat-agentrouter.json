@@ -17,7 +17,7 @@
         "seconds": 1.346,
         "error": {
           "error": {
-            "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+            "message": "unauthorized client detected, contact support for assistance at <供应商支持链接已脱敏>"
           },
           "message": "UNAUTHENTICATED",
           "success": false,
@@ -37,7 +37,7 @@
           "http": 401,
           "error": {
             "error": {
-              "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+              "message": "unauthorized client detected, contact support for assistance at <供应商支持链接已脱敏>"
             },
             "message": "UNAUTHENTICATED",
             "success": false,
@@ -56,7 +56,7 @@
           "http": 401,
           "error": {
             "error": {
-              "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+              "message": "unauthorized client detected, contact support for assistance at <供应商支持链接已脱敏>"
             },
             "message": "UNAUTHENTICATED",
             "success": false,
@@ -74,7 +74,7 @@
           "rejected_cleanly": true,
           "error": {
             "error": {
-              "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+              "message": "unauthorized client detected, contact support for assistance at <供应商支持链接已脱敏>"
             },
             "message": "UNAUTHENTICATED",
             "success": false,
@@ -87,7 +87,7 @@
           "rejected_cleanly": true,
           "error": {
             "error": {
-              "message": "unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3"
+              "message": "unauthorized client detected, contact support for assistance at <供应商支持链接已脱敏>"
             },
             "message": "UNAUTHENTICATED",
             "success": false,
@@ -98,7 +98,7 @@
       "error_mapping": {
         "bad_key_status": 401,
         "bad_key_is_401": true,
-        "bad_key_body_head": "{\"error\": {\"message\": \"unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3\"}, \"message\": \"UNAUTHENTICATED\", \"success\": false, \"type\": \"unauthorized_client_erro",
+        "bad_key_body_head": "{\"error\": {\"message\": \"unauthorized client detected, contact support for assistance at <供应商支持链接已脱敏>\"}, \"message\": \"UNAUTHENTICATED\", \"success\": false, \"type\": \"unauthorized_client_erro",
         "unknown_model_status": 401,
         "unknown_model_rejected": true,
         "timeout_mapped": true,
@@ -122,7 +122,7 @@
     }
   },
   "failures": [
-    "基本 Chat 调用失败 HTTP 401：{'error': {'message': 'unauthorized client detected, contact support for assistance at https://discord.gg/aYq5B4RW3'}, 'message': 'UNAUTHENTICATED', 'success': ",
+    "基本 Chat 调用失败 HTTP 401：{'error': {'message': 'unauthorized client detected, contact support for assistance at <供应商支持链接已脱敏>'}, 'message': 'UNAUTHENTICATED', 'success': ",
     "流式路径不可用（无增量输出），与流式取消/TTFT 目标冲突",
     "流式无法中途取消：ADR-0029 的取消按已产生 token 结算不成立",
     "json_schema 与 json_object 均无法产出可校验结构化输出：结构化输出失败必须返回受控错误，不能把未校验响应交给 Answer/Citation"
