@@ -1,16 +1,16 @@
 # 架构探针阶段计划
 
-> 状态：BLOCKED_ENVIRONMENT（等待 PROBE-000 通过后转为 READY_TO_RUN）  
-> 目标：在正式实现 T1a/T1b、T2-T13 前验证六个最高风险外部事实。  
+> 状态：COMPLETED_WITH_INTEGRATION_FOLLOWUPS（六个架构探针外部事实已完成）
+> 目标：在正式实现原候选任务 T1a/T1b、T2-T13 前验证六个最高风险外部事实。探针收尾后已补充 T0、T14-T16。
 > 原则：探针是可丢弃的验证代码，不形成第二条产品主链。
 
-当前环境门禁：`BLOCKED_ENVIRONMENT`。Node.js、pnpm、Python、curl、jq、Docker CE CLI 和 Docker Compose 已通过；当前 Codex 执行环境访问 `/var/run/docker.sock` 被拒绝，沙箱外执行审批服务返回 503（判定脚本：`scripts/probes/preflight.sh`）。先完成 [PROBE-000 环境门禁](tickets/PROBE-000-environment.md)，再执行 PROBE-001 至 PROBE-006。PROBE-000 是门禁而不是架构假设验证，不计入六个探针，但它 `BLOCKED` 时其余探针一律不启动。
+环境门禁为 `PASS_WITH_ADJUSTMENT`。用户 WSL 终端已确认 Node.js、pnpm、Python、curl、jq、Docker CE CLI、Docker Engine、Compose 和 Socket 可用；Engine 可见 23.47 GiB，超过日常 22 GiB，略低于 Parser 建议 24 GiB（判定脚本：`scripts/probes/preflight.sh`）。六个探针均已执行；PROBE-002/006 的资源结论按 23.47 GiB profile 记录。
 
 ## 1. 结论
 
-现在就应该出 Plan 和 Tickets，但当前先出的不是最终业务开发计划，而是“架构探针计划 + 探针 Tickets”。
+本文件记录探针阶段当时的计划；该阶段已经完成，当前正式开发范围与依赖顺序以 [阶段 1 实施 Tickets](stage1-implementation-tickets.md) 为准。
 
-原因：T1a/T1b、T2-T13 依赖六个尚未实测的事实：Keycloak 的撤权行为、DeepDOC 的资源和定位质量、OpenSearch 的 Alias/作用域过滤/kNN 参数与查询预算、RabbitMQ 的重试与重放语义、百炼 ModelAdapter 的真实延迟和错误映射、分块参数对 Recall@5 与引用可定位率的影响。如果直接把这些假设写成最终开发票据，探针失败后会反复改 Prisma、队列和模块边界。
+原计划将 T1a/T1b、T2-T13 建立在六个尚未实测的事实之上。该阶段现已完成：PROBE-001 至 PROBE-004 为 `PASS`，PROBE-005 与 PROBE-006 为 `PASS_WITH_ADJUSTMENT`。当前工作转为 T0 骨架、实现集成验证和治理收口；当前任务范围见 [阶段 1 实施 Tickets](stage1-implementation-tickets.md)，探针事实与实现条件见 [Probe Decision Gate](probe-decision-gate.md) 与 [探针结果索引](probe-results/README.md)。
 
 ## 2. 两阶段交付模型
 
@@ -30,12 +30,13 @@
              ▼
 阶段 B：正式实施
   更新 ADR / PROJECT_STATE / 设计方案
-  plan-eng-review 轻量复审
-  将 T1a/T1b、T2-T13 冻结为最终开发 Tickets
-  按依赖实现 Prisma Core、状态、消息、解析、检索、回答和删除；Chunk/Index Schema 等待 PROBE-006
+  探针收尾提交 -> T0 Monorepo 基线
+  DX Review + 实现准备增量 plan-eng-review
+  复核 T1a/T1b、T2-T16 的最终批次
+  按依赖实现 Prisma Core、状态、消息、解析、检索、回答和删除；Chunk/Index Schema 使用 PROBE-006 冻结的 `wide-1024` 契约
 ```
 
-当前已有的 T1a/T1b、T2-T13 是工程评审产生的“实施候选任务”，不是探针完成前的最终开发票据。
+当前已有的 T1a/T1b、T2-T13 是工程评审产生的“实施候选任务”；T0、T14-T16 和依赖顺序已在探针收尾后补齐，最终开发范围以 [阶段 1 实施 Tickets](stage1-implementation-tickets.md) 为准。PROBE-006 已完成真实小规模 Recall@5，T1b 不再等待探针重跑，但仍需关闭 Gate 中的完整混合检索和生产过滤集成条件。
 
 ## 3. 探针统一规则
 
@@ -69,58 +70,61 @@ recommendation: ""
 
 - `PASS`：当前设计和硬边界可以直接进入正式实现。
 - `PASS_WITH_ADJUSTMENT`：外部能力可用，但必须先更新配置、ADR、Manifest 或 DoD，再进入实现。
-- `BLOCKED`：关键契约不成立，不得通过增加临时旁路进入 T1a/T1b、T2-T13；必须更换 Adapter、调整范围或重新决策。
+- `BLOCKED`：关键契约不成立，不得通过增加临时旁路进入受影响的 T1a/T1b、T2-T16；必须更换 Adapter、调整范围或重新决策。
 
 ### 3.3 通过门
 
-六个探针全部达到 `PASS` 或 `PASS_WITH_ADJUSTMENT` 后才进入正式实施门。任一 `BLOCKED` 都暂停大规模业务实现，仅允许修复探针或重新评审受影响边界。
+六个探针均达到 `PASS` 或 `PASS_WITH_ADJUSTMENT`，因此可以进入受约束的正式实施。`PASS_WITH_ADJUSTMENT` 的实现前置条件和服务层 SIMULATED 项必须按 [Probe Decision Gate](probe-decision-gate.md) 关闭；任一新探针为 `BLOCKED` 都暂停受影响边界的实现。
 
 ## 4. 执行顺序与并行化
 
 ```text
-门禁：PROBE-000 环境（必须先 PASS）
+门禁：PROBE-000 环境（运行时 PASS，资源允许调整）
          │
          ▼
 先启动：PROBE-001 Keycloak ─┐
-         PROBE-002 DeepDOC  ─┼─ 可并行，资源上限不同
+         PROBE-002 DeepDOC  ─┼─ 建议串行，记录 23.47 GiB 资源峰值
          PROBE-003 OpenSearch┘
 
 随后：PROBE-004 RabbitMQ
       PROBE-005 ModelAdapter
       PROBE-006 Chunking（依赖 PROBE-002 与 PROBE-003）
 
-最后：Probe Decision Gate -> ADR/状态更新 -> plan-eng-review 复审 -> T1a/T1b、T2-T13
+最后：Probe Decision Gate -> ADR/状态更新 -> 探针收尾提交 -> T0 -> 实现准备 plan-eng-review -> T1a/T1b、T2-T16
 ```
 
-Keycloak、DeepDOC、OpenSearch 可以分别使用独立容器和端口并行；RabbitMQ、ModelAdapter 和 Chunking 可以在前三个完成后并行。DeepDOC、批量 ModelAdapter 评测和 PROBE-006 的分块重建不得同时占用 24 GiB profile。PROBE-006 复用 PROBE-002 的解析产物，因此 PROBE-002 `BLOCKED` 时 PROBE-006 不具备输入。
+Keycloak、DeepDOC、OpenSearch 和 RabbitMQ 建议串行，避免中间件与 Parser 同时争用内存；ModelAdapter 按云模型预算单独执行。PROBE-006 复用 PROBE-002 的解析产物，因此 PROBE-002 未完成时它不具备输入。DeepDOC、批量 ModelAdapter 评测和 PROBE-006 的分块重建不得同时占用 23.47 GiB profile。
 
 ## 5. 探针完成后的正式 Plan
 
-探针通过后生成以下正式产物：
+探针通过后生成或维护以下正式产物；前五项已经完成，第六项在 T0 后执行：
 
-1. `docs/engineering/architecture-probe-results-YYYYMMDD.md`：六个探针的汇总和差异。
+1. [探针结果索引](probe-results/README.md)与 [Probe Decision Gate](probe-decision-gate.md)：六个探针的主结果、历史证据、冻结结论和实现边界。
 2. 必要的新增或修订 ADR：只记录实测导致的架构变更。
 3. 更新 `PROJECT_STATE.md`：写入真实版本、资源、延迟、费用和调整后的硬边界。
-4. 对 `plan-eng-review-closure.md` 做一次增量复审：只检查探针改变的假设，不重新重复完整评审。
-5. 将 T1a/T1b、T2-T13 拆成最终开发 Tickets：每张 Ticket 固定文件范围、协议字段、依赖、测试、回滚和 DoD。
-6. 冻结 PROBE-003 的 kNN 参数与 PROBE-006 的 `ChunkingManifest` 默认值，写入 Index Schema 与 `IngestionManifest`。
+4. 将 T0、T1a/T1b、T2-T16 拆成当前开发 Tickets：每张 Ticket 固定协议、依赖、测试和 DoD。
+5. 冻结 PROBE-003 的 kNN 初始参数与 PROBE-006 的 `ChunkingManifest` 默认值；真实业务规模和完整过滤链回归仍作为实现 Gate。
+6. T0 建立真实工具链后，对 `plan-eng-review-closure.md` 做一次实现准备增量复审：只检查探针与脚手架改变的假设，不重复完整评审。
 
 最终开发顺序仍为：
 
 ```text
-T1a Manifest/Prisma Core + T2 状态命令
+  T0 Monorepo 基线 -> DX Review + 实现准备增量工程复审
                  │
                  ▼
-T3 RabbitMQ/Outbox + T4 Parser/ObjectStorage
+  T1a Manifest/Prisma Core + T14 Identity + T11 同步审计 + T12 Ledger 骨架
                  │
                  ▼
-T1b Chunk/Index Schema + T5 Release/OpenSearch + T6 RetrievalSnapshot/ACL 检索
+  T2 状态命令 + T10 Worker 基础 -> T3 RabbitMQ/Outbox
                  │
                  ▼
-T7 Answer/Citation/Finalizer/SSE
+  T1b Chunk/Index Schema -> T15 ModelAdapter -> T4 Parser/ObjectStorage -> T5 Release/OpenSearch
                  │
                  ▼
-T8 Deletion/Replay -> T9 Evaluation -> T10/T11/T12 门禁与运维
+  T9 Harness/语料 -> T6 Retrieval/拍板 rerank N -> T7 Answer/Citation/Finalizer/SSE
+                 │
+                 ▼
+  T8 Deletion/Replay -> T10/T11/T12 收口 -> T16 Web/Admin 纵向集成
 ```
 
-T13 不可信内容与注入检测是横切项，随 T4 解析扫描、T6 候选进入上下文前检查和 T7 输出检查分别落地，不作为独立的最后阶段。T1a 不编码父子 Chunk 关系和最终 Chunk 字段；T1b、T5、T6 的正式索引实现必须等待 PROBE-006 冻结 `ChunkingManifest`。
+T13 不可信内容与注入检测是横切项，随 T4 解析扫描、T6 候选进入上下文前检查和 T7 输出检查分别落地，不作为独立的最后阶段。T1a 不编码父子 Chunk 关系和最终 Chunk 字段；PROBE-006 已冻结 `ChunkingManifest`，因此 T1b、T5、T6 可进入实现准备，但必须通过 [Probe Decision Gate](probe-decision-gate.md) 中的真实业务回归与集成门槛。

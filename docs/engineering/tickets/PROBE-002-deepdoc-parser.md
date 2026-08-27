@@ -43,3 +43,9 @@
 - 使用 pytest/HTTP 契约测试和容器故障注入。
 - 探针失败只删除 Parser 镜像、临时对象和输出，不修改 RAGFlow 参考快照。
 
+## 第二轮执行记录（2026-08-26）
+
+- 结果：**PASS**，报告见 [`probe-002-deepdoc-parser.md`](../probe-results/probe-002-deepdoc-parser.md)。
+- 运行事实：固定 Parser 版本 `ragflow-deepdoc@618c4599/v0.27.0`，真实 `infinity-sdk==0.7.3` tokenizer，补齐 NLTK `punkt_tab`；健康检查返回 `tokenizer_mode=infinity`。
+- 四类 PDF 的原文定位率均为 `1.0`；真实 tokenizer 运行峰值 RSS 为 `1111.7 MiB`，低于 12 GiB 临时容器上限，但整体资源结论仍按 PROBE-000 的 23.47 GiB profile 记录。
+- Parser Service 的 `parserTaskId` 生命周期、取消、崩溃恢复和 PostgreSQL 幂等注册仍属于服务层集成测试范围，本轮只更新 DeepDOC 解析事实。

@@ -44,3 +44,21 @@
 
 - 使用真实 OpenSearch 容器与真实 Embedding 调用，评测调用走评测池预算。
 - 探针失败删除测试 Index 与临时产物即可回滚；不修改业务代码，不写入正式 Manifest。
+
+## 第一轮执行记录（2026-08-26）
+
+- 结果：**BLOCKED**，报告见 [`probe-006-chunking-citation-locating.md`](../probe-results/probe-006-chunking-citation-locating.md)。
+- 已完成：5 份 PROBE-002 `ParseArtifact` 原始 JSON 持久化、6 题脱敏黄金题子集、4 组候选的本地分块、引用回链、截断率与稳定 Chunk ID 统计。
+- 本轮观察：所有候选本地引用回链率为 `1.0`；`wide-1024` 本地表格/条款截断率为 `0`，但这不是 Recall@5 结论。
+- 阻塞：输入仍是 `tokenizer_mode=stub`；当前环境未提供评测池 Embedding 密钥和真实 OpenSearch 地址，因此没有执行付费 Embedding、索引写入或 Recall@5。
+- 处理：不冻结 `ChunkingManifest`，不进入 T1b、T5、T6 正式索引实现；补齐三项前置条件后原地复跑。
+
+## 第二轮执行记录（2026-08-26）
+
+- 结果：**PASS_WITH_ADJUSTMENT**，报告见 [`probe-006-chunking-citation-locating.md`](../probe-results/probe-006-chunking-citation-locating.md)。
+- 前置条件：真实 `infinity-sdk==0.7.3` tokenizer + `punkt_tab`、OpenRouter `qwen/qwen3-embedding-8b`（1024 维）、OpenSearch 2.19.1；6 题黄金子集。
+- Recall@5：`compact-256=0.6667`、`balanced-512=0.6667`、`wide-1024=1.0`、`balanced-512-parent-child=0.6667`。
+- 共同质量结果：四组引用可定位率均为 `1.0`、Chunk ID 确定性均通过；`wide-1024` 截断率 `0`，索引估算字节 `21131`，OpenSearch 写入 `0.0135s`，查询 P95 `0.0115s`。
+- 证据边界：本轮仅覆盖 5 份 ParseArtifact、6 道黄金题、最小 kNN mapping 和纯 kNN 查询；未验证完整 BM25+向量混合检索、Rerank 后 Recall@5、生产 ACL/有效期/删除过滤链或完整 50 题黄金集。`truncation_rate` 为 table/code/list 三类 split rate 的平均值。
+- 冻结：`wide-1024`，`max_chars=1024`、`overlap_chars=128`、`rows_per_chunk=32`、`tolerance_factor=3`、`parent_child=false`、`tokenizer_mode=infinity`、`embedding_dimensions=1024`、`index_schema_version=opensearch-knn-lucene-hnsw-v1`。
+- 调整：阶段 1 不启用 parent-child；T1b、T5、T6 不再被 PROBE-006 的探针事实阻塞。它们仍须按 Probe Decision Gate 关闭完整混合检索、生产过滤链、`rerankInputSize` 和预算账本等实现集成条件。
