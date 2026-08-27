@@ -1,8 +1,9 @@
 # 企业级可信多模态 RAG 知识库功能报告
 
-> 版本：V1.5  
-> 日期：2026-08-21  
+> 版本：V1.6
+> 日期：2026-08-27
 > 定位：面向企业内部知识检索、可信问答与知识治理的一体化产品方案
+> 状态：叙述层方案；最新实施状态以 [PROJECT_STATE.md](PROJECT_STATE.md)、ADR 与 Probe Decision Gate 为准
 
 ## 1. 执行摘要
 
@@ -223,8 +224,8 @@ ragent 的 `UserContextInterceptor` 能建立当前用户上下文，但本次�
 #### 推荐策略
 
 - 默认采用布局/标题/段落/表格感知的结构化分块。
-- 普通正文建议在 128–512 tokens 区间按结构自适应，保留适量重叠。
-- 建立 parent-child 索引：小块负责精确命中和引用，父块负责提供完整生成上下文；阶段 1 是否启用由 PROBE-006 的 Recall@5、引用可定位率和索引体积实测决定，探针可以否决它。
+- 阶段 1 采用 PROBE-006 冻结的 `wide-1024`：`max_chars=1024`、`overlap_chars=128`、`rows_per_chunk=32`，按结构边界切分并保留稳定定位。
+- 阶段 1 不建立 parent-child 索引。PROBE-006 的父子候选 Recall@5=0.6667，未优于 `wide-1024` 的 1.0，且索引估算体积更大；后续若重新引入，必须以新 Manifest、新索引 schema 和真实业务语料回归为依据。
 - 表格、代码、FAQ、合同条款分别使用专用分块器。
 - 保存 `tenant_id、knowledge_space_id、document_id、document_version_id、chunk_id、page、bbox、section_path、ACL、valid_time`。
 
@@ -263,7 +264,7 @@ ragent 的 `UserContextInterceptor` 能建立当前用户上下文，但本次�
 - 向量召回支持模型版本切换、增量重嵌入和双索引迁移。
 - RRF 或加权融合参数按知识空间配置，不把单一权重写死为全局规则。
 - Reranker 精排 Top5/Top10，保留排序解释、原始得分和淘汰原因。
-- 相邻块扩展、父块补全、跨来源多样性、时间新鲜度和权威来源加权。
+- 相邻块扩展、跨来源多样性、时间新鲜度和权威来源加权；阶段 1 不做父块补全。
 - 检索失败时进行查询改写或扩大召回，不直接让模型自由回答。
 
 #### 关于“召回 1024 → 精排 5”
@@ -738,7 +739,7 @@ MongoDB 单文档 BSON 上限为 16 MiB，PDF 中“通常不会超过”只能�
 |---|---|---|
 | 检索后才过滤权限 | 泄漏风险、合法召回不足 | ACL 前置到每路召回 |
 | 一开始部署 PG/Mongo/OpenSearch/Neo4j/Redis/对象存储 | 一致性和运维成本过高 | 首期 PostgreSQL、OpenSearch、Redis、MinIO，Mongo/Neo4j 按证据引入 |
-| 固定 128 token | 上下文碎片化、表格和条款断裂 | 结构化自适应；具体粒度、重叠和是否启用 parent-child 由 PROBE-006 实测冻结，不预先决定 |
+| 固定 128 token | 上下文碎片化、表格和条款断裂 | PROBE-006 已冻结结构感知 `wide-1024`（重叠 128 chars），阶段 1不启用 parent-child |
 | 固定召回 1024 | 延迟和重排成本不可控 | 自适应候选档位；阶段 1 以 1024 为不可突破硬上限 |
 | 只看引用覆盖率 | 弱相关引用也能“达标” | 同时测引用正确率、忠实度、拒答 |
 | 自动图谱抽取无人工治理 | 错误关系扩大推理偏差 | 置信度、来源、规则和人工审核 |
@@ -755,7 +756,7 @@ MongoDB 单文档 BSON 上限为 16 MiB，PDF 中“通常不会超过”只能�
 2. **治理壁垒**：权限前置、审核版本、有效期、数据血缘和全链路审计。
 3. **评测壁垒**：固定黄金集、版本化实验、质量门禁、在线反馈和可回滚发布。
 
-推荐的首期技术基线为 `PostgreSQL + OpenSearch + RabbitMQ + Redis + MinIO`，以 DeepDOC 类复杂解析、文档级与 Chunk 级索引投影、混合检索、Reranker 和句级引用构成主链路；RabbitMQ 承担可靠异步任务，Redis 专注缓存、限流和短期状态。当前不部署阿里云 OSS，未来云端部署再切换。模型通过阿里云百炼的 OpenAI-compatible Adapter 接入，首月预算上限 500 元。应用通过 `ObjectStorageAdapter` 屏蔽 MinIO 与未来 OSS 的差异，开发者可以在本地完成完整上传与引用回跳链路，不依赖云端凭证，也不把对象存储替换成本地普通文件。MongoDB、Neo4j、长期记忆和全量多模态在明确业务收益后启用。这样既能保留报告中提出的先进能力，也能控制首期复杂度，使每一项技术都对应可验证的产品价值。
+推荐的首期技术基线为 `PostgreSQL + OpenSearch + RabbitMQ + Redis + MinIO`，以 DeepDOC 类复杂解析、文档级与 Chunk 级索引投影、混合检索、Reranker 和句级引用构成主链路；RabbitMQ 承担可靠异步任务，Redis 专注缓存、限流和短期状态。当前不部署阿里云 OSS，未来云端部署再切换。模型通过内部 OpenAI-compatible `ModelAdapter` 接入（供应商基线以 ADR-0017 为准，早期文中的阿里云百炼已被 OpenRouter Embedding + fluxionai Chat 取代），首月预算上限 500 元。应用通过 `ObjectStorageAdapter` 屏蔽 MinIO 与未来 OSS 的差异，开发者可以在本地完成完整上传与引用回跳链路，不依赖云端凭证，也不把对象存储替换成本地普通文件。MongoDB、Neo4j、长期记忆和全量多模态在明确业务收益后启用。这样既能保留报告中提出的先进能力，也能控制首期复杂度，使每一项技术都对应可验证的产品价值。
 
 ### MVP 已确认的产品和验收边界
 

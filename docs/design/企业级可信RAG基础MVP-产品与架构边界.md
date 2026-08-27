@@ -123,7 +123,7 @@
 - 异步执行：Node.js Worker。
 - 复杂解析：独立 Python Parser Service。
 - ORM：Prisma + Prisma Migrate；特殊 PostgreSQL 能力使用受控 SQL migration，不引入第二套 ORM。
-- 模型接入：内部 `ModelAdapter`，通过 OpenAI-compatible HTTP 接入阿里云百炼 Chat、Embedding、Reranker 和高风险引用验证。
+- 模型接入：内部 `ModelAdapter`，通过 OpenAI-compatible HTTP（Chat Completions 或 Responses 二者之一）接入云侧 Chat、Embedding、Reranker 和高风险引用验证；供应商基线见 [ADR-0017](../adr/0017-mvp-cloud-model-and-budget.md)（Embedding = OpenRouter `qwen/qwen3-embedding-8b`；Chat = fluxionai `gpt-5.6-terra` · Responses；Reranker = OpenRouter `qwen/qwen3-reranker-8b` · Cohere 形状 `POST {base}/rerank`）。
 
 阶段 1 不部署独立 Model Gateway 服务。模型调用先作为共享后端模块存在；只有出现多个独立应用、跨租户统一路由、独立扩缩容或统一网关治理需求时才拆分进程。
 
@@ -380,11 +380,11 @@ Replay 分级为：
 - Recall@5：0.92。
 - 引用覆盖率：0.96，同时必须设置引用正确率。
 - 忠实度：0.95。
-- P50 1.2 秒只能作为候选目标，必须拆分检索、Rerank、TTFT、引用验证和完整回答时延。
+- P50 1.2 秒只能作为候选目标，必须拆分检索、Rerank（云 rerank 已实测独立计时：64 候选 0.95 秒、1024 候选 3.4-6.6 秒）、TTFT、引用验证和完整回答时延。
 
 这些数字在测量口径、数据集和真实基线建立前不冒充当前成绩或生产 SLO。
 
-阶段 1 的性能与费用边界按工程评审固化：`ingestion/evaluation` 使用独立 Worker 进程、队列、并发和预算池；OpenSearch 单次查询最多 fan-out 2 个 KnowledgeSpace、融合候选最多 1024、请求总超时 250 ms；ACL 候选权威复核 P95 不超过 60 ms 且不计入该 250 ms；引用验证常规路径不超过 600 ms、高风险路径不超过 1.5 秒；高风险正文缓冲最多 2,048 output tokens；模型费用在 PostgreSQL 预算账本内调用前预扣，单次不超过 5 元、每日不超过 16 元、月度不超过 500 元；用户级配额为并发 AnswerRun 1、并发 SSE 2、提问 10 次/分钟与 200 次/日、上传 20 个/小时。任何超限必须进入排队、降级、证据模式或拒答，不允许自动突破硬上限。
+阶段 1 的性能与费用边界按工程评审固化：`ingestion/evaluation` 使用独立 Worker 进程、队列、并发和预算池；OpenSearch 单次查询最多 fan-out 2 个 KnowledgeSpace、融合候选最多 1024、请求总超时 250 ms；ACL 候选权威复核 P95 不超过 60 ms 且不计入该 250 ms；**进 Reranker 的候选数是独立配置（待拍板，实现侧先按 64），rerank 时延与费用独立计量、不计入 250 ms**（PROBE-005 Stage C 实测 1024 候选 3.4-6.6 秒 / ¥0.16，全量 rerank 会把每日 16 元压到约 100 次问答）；引用验证常规路径不超过 2.0 秒、高风险路径不超过 3.5 秒（ADR-0027 已按 PROBE-005 实测由 600 ms / 1.5 s 修订，高风险路径要求逐句 Embedding 与蕴含校验并发发起）；高风险正文缓冲最多 2,048 output tokens；模型费用在 PostgreSQL 预算账本内调用前预扣，单次不超过 5 元、每日不超过 16 元、月度不超过 500 元；用户级配额为并发 AnswerRun 1、并发 SSE 2、提问 10 次/分钟与 200 次/日、上传 20 个/小时。任何超限必须进入排队、降级、证据模式或拒答，不允许自动突破硬上限。
 
 ### 16.3 阶段 1 能力门槛
 
@@ -401,7 +401,7 @@ Replay 分级为：
 2. 固定版 RAGFlow DeepDOC 的打包、启动、资源占用和 ParseArtifact。
 3. OpenSearch 多索引 Alias、Release 固定、原子切换、对账、回滚，以及 kNN engine/参数选型与带过滤召回衰减。
 4. RabbitMQ retry、cancel、stale message、DLQ 和 replay。
-5. 阿里云百炼 Chat、Embedding、Reranker、结构化输出、流式取消、错误映射和预算账本预扣。
+5. 云模型 Chat、Embedding、Reranker、结构化输出、流式取消、错误映射和预算账本预扣（供应商基线见 ADR-0017）。
 6. 分块参数与引用定位：在固定语料上比较候选分块组合的 Recall@5、引用可定位率、截断率和索引体积，冻结 `ChunkingManifest` 默认值。
 
 另有 PROBE-000 环境门禁作为前置条件，它验证本地工具链与 Docker 可用性，不属于架构假设验证。
@@ -488,7 +488,7 @@ Replay 分级为：
 
 ## 22. 下一项行动
 
-`plan-eng-review` 已闭合第 20 节列出的协议和 DoD。下一步先通过 PROBE-000 环境门禁，再执行第 17 节六个可丢弃架构探针，然后按 [工程评审闭合记录](../engineering/plan-eng-review-closure.md) 的 T1a/T1b、T2-T13 建立仓库骨架和纵向实现；探针只验证高风险事实，不另起 Demo 主链。测试入口见 [工程评审测试计划](../engineering/plan-eng-review-test-plan.md)。
+`plan-eng-review` 已闭合第 20 节列出的协议和 DoD。下一步先完成探针收尾提交，再按 [阶段 1 实施 Tickets](../engineering/stage1-implementation-tickets.md) 的 T0 建立仓库骨架，并以 T1a/T1b、T2-T16 进入纵向实现；探针只验证高风险事实，不另起 Demo 主链。测试入口见 [工程评审测试计划](../engineering/plan-eng-review-test-plan.md)。
 
 ## 23. 本次确认记录
 
@@ -521,7 +521,7 @@ Replay 分级为：
 - 已闭合：逐文档授权扩展点（阶段 1 预留不实现）、quick_parse `TEMPORARY` 引用、ModelAdapter 调用上下文、Pipeline/Release 关系、EvidenceSnapshot 删除目标、`CONFLICT` Finalizer 门禁、Redis 故障时并发兜底和 T1a/T1b 依赖拆分（见 [ADR-0036](../adr/0036-stage1-protocol-clarifications.md)）。
 - 已闭合：预算账本的预扣、结算、lease 回收和三个上限的自洽口径。
 - 已闭合：不可信内容与 Prompt Injection 的检测点、状态字段、失败行为和注入样本集 DoD。
-- 已闭合：九个交付增量的逐项 DoD、测试覆盖和失败模式登记（F-01 至 F-29）。
+- 已闭合：九个交付增量的逐项 DoD、测试覆盖和失败模式登记（F-01 至 F-30）。
 - 已闭合：首批格式门禁、六个架构探针的验收协议、性能硬上限、用户级配额和资源基线的测量方法。
 - 仍需实测：六个架构探针的登录与撤权行为、资源峰值、外部模型真实延迟与费用、解析质量、kNN 与分块冻结参数、OpenSearch 查询预算和 24 至 36 周重估结果。
 

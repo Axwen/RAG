@@ -1,8 +1,9 @@
 # TypeScript 企业级可信多模态 RAG 技术设计方案
 
-> 版本：V1.4  
-> 日期：2026-08-21  
+> 版本：V1.5
+> 日期：2026-08-27
 > 适用范围：企业内部知识库、复杂文档解析、混合检索、句级引用和权限治理
+> 状态：叙述层设计；实现契约出现后以 schema、mapping、OpenAPI 与类型定义为准，当前状态以 [PROJECT_STATE.md](PROJECT_STATE.md) 和 ADR 为准
 
 ## 1. 设计结论
 
@@ -195,7 +196,7 @@ OpenSearch 文档统一带 `tenant_id`、`knowledge_space_id`、`index_partition
 | 缓存/协调 | Redis 7 | 缓存、限流、短期会话、quick_parse TTL、分布式锁和 SSE 辅助状态 | 不承担异步任务的唯一事实；不承载应用任务队列 |
 | 文件 | MinIO（MVP）；阿里云 OSS（未来云端） | 原文件、图片、解析产物、引用快照 | 通过对象存储适配器接入；文件内容不经过 API 转存 |
 | 身份 | Keycloak + OIDC | 登录、会话、MFA、粗粒度角色和 Token | PostgreSQL 仍负责组织、成员关系和文档 ACL |
-| 模型接入 | MVP 使用 NestJS 内部 ModelAdapter 连接阿里云百炼；后续再评估 LiteLLM/独立 Model Gateway | Chat、Embedding、Reranker、引用验证、超时、费用统计 | 仅处理合成/严格脱敏数据；首月预算 500 元；敏感资料不得外发 |
+| 模型接入 | MVP 使用 NestJS 内部 ModelAdapter 连接云模型（供应商基线见 [ADR-0017](docs/adr/0017-mvp-cloud-model-and-budget.md)：Embedding = OpenRouter，Reranker = OpenRouter `qwen/qwen3-reranker-8b`，Chat = fluxionai · Responses）；后续再评估 LiteLLM/独立 Model Gateway | Chat、Embedding、Reranker、引用验证、超时、费用统计 | 仅处理合成/严格脱敏数据；首月预算 500 元；敏感资料不得外发 |
 | 观测 | OpenTelemetry + Prometheus + Grafana + Loki/Tempo | Trace、指标、日志和链路检索 | Trace ID 贯穿 SSE 和异步任务 |
 
 ### 4.2 未来试点容量基线
@@ -238,7 +239,7 @@ OpenSearch 文档统一带 `tenant_id`、`knowledge_space_id`、`index_partition
 | ragent Java 检索链路 | 仅在架构探针或评测 Harness 中通过临时 REST/gRPC 对比，或将其预算、融合、证据闸门规则迁移到 `packages/rag-core` | TS 控制面负责租户、ACL、请求编排；ragent 不作为阶段 1 正式运行时实现 |
 | RAGFlow DeepDOC/解析器 | `ParserAdapter` 调用独立 Python Worker 或容器 API | Python 负责布局、OCR、表格和解析产物；TS 负责任务状态、版本和发布 |
 | RAGFlow `insert_citations` 思路 | 在 `CitationModule` 中实现等价策略，保留 token/vector 回填作为候选绑定 | TS 负责引用协议、权限复核、蕴含校验和最终展示 |
-| RAGFlow/Ragent 模型路由 | 阶段 1 通过 NestJS 内部 `ModelAdapter` 接入阿里云百炼；LiteLLM/独立模型网关仅作为后续替换方案 | TS 负责预算、路由策略、审计和降级状态 |
+| RAGFlow/Ragent 模型路由 | 阶段 1 通过 NestJS 内部 `ModelAdapter` 接入云模型（基线见 ADR-0017）；LiteLLM/独立模型网关仅作为后续替换方案 | TS 负责预算、路由策略、审计和降级状态 |
 
 适配器接口只暴露稳定的业务协议，不把第三方仓库的内部 DTO、数据库表或索引字段泄漏到前端。这样可以先复用现有实现，再逐步替换为自有实现：
 
@@ -287,7 +288,7 @@ type ModelCallContext = {
 | `ProjectionBuilder` | 文档版本 + 配置版本 → 不可变投影 | BM25、Dense Vector、未来 ColBERT/Multi-vector、Graph |
 | `RetrievalChannel` | `RetrievalQuery + RetrievalScope → EvidenceCandidate[]` | BM25、向量以及未来的图谱、SQL/API、代码符号检索 |
 | `FusionRerankPolicy` | 多路候选 → 有解释的证据排序 | RRF、加权融合、Cross-Encoder、后续学习排序 |
-| `ModelAdapter` | 版本化 Chat/Embedding/Rerank/引用验证请求 | 阿里云百炼、LiteLLM、本地模型、其他云模型 |
+| `ModelAdapter` | 版本化 Chat/Embedding/Rerank/引用验证请求 | OpenRouter、fluxionai（Responses）、LiteLLM、本地模型、其他云模型 |
 | `CitationVerifier` | 回答句 + 证据 → 验证结果 | token/vector 回填、NLI、规则校验、人工复核；涉及模型的调用统一经 `ModelAdapter.verifyCitation` |
 | `ObjectStorageAdapter` | 上传会话、预签名、临时对象提升、校验、认领、删除和孤儿扫描 | MinIO、未来阿里云 OSS |
 
@@ -440,11 +441,17 @@ Query Normalize
 
 建议把 `recallBudget`、`candidateLimit`、`contextTopK` 作为知识库级配置，并允许按问题类型动态调整。用户摘要中的“召回 1024、精排 5”是候选默认值，不是固定协议。
 
+**Reranker 是独立计时与独立计费项，不在 OpenSearch 的 250 ms 预算内**（供应商基线见 [ADR-0017](docs/adr/0017-mvp-cloud-model-and-budget.md)：OpenRouter `qwen/qwen3-reranker-8b`，Cohere 形状 `POST {base}/rerank`）。PROBE-005 Stage C 实测：候选 8 / 64 / 256 / 1024 分别为 0.89 / 0.95 / 1.45 / 3.4-6.6 s，单次成本 ¥0.0012 / 0.0099 / 0.0397 / 0.1587。因此：
+
+- **`candidateLimit`（融合候选上限 1024）与 `rerankInputSize`（进 rerank 的候选数）必须是两个独立配置**，前者是 OpenSearch 侧上限，后者直接决定回答时延与每日可承载问答数（全量 1024 时仅 rerank 一项就把 ADR-0029 每日 16 元压到约 100 次问答/日）。`rerankInputSize` 待拍板，实现侧先按 64 编码上限并从配置读取；它是 `RetrievalManifest` 的必填字段而不是环境变量，否则 `RetrievalSnapshot` 无法复现一次问答的真实 rerank 输入规模（见工程评审闭合记录第 4.2 节）。
+- rerank 超时按实测上界（而非均值）设定，降级方式是**截断候选数**而不是放弃 rerank；HTTP 429 属常规分支，须退避重试（供应商不返回 `retry-after` 头）。
+- rerank 响应会回显全部候选正文（`return_documents=false` 在该端点不生效），日志只允许记录候选序号、分数与 chunk 标识。
+
 ### 6.4 Answer/Citation
 
 - 生成前给上下文证据分配稳定引用编号，要求模型输出结构化引用标记。
-- 生成后按句切分，对漏标句执行 token/vector 相似度回填；逐句验证 Embedding 必须合并为一次批量调用，常规路径预算 P95 <= 600 ms，产出 `VERIFIED`/`WEAK`/`PENDING`，`WEAK` 必须在界面显式标注（见 ADR-0027）。
-- 蕴含校验只用于高风险问答，附加一次 LLM 调用，路径预算 P95 <= 1.5 s，保留 2,048 output tokens 的发送前缓冲；验证失败返回 `EVIDENCE_ONLY` 或 `REFUSED`。单次 5 元预算口径包含 Chat、查询 Embedding、逐句验证 Embedding 与蕴含调用之和。
+- 生成后按句切分，对漏标句执行 token/vector 相似度回填；逐句验证 Embedding 必须合并为一次批量调用，常规路径预算 P95 <= 2.0 s（PROBE-005 实测云 Embedding 单次往返约 1.4 s，原 600 ms 不可达），产出 `VERIFIED`/`WEAK`/`PENDING`，`WEAK` 必须在界面显式标注（见 ADR-0027）。
+- 蕴含校验只用于高风险问答，附加一次 LLM 调用，路径预算 P95 <= 3.5 s，且**该蕴含调用必须与逐句 Embedding 批量调用并发发起**（串行实测下界约 4.3 s，必然超预算）；保留 2,048 output tokens 的发送前缓冲；验证失败返回 `EVIDENCE_ONLY` 或 `REFUSED`。蕴含校验的结构化输出只走 strict `json_schema`（ADR-0017 §3）。单次 5 元预算口径包含 Chat、查询 Embedding、**Reranker**、逐句验证 Embedding 与蕴含调用之和（PROBE-005 Stage C 实测：满额 1024 候选的 rerank 单次约 ¥0.16，是该口径中最大的单项）。
 - 对候选引用执行权限、版本和有效期校验；冲突按 ADR-0033 的全序键确定性消解，同权威同范围的不相容证据判为 `CONFLICT` 并同时展示两条来源，不由模型择一。含未解决 `CONFLICT` 的运行不得由 `AnswerFinalizer` 提交为 `ANSWERED`，只能进入 `PARTIAL`、`EVIDENCE_ONLY` 或 `REFUSED`。
 - 无据句默认标记为“不确定”或删除；高风险问题可整答拒绝。
 - 保存 `answer_sentence`、`evidence_id`、`match_method`、`score`、`verification_status` 和模型版本，均不含摘录文本。
@@ -578,7 +585,7 @@ PG transaction: create activation_intent + outbox event
 
 如果 Alias 已切换但 API 在写回 PostgreSQL 前崩溃，对账任务必须依据 `activation_intent` 继续完成或回滚；任何中间状态都不能让 API 返回“已发布”但检索不到版本。
 
-索引只携带稳定的作用域键，不携带主体列表和 ACL 版本号。`acl_scope_key` 由 `tenant_id`、`knowledge_space_id`、`data_class`、`visibility_class` 组合而成，随文档版本一起投影，只在这些属性本身变化时才需要重投影。授权分两段：查询前由 PostgreSQL 编译出主体可见的作用域集合，写入 BM25 与向量过滤 `acl_scope_key IN allowedScopeKeys`；候选合并之后、融合与 Rerank 之前，对候选的 `document_version_id` 集合做一次批量 PostgreSQL 权威复核，校验文档级拒绝例外、删除墓碑、Legal Hold 和有效期。禁止逐候选查询 PostgreSQL。PostgreSQL 不可用或复核超时时整个查询 fail closed，返回证据不可用，不退化为只信任索引过滤。阶段 1 授权模型为纯作用域型；逐文档正向授权是加法、只能进预过滤，作为已识别扩展点预留但不实现，预过滤编译须保留可追加 `OR document_version_id IN (...)` 子句的形状（见 ADR-0026、ADR-0036）。
+索引只携带稳定的作用域键，不携带主体列表和 ACL 版本号。阶段 1 的实际索引字段口径以 [ADR-0037](docs/adr/0037-stage1-index-field-alignment.md) 和 PROBE-003 实测 mapping 为准：`data_class` 由 `index_partition_id`（其唯一键包含 data class）承载，`visibility_class` 不作为独立索引字段；二者如需参与授权作用域，统一编码进应用层生成的 `acl_scope_key`。索引保留 `tenant_id`、`knowledge_space_id`、`index_partition_id`、`release_id`、`acl_scope_key`、`embedding_version`、`valid_from`、`valid_to`、`deleted` 及正文/向量字段。授权分两段：查询前由 PostgreSQL 编译出主体可见的作用域集合，写入 BM25 与向量过滤 `acl_scope_key IN allowedScopeKeys`；候选合并之后、融合与 Rerank 之前，对候选的 `document_version_id` 集合做一次批量 PostgreSQL 权威复核，校验文档级拒绝例外、删除墓碑、Legal Hold 和有效期。禁止逐候选查询 PostgreSQL。PostgreSQL 不可用或复核超时时整个查询 fail closed，返回证据不可用，不退化为只信任索引过滤。阶段 1 授权模型为纯作用域型；逐文档正向授权是加法、只能进预过滤，作为已识别扩展点预留但不实现，预过滤编译须保留可追加 `OR document_version_id IN (...)` 子句的形状（见 ADR-0026、ADR-0036、ADR-0037）。
 
 ### 7.4 OpenSearch 文档字段
 
@@ -593,25 +600,22 @@ PG transaction: create activation_intent + outbox event
   "section_path": ["章", "节"],
   "page": 3,
   "bbox": [0, 0, 100, 100],
-  "parent_chunk_id": "parent-id",
   "acl_scope_key": "tenant-id|space-id|INTERNAL|CONTROLLED",
-  "data_class": "INTERNAL",
-  "visibility_class": "CONTROLLED",
   "authority_level": "OFFICIAL",
   "clearance_level": 2,
   "valid_from": "2026-01-01T00:00:00Z",
   "valid_to": null,
   "parser_version": "deepdoc-v1",
-  "chunking_version": "chunk-v1",
-  "embedding_version": "gte-v1",
+  "chunking_version": "wide-1024",
+  "embedding_version": "qwen/qwen3-embedding-8b",
   "index_partition_id": "partition-id",
-  "index_release_id": "release-id",
+  "release_id": "release-id",
   "injection_risk": "none",
   "availability": "READY"
 }
 ```
 
-作用域字段只用于检索预过滤，最终权限判断以 PostgreSQL 的批量权威复核为准。`authority_level` 用于跨知识空间冲突的确定性消解（见 ADR-0033），`injection_risk` 用于不可信内容处置（见 ADR-0032）。索引发布采用新索引 + alias 原子切换，保留上一版本用于回滚；`index_partition_id` 的唯一键包含 `embedding_version`，换模型或改维度产生新分区而不是原地重写（见 ADR-0028）。
+作用域字段只用于检索预过滤，最终权限判断以 PostgreSQL 的批量权威复核为准。`authority_level` 用于跨知识空间冲突的确定性消解（见 ADR-0033），`injection_risk` 用于不可信内容处置（见 ADR-0032）。PROBE-006 已冻结 `parent_child=false`，阶段 1 mapping 不包含 `parent_chunk_id` 或父子关系字段；索引发布采用新索引 + alias 原子切换，保留上一版本用于回滚；`index_partition_id` 的唯一键包含 `embedding_version`，换模型或改维度产生新分区而不是原地重写（见 ADR-0028、ADR-0031）。
 
 ### 7.5 引用协议
 
@@ -859,9 +863,9 @@ ACL revision changed while retrieval is in flight -> stale candidate rejected
 - 独立客服 Web 工作台、回复草稿复制、知识审核流程。
 - 人工编写产品资料、标准话术、脱敏/合成工单和黄金题，验证三类知识的权威顺序。
 - 工单通过 JSON/CSV 文件导入，不建设工单管理系统，也不实现不存在的上游 Webhook/API。
-- 通过阿里云百炼的 OpenAI-compatible Adapter 使用云端小模型处理合成或严格脱敏数据，先跑通检索、引用、拒答和反馈流程；首月模型预算上限 500 元，超过后停止评测任务。
+- 通过 OpenAI-compatible `ModelAdapter`（Chat Completions 或 Responses 二者之一，供应商基线见 ADR-0017）使用云端小模型处理合成或严格脱敏数据，先跑通检索、引用、拒答和反馈流程；首月模型预算上限 500 元，超过后停止评测任务。
 - Docker Compose 默认启动 PostgreSQL、OpenSearch、RabbitMQ、Redis、Keycloak 和 MinIO；Parser 和完整观测栈通过独立 Profile 按需启动，阿里云 OSS 不进入 MVP 部署。
-- `worker:ingestion` 与 `worker:evaluation` 使用独立进程、队列、并发和预算池；初始硬上限为 ingestion 并发 4/in-flight 8、evaluation 并发 1/in-flight 1、Parser 并发 1、OpenSearch fan-out 2 个 KnowledgeSpace、候选 1024、请求总超时 250 ms、ACL 候选复核 60 ms、引用验证常规 600 ms/高风险 1.5 s、高风险输出缓冲 2,048 tokens。模型调用前在 PostgreSQL `model_budget_ledger` 内预扣并取 lease，单次 <= 5 元、每日 <= 16 元、月度 <= 500 元（16 × 31 = 496，三个上限自洽）；超限只允许排队、降级、evidence-only 或拒答。
+- `worker:ingestion` 与 `worker:evaluation` 使用独立进程、队列、并发和预算池；初始硬上限为 ingestion 并发 4/in-flight 8、evaluation 并发 1/in-flight 1、Parser 并发 1、OpenSearch fan-out 2 个 KnowledgeSpace、候选 1024、请求总超时 250 ms、ACL 候选复核 60 ms、**rerank 输入候选上限 64（待拍板，独立于 1024 融合候选上限，不计入 250 ms；实测 1024 候选需 3.4-6.6 s / ¥0.16）**、引用验证常规 2.0 s/高风险 3.5 s（ADR-0027 按 PROBE-005 实测修订）、高风险输出缓冲 2,048 tokens。模型调用前在 PostgreSQL `model_budget_ledger` 内预扣并取 lease，单次 <= 5 元、每日 <= 16 元、月度 <= 500 元（16 × 31 = 496，三个上限自洽）；超限只允许排队、降级、evidence-only 或拒答。
 - 使用一个虚构的企业客服工单 SaaS 构建互相关联的产品资料、套餐/版本/地区规则、账号、权限、退款、API、错误码、故障处理、标准话术、合成工单和黄金问题。
 - 首批发布门禁支持 Markdown、原生/扫描 PDF 和 JSON/CSV 工单；Parser Service 包装固定版本 RAGFlow DeepDOC。DOCX/PPTX/XLSX 通过专用 Adapter 统一产出 Markdown/AST，并在探针通过后逐项加入阶段 1 门禁。
 - pnpm workspace 管理 Next.js、NestJS、Node Worker、共享契约、Prisma 和 Python Parser Service。
@@ -915,7 +919,7 @@ ACL revision changed while retrieval is in flight -> stale candidate rejected
 - 文档审核采用 Draft、PendingReview、Published、Archived 四态；处理状态独立于审核状态。
 - 新版本在 Draft/PendingReview 阶段通过 Outbox + RabbitMQ 构建候选关键词和向量索引；审核通过后激活已校验 Release。图谱只保留未来协议，不创建阶段 1 图谱任务或表。投影任务支持幂等、重试、DLQ、重放和 Alias 对账回滚。
 - Neo4j 仅作为未来多跳场景的可选证据通道，MVP 不启动。
-- Chat、Embedding、Reranker 和引用验证模型使用阿里云百炼云 API，但全部位于可替换的 Model Adapter 后；首月预算上限 500 元。
+- Chat、Embedding、Reranker 和引用验证模型使用云 API（基线见 ADR-0017），但全部位于可替换的 Model Adapter 后；首月预算上限 500 元。
 - 知识种子集采用虚构的企业客服工单 SaaS，项目先完成可演示 MVP，再根据结果决定开源或商业化方向。
 - MVP 页面覆盖登录、客服问答、知识上传/列表/详情、入库任务、知识审核、用户权限和黄金集评测。
 - PostgreSQL 使用 Prisma + Prisma Migrate；特殊数据库能力使用自定义 SQL migration，不引入第二套 ORM。
@@ -925,6 +929,6 @@ ACL revision changed while retrieval is in flight -> stale candidate rejected
 
 ### 实现前置事实
 
-产品定位、首期角色、技术基线、参考仓库复用方式和阶段边界已经在项目主事实源与 ADR 中确认。实现前仍需通过六个架构探针实测以下事实：Keycloak 初始化、OIDC Code + PKCE、Token 校验、用户映射、会话过期和撤权链路；OpenSearch Alias/作用域过滤与 kNN 参数选型；RabbitMQ 重试/DLQ/重放；百炼 ModelAdapter 的延迟/费用/错误映射与预算账本；首批 Parser 格式的资源和定位质量；分块参数对 Recall@5 与引用可定位率的影响。探针结果应写入工程评审闭合记录，不再通过聊天重新定义架构方向。
+产品定位、首期角色、技术基线、参考仓库复用方式和阶段边界已经在项目主事实源与 ADR 中确认。实现前仍需通过六个架构探针实测以下事实：Keycloak 初始化、OIDC Code + PKCE、Token 校验、用户映射、会话过期和撤权链路；OpenSearch Alias/作用域过滤与 kNN 参数选型；RabbitMQ 重试/DLQ/重放；云模型 ModelAdapter 的延迟/费用/错误映射与预算账本；首批 Parser 格式的资源和定位质量；分块参数对 Recall@5 与引用可定位率的影响。探针结果应写入工程评审闭合记录，不再通过聊天重新定义架构方向。
 
 下一步产物顺序固定为：Prisma schema 与状态命令、RabbitMQ 事件/队列契约、Parser/Model/ObjectStorage Adapter 契约、OpenAPI、前端页面路由和 Docker Compose Profile。
