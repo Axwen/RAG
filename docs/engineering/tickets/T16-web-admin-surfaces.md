@@ -22,6 +22,16 @@
 - 引用点击、预览、下载每次重新鉴权，不信任历史快照权限。
 - 删除、预算和恢复操作需要明确确认、结果证明和可追踪审计，不能只做“成功 Toast”。
 
+## 工作量估算
+
+- P1，human: ~10d / CC: ~2.5d。按执行顺序拆为两批，不作为单一批次估算：
+  - T16a 用户主链（`/login`、`/knowledge`、`/knowledge/upload`、`/knowledge/:id`、`/review`、`/ingestion`、`/ingestion/:jobId`、`/chat`）：human: ~6d / CC: ~1.5d。
+  - T16b 管理控制台（`/admin/users`、`/admin/deletions`、`/admin/evaluations`、`/admin/operations`）：human: ~4d / CC: ~1d。
+- 拆分依据：12 条路由的页面结构与状态表达约 5d；SSE 停止/续读、句级引用回跳与高风险缓冲的前端语义约 1.5d；三个控制台的删除证明、门禁报告、预算熔断展示与二次确认约 2d；Playwright 八条关键浏览器链路及无障碍、错误恢复、加载/空状态验收约 1.5d。
+- 校准：两批各自与 T6/T7（~6d）、T11/T12（~4d）同档。T16 是阶段 1 唯一横跨整条时间线的票据，合并成单一数字会掩盖它必须纵向跟随后端 Ticket 交付这一约束。
+- 重叠说明：其中约 1d 原先隐含在 T7 的 ~6d 内（T7 计划文件包含 `apps/web/src/features/chat/`），约 0.5d 隐含在 T8/T9/T12 的删除证明与报告 DoD 内。
+- 本估算不含 Design Review 本身的工作量；Design Review 未关闭前不开工 `/chat` 与三个 `/admin/*` 控制台。
+
 ## 依赖与时点
 
 - 页面实现开始前执行 Design Review，最迟不晚于 `/chat` 和三个 `/admin/*` 控制台开工。

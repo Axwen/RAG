@@ -19,6 +19,13 @@
 - 撤权、删除墓碑、Legal Hold 和有效期优先于缓存和历史 Snapshot。
 - 不把 `acl_subject_ids`、`acl_revision` 或主体列表写入 OpenSearch。
 
+## 工作量估算
+
+- P1，human: ~6d / CC: ~1.5d。
+- 拆分依据：`auth`（PKCE、JWKS 校验与轮换、会话过期、Keycloak 不可用映射）约 1.5d；`authorization`（用户映射、Workspace 成员、`acl_scope_key` 集合编译、批量候选权威复核）约 2d；服务端身份上下文契约与同步领域审计原因码约 0.5d；Keycloak 容器集成七类场景（PKCE、JWKS 轮换、过期、禁用、撤权、不可用、恢复）约 1.5d；撤权竞态与复核超时 fail-closed 的 PostgreSQL/OpenSearch 集成约 0.5d。
+- 校准：与 T3/T6 同档（~6d）。ADR-0026 的两段授权、任何依赖不可用即 fail closed 和撤权竞态，是阶段 1 最难稳定回归的一组不变量。
+- 重叠说明：其中约 2d 原先隐含在 T6 的 ~6d 内（T6 计划文件曾包含 `apps/api/src/modules/authorization/`，验证项曾包含撤权后候选复核竞态），本票据成立后从 T6 转移而来，不是净新增范围。
+
 ## 依赖
 
 - T0、T1a。

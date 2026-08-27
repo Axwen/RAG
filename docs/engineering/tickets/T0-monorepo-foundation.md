@@ -45,6 +45,13 @@
 - Parser 业务协议、ModelAdapter、检索、回答、删除和 UI 产品功能。
 - 生产 Kubernetes、部署、PR 或远程仓库配置。
 
+## 工作量估算
+
+- P1，human: ~4d / CC: ~1d。
+- 拆分依据：根工作区与共享 TypeScript/ESLint/Vitest 配置约 1d；八个 workspace 项目的最小可编译入口约 0.5d；uv/pytest 与 Parser 容器构建入口约 0.5d；六个中间件的 Compose、健康检查、持久化卷与显式 profile 约 1d；可重复初始化（Keycloak Realm 导入、MinIO Bucket、迁移、开发种子）与 CI、开发文档约 1d。
+- 校准：与 T11/T12/T13 同档（~4d），高于 T1a/T10（~3d），低于 T5（~5d）。T0 范围宽但每一项都是机械配置，不含领域状态空间、跨库恢复窗口和故障注入矩阵。
+- 主要超时来源：Keycloak Realm 导入的幂等性、WSL2 下六个容器的健康检查时序，以及 PostgreSQL、Redis、MinIO 三个没有探针冻结版本的镜像标签选定与依据记录。
+
 ## 依赖与后续
 
 - 依赖：探针收尾提交完成，工作区干净。

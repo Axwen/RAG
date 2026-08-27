@@ -21,6 +21,13 @@
 - 429 是常规运行分支；Rerank 回显正文、原始 Prompt、Token 和密钥不得进入日志或快照。
 - 调用前预扣；成功、已知取消、超时和未知上游计费状态分别按 ADR-0029 结算，进程崩溃由 lease 回收。
 
+## 工作量估算
+
+- P1，human: ~5d / CC: ~1.25d。
+- 拆分依据：四类调用的统一准入点与 Provider 能力表约 1d；fluxionai Responses 适配（strict `json_schema`、SSE 事件白名单、`reasoning_content` 隔离、取消）约 1.5d；OpenRouter Embedding/Reranker 适配（1024 维按 `index` 对齐、输入上限截断、429 退避与降级）约 1d；预扣、lease、结算、未知上游计费状态与崩溃回收约 1d；数据等级门禁与日志/快照脱敏断言约 0.5d。
+- 校准：与 T5 同档（~5d）。PROBE-005 已实测三条供应商线路的真实报文、延迟和费用，协议探索风险已消除；剩余成本集中在预算结算状态机的分支完备性，而不是供应商方言。
+- 重叠说明：其中约 1.5d 原先隐含在 T5 的 Embedding 调用、T6 的 Rerank 调用和 T7 的引用验证调用内，另约 0.5d 隐含在 T12 的 `apps/api/src/modules/model/` 内；本票据成立后集中到统一准入层，不是净新增范围。
+
 ## 依赖
 
 - T0、T1a、T12 的 Budget Ledger schema/事务入口。

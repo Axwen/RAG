@@ -32,7 +32,15 @@
 | T13 Untrusted Content | 解析、进入上下文前、输出后三处注入检测 | 分别随 T4、T6、T7 交付，不作为最后一次集中补丁 |
 | [T14](tickets/T14-identity-authorization.md) Identity/Authorization | Keycloak OIDC、用户映射、Workspace 成员、作用域编译和 fail-closed | T0、T1a；在 T6 和所有 Web 路由前完成 |
 | [T15](tickets/T15-model-adapter.md) ModelAdapter | Chat、Embedding、Reranker、引用验证统一准入层及供应商方言 | T1a、T12 Ledger；在 T5 Embedding、T6 Rerank、T7 Chat/Citation 前完成 |
-| [T16](tickets/T16-web-admin-surfaces.md) Web/Admin Surfaces | 登录、知识上传/审核、入库状态、Chat 和三个管理控制台 | 页面开工前执行 Design Review；按后端 Ticket 纵向交付，不单独等待最后集成 |
+| [T16](tickets/T16-web-admin-surfaces.md) Web/Admin Surfaces | 登录、知识上传/审核、入库状态、Chat 和三个管理控制台 | 页面开工前执行 Design Review；按后端 Ticket 纵向交付，不单独等待最后集成；拆为 T16a 用户主链与 T16b 管理控制台两批 |
+
+## 工作量估算
+
+十八张票据的 `human`/`CC` 估算、重叠转移明细和周期换算集中在[工程评审闭合记录第 16 节与 16.1 节](plan-eng-review-closure.md#16-实施任务)，本文件不复制数字。当前口径：
+
+- 十八张票据合计 human ~84.5d / CC ~20.6d；T0/T14/T15/T16 四张新票据的净新增为 human ~19.5d / CC ~4.9d，其余 ~5.5d 是从 T5–T12 转移而来的归属调整。
+- 估算只覆盖实现本身。门禁、集成验证、真实语料构建、性能回归和恢复演练不在票据估算内，周期换算按经验系数给出区间而不是承诺。
+- T0/T14/T15/T16 的拆分依据、校准理由和风险项写在各自 Ticket 的“工作量估算”一节。
 
 ## 执行顺序
 
@@ -44,8 +52,8 @@
   -> T2 + T10(Worker 基础) -> T3 -> T1b
   -> T15 -> T4 + T13(parse) -> T5
   -> T9(Harness/语料) -> T6 + T13(context) -> 拍板 rerankInputSize
-  -> Design Review -> T7 + T13(output) + T16 用户主链
-  -> T8 + T9(反馈/报告) + T10/T11/T12 收口 + T16 管理控制台
+  -> Design Review -> T7 + T13(output) + T16a 用户主链
+  -> T8 + T9(反馈/报告) + T10/T11/T12 收口 + T16b 管理控制台
   -> Probe Gate 集成项全闭合 -> 完整增量工程复审与周期重估
 ```
 

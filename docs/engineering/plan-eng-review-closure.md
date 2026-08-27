@@ -582,7 +582,48 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
   - 验证：独立注入样本集覆盖直接注入、间接注入、编码与零宽字符混淆、表格/OCR 文本注入和跨文档串联；断言 `suspected` 候选不进生成上下文、不触发外链或工具调用、`QUARANTINED` 资产不可发布、未验证正文不成为最终快照。
   - 时点：分别随 T4 解析扫描、T6 上下文准入和 T7 输出检查交付，不允许最后集中补齐。
 
-补充任务：T0 Monorepo 基线、T14 Identity/Authorization、T15 ModelAdapter、T16 Web/Admin Surfaces 的范围和依赖见 [阶段 1 实施 Tickets](stage1-implementation-tickets.md)。
+补充任务（探针收尾复审新增，权威范围与估算拆分见各自 Ticket，本节只保留口径一致的估算头和验证项）：
+
+- [ ] **T0 (P1, human: ~4d / CC: ~1d)** — Monorepo 与本地开发基线 — 建立 pnpm/uv 工作区、Compose、可重复初始化和 CI 入口。
+  - 来源：探针收尾复审，T1a–T13 全部预设一个尚不存在的 monorepo，没有任何票据拥有工具链与包边界。
+  - 计划文件：`package.json`、`pnpm-workspace.yaml`、`apps/{api,web,worker}`、`packages/{contracts,database,rag-core,config,observability}`、`services/parser/`、`infra/compose/`、CI 配置。
+  - 范围补充：见 [T0 Ticket](tickets/T0-monorepo-foundation.md)。冻结 Node `22.23.1`、pnpm `10.34.5`、Python `3.12.3`；Compose 复用探针实测的 Keycloak `26.2.5`、OpenSearch `2.19.1`、RabbitMQ `3.13-management`，PostgreSQL、Redis、MinIO 无探针冻结版本，实现时选定明确标签并记录依据，不用 `latest`。
+  - 验证：干净检出冻结安装、根 lint/typecheck/Vitest/pytest/build/Prisma validate、六个 core 中间件 healthy、初始化可重复执行、CI 不读取仓库外凭证也不触发付费模型调用。
+- [ ] **T14 (P1, human: ~6d / CC: ~1.5d)** — Identity/Authorization — 把 Keycloak 外部事实落成业务身份与统一授权决策。
+  - 来源：探针收尾复审，PROBE-001 只验证了外部身份事实，业务用户映射、Workspace 成员和 `acl_scope_key` 编译此前没有票据归属。
+  - 计划文件：`apps/api/src/modules/auth/`、`apps/api/src/modules/authorization/`、`packages/contracts/src/auth/`、`apps/web/src/features/auth/`。
+  - 范围补充：见 [T14 Ticket](tickets/T14-identity-authorization.md)。Token、角色或 Keycloak Group 不等于业务授权；查询前编译作用域预过滤、候选合并后批量权威复核，任何依赖不可用或超时 fail closed（ADR-0026、ADR-0037）。其中约 2d 由 T6 转移而来。
+  - 验证：Keycloak 容器集成覆盖 PKCE、JWKS 轮换、过期、禁用、撤权、不可用与恢复；PG/OpenSearch 集成覆盖撤权竞态、过滤与复核一致、复核超时 fail closed，越权证据泄漏为 0。
+- [ ] **T15 (P1, human: ~5d / CC: ~1.25d)** — ModelAdapter — 建立四类模型调用的统一准入层与预算门禁。
+  - 来源：探针收尾复审，PROBE-005 的四条供应商路径此前分散依附在 T5/T6/T7/T12，没有单一准入点票据。
+  - 计划文件：`apps/api/src/modules/model/`、`packages/contracts/src/model/`、`packages/config/`、`packages/database/`。
+  - 范围补充：见 [T15 Ticket](tickets/T15-model-adapter.md)。`UNKNOWN` 或不允许出域的数据在发出 HTTP 请求前阻断；Rerank 输入取自 `RetrievalManifest.rerankInputSize`，不从前端或环境变量覆盖；调用前预扣并按 ADR-0029 结算，崩溃由 lease 回收。其中约 2d 由 T5/T6/T7/T12 转移而来。
+  - 验证：四类调用契约与错误归一、SSE 事件白名单与取消、敏感/`UNKNOWN` 输入断言零网络请求、并发预扣与结算差额、429 退避降级、回显正文与密钥不落日志；LIVE 供应商测试用合成数据手工触发，不进普通 CI。
+- [ ] **T16 (P1, human: ~10d / CC: ~2.5d)** — Web/Admin Surfaces — 交付用户主链页面与三个硬 DoD 管理控制台。
+  - 来源：探针收尾复审，测试计划的九组路由中 `/admin/deletions`、`/admin/evaluations`、`/admin/operations` 是硬 DoD 但没有任何票据拥有页面实现。
+  - 计划文件：`apps/web/src/app/`、`apps/web/src/features/`、`tests/e2e/`。
+  - 范围补充：见 [T16 Ticket](tickets/T16-web-admin-surfaces.md)。按执行顺序拆为 T16a 用户主链（~6d / ~1.5d）和 T16b 管理控制台（~4d / ~1d）两批，纵向跟随后端 Ticket 交付，不等后端全部完成后一次性搭空壳页面；页面开工前完成 Design Review。其中约 1.5d 由 T7/T8/T9/T12 转移而来。
+  - 验证：Playwright 覆盖登录、上传到发布、Chat/SSE/续读、撤权后引用回跳、高风险缓冲、删除证明、评测门禁和预算熔断；无障碍、错误恢复、加载/空状态按 Design Review 结果验收。
+
+### 16.1 工作量合计与周期换算
+
+口径：单人有效工作日。`human` 为人工实现，`CC` 为机械实现主要由 Claude Code 承担时的等价工作日。两者都只覆盖票据实现本身，不含评审、门禁关闭、集成调试、语料构建和返工。
+
+| 分项 | human | CC |
+|---|---|---|
+| T1a–T13（首次工程评审已估） | 65d | 15.75d |
+| T0/T14/T15/T16 全范围 | 25d | 6.25d |
+| 减去已隐含在 T5–T12 内的重叠 | -5.5d | -1.4d |
+| 十八张票据合计 | 84.5d | 20.6d |
+
+重叠明细：T6 → T14 授权模块与撤权复核 -2d；T5/T6/T7 → T15 供应商客户端 -1.5d；T12 → T15 模型预算门禁 -0.5d；T7 → T16a `apps/web/src/features/chat/` -1d；T8/T9/T12 → T16b 删除证明与报告页面 -0.5d。这些工作原先已计入 T5–T12 的估算，四张新票据成立后只是归属转移，不是净新增范围；净新增为 human ~19.5d / CC ~4.9d。
+
+周期换算是假设，不是承诺，也不替代重估：票据估算不含 DX Review、Design Review、两次增量工程复审、[Probe Decision Gate](probe-decision-gate.md) 的 11 项待关闭条件（3 项实现前决策、5 类实现集成验证、3 项生产真实数据治理）、真实业务语料构建与 `rerankInputSize` 拍板实验、性能回归、恢复演练和评审返工。按门禁密集项目 1.7–2.2 倍的经验系数换算：
+
+- 人工为主路径约 144–186 人日，单人 5 天/周约 29–37 周，落在 24–36 周窗口的上半段，上界略微超出窗口。
+- 机械实现主要由 CC 承担、人工只做评审与门禁时，实现部分压缩而门禁与集成部分不压缩，合计约 16–24 周，落在窗口下半段。
+
+系数为经验假设值而非实测值，因此 24–36 周窗口在“人工为主”路径下已接近上界。若窗口不成立，按[产品与架构边界](../design/企业级可信RAG基础MVP-产品与架构边界.md)第 17 节优先削减首批文件格式、运营界面和影响分析覆盖面，不削减身份、权限、引用、消息幂等、发布回滚和数据删除门禁。正式重估仍按计划在 T0 后的实现准备增量工程复审中进行。
 
 探针 Tickets：
 
