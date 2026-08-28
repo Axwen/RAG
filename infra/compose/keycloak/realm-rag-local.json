@@ -1,0 +1,42 @@
+{
+  "realm": "rag-local",
+  "enabled": true,
+  "displayName": "RAG Local",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      { "name": "knowledge-viewer", "description": "只读检索与提问" },
+      { "name": "knowledge-editor", "description": "上传与提交候选" },
+      { "name": "knowledge-reviewer", "description": "审核与发布 Release" },
+      { "name": "platform-admin", "description": "用户、删除、评测与运维控制台" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "rag-web",
+      "name": "RAG Web",
+      "description": "浏览器前端。公有客户端，授权码 + PKCE(S256)，不持有密钥。",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3000/*"],
+      "webOrigins": ["http://localhost:3000"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/*"
+      },
+      "defaultClientScopes": ["openid", "profile", "email", "roles", "web-origins"]
+    }
+  ],
+  "defaultDefaultClientScopes": ["openid", "profile", "email", "roles", "web-origins"]
+}
