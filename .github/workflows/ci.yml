@@ -1,0 +1,124 @@
+# 阶段 1 CI 冻结检查（T0）。
+#
+# 原则：
+# - 只执行本地 `pnpm verify` / `pnpm py:test` 已覆盖的同一批检查，命令保持一致，
+#   避免 CI 与本地出现"只在一边通过"的偏差。
+# - 不读取仓库外凭证：环境变量一律来自 `.env.example` 的占位值（其中模型 key 是
+#   刻意无效的 `sk-INVALID-...`），不使用任何 repository secret。
+# - 不触发付费云模型调用：本工作流不运行 evals，也不启动 parser/evaluation profile。
+# - 依赖安装全部冻结：pnpm `--frozen-lockfile`，uv `--frozen`。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # 关闭第三方遥测，CI 不产生对外上报
+  NEXT_TELEMETRY_DISABLED: '1'
+  DO_NOT_TRACK: '1'
+
+jobs:
+  node:
+    name: node（lint / typecheck / test / prisma / build）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        # 版本来自 package.json 的 packageManager 字段，不在此处重复声明
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 准备占位环境变量
+        # prisma validate 与 compose config 需要变量存在；.env.example 内全是无效占位值
+        run: cp .env.example .env
+
+      - name: 冻结安装
+        run: pnpm install --frozen-lockfile
+
+      - name: 格式检查
+        run: pnpm run format
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: 单元测试
+        run: pnpm run test
+
+      - name: Prisma schema 校验
+        run: pnpm run db:validate
+
+      - name: 构建
+        run: pnpm run build
+
+      - name: 确认工作区未被构建产物污染
+        # 构建不应改写任何被跟踪文件（例如 Next.js 回写 tsconfig.json）
+        run: git diff --exit-code
+
+  python:
+    name: python（parser uv / pytest）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/parser
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: '0.12.5'
+          python-version: '3.12.3'
+          enable-cache: true
+          cache-dependency-glob: services/parser/uv.lock
+
+      - name: 校验锁文件与 pyproject 一致
+        run: uv lock --check
+
+      - name: 冻结安装
+        run: uv sync --frozen
+
+      - name: pytest
+        run: uv run pytest -q
+
+  compose:
+    name: compose（配置解析 / parser 镜像构建）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 准备占位环境变量
+        run: cp .env.example .env
+
+      - name: Compose 配置解析（含 parser 与 evaluation profile）
+        run: >-
+          docker compose --env-file .env -f infra/compose/compose.yml
+          --profile parser --profile evaluation config -q
+
+      - name: 初始化脚本语法检查
+        run: bash -n infra/compose/init/*.sh
+
+      - name: Keycloak Realm JSON 可解析
+        run: python3 -c "import json,sys; json.load(open('infra/compose/keycloak/realm-rag-local.json'))"
+
+      - name: 构建 Parser 镜像
+        # 只验证 Dockerfile 可构建，不推送任何镜像
+        run: docker build -t rag-parser:ci services/parser
