@@ -13,6 +13,7 @@
 - 本地 Compose 复用已经实测的 Keycloak `26.2.5`、OpenSearch `2.19.1`、RabbitMQ `3.13-management`。PostgreSQL、Redis、MinIO 没有探针冻结版本，T0 实现时必须从官方稳定镜像中选择明确标签、记录选择依据并通过健康检查，不得使用 `latest`。
 - Prisma 使用 Prisma Migrate：本地开发使用 `migrate dev`，CI/部署使用 `migrate deploy`；迁移 SQL 进入版本库，不用 `db push` 代替正式迁移。自定义索引或数据库特性按 ADR-0013 使用受控 SQL migration。
 - `.env.example` 只含无敏感默认值和变量说明；真实 Token、密码和模型密钥只来自未跟踪 env 或运行环境。
+- T0 尚无领域 Prisma 模型，因此初始化中的数据库迁移与开发种子步骤允许成功空操作，并必须明确记录该状态；T1a 首次加入领域模型后再提交第一份迁移 SQL 和最小领域种子。不得为满足 T0 验收凭空创建领域表。
 
 ## 范围
 
@@ -20,7 +21,7 @@
 2. 应用与包：为 API、Web、Worker 和共享包提供能通过 typecheck/build 的最小入口，不加入业务占位实现。
 3. Python：为 Parser 建立 uv 项目、锁文件、pytest smoke test 和容器构建入口；探针 Dockerfile 仍保留为可丢弃证据，不直接充当生产 Parser 镜像。
 4. Compose：PostgreSQL、OpenSearch、RabbitMQ、Redis、MinIO、Keycloak 的明确版本、健康检查、持久化卷和可配置端口；Parser 与 evaluation 使用显式 profile，不随日常 core 默认启动。
-5. 初始化：可重复导入 Keycloak Realm、创建本地 MinIO Bucket、应用数据库迁移并写入最小开发种子数据。
+5. 初始化：可重复导入 Keycloak Realm、创建本地 MinIO Bucket、应用数据库迁移；在已有领域迁移时执行最小开发种子，无领域模型时以明确成功的空种子结束。
 6. CI：冻结依赖安装、lint、typecheck、单元 smoke test、Prisma validate、Python uv/pytest、Compose 配置校验和构建检查。真实付费模型调用不得进入普通 CI。
 7. 开发入口：文档化安装、启动、停止、重置、迁移、测试和健康检查命令；Compose 不固定 `container_name`，允许 CI 和不同工作区并行运行。
 
@@ -34,7 +35,7 @@
 - 从干净检出可以使用仓库文档中的命令完成 pnpm 与 uv 冻结安装。
 - 根 lint、typecheck、Vitest、pytest、构建和 Prisma validate 全部通过。
 - Compose 配置可解析，六个 core 中间件能达到 healthy；重复启动和停止不要求手工清理固定容器名。
-- Keycloak Realm、MinIO Bucket、数据库迁移与开发种子可以重复执行且不产生重复副作用。
+- Keycloak Realm、MinIO Bucket、数据库迁移与开发种子可以重复执行且不产生重复副作用；T0 无领域迁移时，空种子路径必须成功并明确记录，不能伪造领域数据。
 - API、Web、Worker、Parser 提供最小健康入口；关闭任一中间件时错误明确，不伪装为可用。
 - CI 执行与本地相同的冻结检查，且不会读取仓库外凭证或触发付费云模型调用。
 
