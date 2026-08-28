@@ -99,7 +99,7 @@
 - 已完成 CEO/产品范围审查、独立对抗性审查和工程评审。
 - 已闭合 Manifest、Release、IndexPartition、状态机、RabbitMQ、Parser、SSE、引用、删除和 Replay 协议。
 - 已完成一次全仓设计复审，并把 17 项发现全部落地为 ADR 或文档修订：[design-fix-log-20260824.md](docs/engineering/design-fix-log-20260824.md)。
-- 已新增 ADR-0025 至 ADR-0037：数据等级准入点、`acl_scope_key` 两段授权、分层引用验证预算、Embedding 版本分区与重建、预算账本与上限、回答正文三层存储、分块探针后冻结、注入防护、确定性冲突消解、用户级配额、阶段 1 运行期硬协议、协议语义和 OpenSearch 字段口径均提升为 ADR。
+- 已新增 ADR-0025 至 ADR-0038：数据等级准入点、`acl_scope_key` 两段授权、分层引用验证预算、Embedding 版本分区与重建、预算账本与上限、回答正文三层存储、分块探针后冻结、注入防护、确定性冲突消解、用户级配额、阶段 1 运行期硬协议、协议语义、OpenSearch 字段口径和 VLM 多模态解析后端均提升为 ADR。
 - 已按 PROBE-005 实测原地修订 [ADR-0017](docs/adr/0017-mvp-cloud-model-and-budget.md)（供应商基线 + 协议方言边界 + Adapter 十项防护）与 [ADR-0027](docs/adr/0027-tiered-citation-verification-budget.md)（引用验证预算 2.0 s / 3.5 s + 并发硬约束），并同步 [ADR-0035](docs/adr/0035-stage1-runtime-protocol-ratification.md) 的复述值。
 - 已建立 `F-01` 至 `F-30` Failure Modes Registry（F-30 为 2026-08-26 按 PROBE-005 Stage C 实测新增的「供应商 429 被误当作契约裁决或排序结果」）。
 - 已生成测试覆盖图、测试计划和探针收口后的 T0、T1a/T1b、T2-T16 实施任务；旧 JSONL 仅保留为评审快照。
@@ -112,6 +112,8 @@
 - 已完成 PROBE-002 DeepDOC 实测并取得 `PASS`：使用真实 `infinity-sdk==0.7.3` tokenizer 与 `punkt_tab`，四类 PDF 的原文定位率均为 1.0，峰值 RSS 1111.7 MiB；Parser/Worker 服务层生命周期仍按原 Ticket 在集成阶段复测。
 - 已完成 PROBE-003/004 实测并取得 `PASS`：OpenSearch 的分区、Alias、过滤和回滚路径成立；RabbitMQ 的 TTL+DLX、取消、DLQ、重放和 quarantine 语义成立。
 - 已完成 PROBE-005/006 实测并取得 `PASS_WITH_ADJUSTMENT`：模型三腿供应商基线已定档；真实小规模 Recall@5 冻结 `wide-1024` 和 `parent_child=false`。
+- 已完成 /autoplan 架构评审（CEO + 技术先进性双轴）并按"个人学习项目、技术完整性与先进性优先"的前提裁决：6 项纯技术发现保留（2 Critical），商业类发现作废；多模态被确认为最大先进性缺口，[ADR-0038](docs/adr/0038-vlm-parser-backend-and-multimodal-scope.md) 将 Parser 扩展为多后端（DeepDOC/Office 混合/图片 OCR），图片走本地 DeepDOC OCR、Office 走格式库提取，**解析链路零云调用**，VLM 后置为阶段 2 可选增强槽位；T4 拆为 T4a/T4b，新增 PROBE-007 本地探针（零云成本）。
+- 已完成 /gstack-plan-eng-review 对 ADR-0038 设计的增量评审（2026-08-28）：8 项发现（D1 契约一次定形、D2 未列出格式显式拒绝、D3 全异步无例外、D4 自行移植不依赖 ragflow、D5 补管线图、D6/D7/D8 探针补强）全部决议并落文档，报告附于 ADR-0038 末尾；0 critical gap，ENG CLEARED——devex 评审当时"NOT CLEARED（无 7 天内 Eng Review）"的门由此关闭，T1a 开工前无需再跑。/plan-devex-review（2026-08-28，score 5→6，TTHW 目标 <2 min）报告已由用户提供原文并[落盘](docs/engineering/plan-devex-review-20260828.md)，其 P1 三项（.env 预载+README 黄金路径、环境预检脚本、API 错误信封+全局异常过滤器）并入 T1a；T1a 合并后 boomerang 复测。
 - 已完成 StepFun `step-3.5-flash-2603` 的契约探针和 `reasoning_effort=low/high` A/B：两轮各 20 个有效样本合并后，`low` 完整生成 p50 2.05 s、p95 3.752 s、最大 6.969 s，答案与 D1/D2 引用正确率 1.0；因 p95 略超 3.5 s，暂不替换 ADR-0017 的 fluxionai Chat 基线，也不再继续扩大模型探索。
 
 ## 尚未完成且不能假装完成
@@ -151,7 +153,7 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 1. **已完成**：探针收尾提交已在 `chore/probe-closeout` 分支按主题切分；提交前已校验无凭证残留、无供应商注入提示词正文入库、全部 JSON 合法、Markdown 相对链接零断裂，工作区干净。T0/T14/T15/T16 的工作量估算也已补齐，十八张票据的估算与周期换算见[工程评审闭合记录第 16.1 节](docs/engineering/plan-eng-review-closure.md)。该分支已 fast-forward 合并回 `main`，探针收尾阶段结束。
 2. **已完成（2026-08-28）**：[T0 Monorepo 基线](docs/engineering/tickets/T0-monorepo-foundation.md) 在真实环境完成验收——九步 verify 全链（64 Vitest + 5 pytest）通过，六个 core 服务 healthy，`infra:down/up` 干净往返，`bootstrap` 重复执行零重复副作用，停止 Redis 后 API `/health/ready` 诚实 503 并给出依赖级原因。实现与评审记录：[T0 代码评审](docs/engineering/t0-code-review-20260828.md)（含 RabbitMQ 健康检查参数错误的修复）、[T0 DX Review 与实现准备增量复审](docs/engineering/t0-dx-review-20260828.md)。
 3. **已完成（2026-08-28）**：DX Review 与实现准备增量复审已执行——真实工具链与依赖图确认，T0 估算（CC ~1d）与实际吻合，十八张票估算与第一批次（T1a/T14/T11/T12）维持冻结。
-4. **下一步**：按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a/T14/T11(同步审计)/T12(Ledger 骨架) → T2/T10(Worker 基础) → T3 → T1b → T15 → T4/T13(parse) → T5 → T9(Harness/语料) → T6/拍板 rerank N → T7/T13(output)/T16 主链 → T8 及剩余评测、性能、治理收口。
+4. **下一步**：按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a + T14 + T11(同步审计) + T12(Ledger 骨架)。T1a 已并入 devex 评审三个 P1([报告已落盘](docs/engineering/plan-devex-review-20260828.md)):DX-T1 README 黄金路径 + dev 入口预载 `.env`、DX-T2 环境预检脚本、DX-T3 统一 API 错误信封与全局异常过滤器(先于首个业务端点);CI 首次真实运行以建 git 远程为前置(用户动作),T1a 提交前关注。T1a 合并后执行 /plan-devex-review boomerang(先落 dx-baseline 脚本),目标黄金路径 TTHW <2 min、verify <20 s。随后 T2/T10(Worker 基础) → T3 → T1b → T15 → T4a/T13(parse) → T5 → T9(Harness/语料) → T6/拍板 rerank N → T7/T13(output)/T16 主链 → T8 及剩余评测、性能、治理收口;PROBE-007(本地 Office/图片探针)可与 T5/T9 并行,T4b 在其后。
 5. 各模块按 [Probe Decision Gate](docs/engineering/probe-decision-gate.md) 关闭实现与生产治理门槛；集成项全部关闭后，再进行完整增量工程复审和 24 至 36 周窗口重估。
 
 ## 详细文档入口

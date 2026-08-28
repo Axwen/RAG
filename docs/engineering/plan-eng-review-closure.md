@@ -521,7 +521,8 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
   - 来源：Architecture Review，版本任意组合和 Release 作用域会导致不可测试的状态空间。
   - 计划文件：`packages/database/prisma/schema.prisma`、`packages/contracts/src/manifests/`、`apps/api/src/modules/release/`。
   - 范围补充：`PipelineManifest` 是兼容批准组合，不是 Release 的父对象；`ReleaseManifest` 只引用 `ingestionManifestId`，`RetrievalSnapshot` 记录共同 Retrieval/Answer 策略和兼容校验（ADR-0036）。
-  - 验证：Prisma 迁移测试、内容哈希/唯一约束测试、兼容/不兼容表驱动测试。
+  - DX 并入（2026-08-28，源自 [devex 评审](plan-devex-review-20260828.md) 三个 P1，随 dev 种子联调顺路交付）：**DX-T1** README 黄金路径一键启动块 + 应用脚本自动预载根 `.env`（dotenv 预载、不覆盖已存在变量）；**DX-T2** 环境预检脚本（node/pnpm/uv/Docker daemon 缺项友好报错，Docker 未开时给出修复指引而非原始错误）；**DX-T3** 统一 API 错误信封与全局异常过滤器（`code/message/param/doc_url` 五字段，落 `packages/contracts` + NestJS 全局 filter），在 T1a 首个业务端点前立约定，避免 18 张票五种错误风格。三项合计 human ~1.5d / CC ~0.25d，并入后 T1a 为 ~4.5d / CC ~1d，不另立票据。P2 的 CHANGELOG（随首个迁移触发）与 dx-baseline 脚本（boomerang 前提）建议随本票顺路或紧随其后；CI 首次真实运行以建 git 远程为前置（用户动作），T1a 提交前关注。
+  - 验证：Prisma 迁移测试、内容哈希/唯一约束测试、兼容/不兼容表驱动测试；新终端无手工 `source .env` 即可 `infra:up → bootstrap → api dev` 到 health 全绿（黄金路径）；错误信封契约测试覆盖五字段。T1a 合并后 /plan-devex-review boomerang 复测 TTHW <2 min、verify <20 s。
 - [ ] **T1b (P1, human: ~2d / CC: ~0.5d)** — Chunk/Index Schema — 建立 `chunk_manifest`、`wide-1024` Chunk 定位和最终 OpenSearch mapping。
   - 来源：PROBE-006 已冻结 `parent_child=false`；阶段 1 不建立父子分块字段或父子展开路径。
   - 计划文件：`packages/database/prisma/schema.prisma`、`packages/contracts/src/chunking/`、`apps/api/src/modules/search/`。
@@ -535,10 +536,17 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
   - 来源：Architecture Review，PostgreSQL 与 RabbitMQ 的双重重试所有权会导致重复、复活和无限重试。
   - 计划文件：`packages/contracts/src/events/`、`apps/api/src/modules/outbox/`、`apps/worker/src/message-bus/`。
   - 验证：Testcontainers 故障注入 Publisher Confirm 丢失、Broker 中断、迟到消息、取消和人工重放。
-- [ ] **T4 (P1, human: ~6d / CC: ~1.5d)** — Parser/ObjectStorage — 实现异步 Parser 任务和两阶段对象认领协议。
+- [ ] **T4a (P1, human: ~6d / CC: ~1.5d)** — Parser/ObjectStorage — 实现异步 Parser 任务和两阶段对象认领协议。
   - 来源：Architecture/Code Quality Review，同步 Parser 接口和“对象存在即提交”无法恢复长任务及跨库部分失败。
   - 计划文件：`services/parser/`、`packages/contracts/src/parser/`、`apps/api/src/modules/object-storage/`、`apps/worker/src/profiles/ingestion/`。
-  - 验证：pytest 契约测试与容器集成测试覆盖 OCR、取消、响应丢失、promote 后 PG 失败和孤儿清扫。
+  - 契约要求（ADR-0038）：`ParseArtifact` 一次定形——包含可选后端标识枚举（默认 `deepdoc`）与格式路由表接口，T4b 只做增量实现不改契约；所有格式共用异步任务协议，无同步例外；未列出格式显式拒绝 + 审计入口。
+  - 验证：pytest 契约测试与容器集成测试覆盖 OCR、取消、响应丢失、promote 后 PG 失败和孤儿清扫；契约测试含后端标识默认值与未列出格式拒绝分支。
+- [ ] **T4b (P2, human: ~4d / CC: ~1d)** — Office/图片解析后端 — Parser Service 多后端、格式路由、本地 OCR 图片解析与 Office 库提取。
+  - 来源：ADR-0038（/autoplan 评审确认多模态为最大先进性缺口，用户裁决纳入阶段 1 且不引入云模型——图片走本地 DeepDOC OCR，VLM 后置阶段 2）。
+  - 前置：PROBE-007（本地探针，零云成本）冻结 `OfficeImageManifest`。
+  - 计划文件：`services/parser/src/rag_parser/backends/`（deepdoc/office_hybrid/image_ocr）、`packages/contracts/src/parser/`（后端标识已在 T4a 定形）。
+  - 范围：JPG/PNG 走 DeepDOC OCR 后端（bbox 定位）；DOCX/PPTX/XLSX 走混合后端（Office 解析器为参考 ragflow 的自行移植精简版，不直接依赖 ragflow 工程代码；内嵌图片提取后走同一 OCR）；解析链路零云调用；图片与 OCR 输出进 T13 不可信内容检测链。不阻塞 T4a；音视频与 VLM 增强后置（ADR-0038）。
+  - 验证：契约测试覆盖各格式路由、bbox 定位、注入图片样本的 `suspected` 判定、损坏图/空白图降级路径与资源画像。
 - [ ] **T5 (P1, human: ~5d / CC: ~1d)** — Release/OpenSearch — 实现候选构建、Alias 激活 Intent 和 Reconciler。
   - 来源：Architecture Review，OpenSearch Alias 与 PostgreSQL 激活事实存在分裂窗口。
   - 计划文件：`apps/api/src/modules/release/`、`apps/worker/src/profiles/ingestion/release/`、`apps/api/src/modules/search/`。
@@ -612,9 +620,12 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 | 分项 | human | CC |
 |---|---|---|
 | T1a–T13（首次工程评审已估） | 65d | 15.75d |
+| T1a 并入 DX P1 三项（2026-08-28，devex T1–T3） | 1.5d | 0.25d |
 | T0/T14/T15/T16 全范围 | 25d | 6.25d |
 | 减去已隐含在 T5–T12 内的重叠 | -5.5d | -1.4d |
 | 十八张票据合计 | 84.5d | 20.6d |
+| T4b Office/图片解析后端（ADR-0038 新增） | 4d | 1d |
+| 十九张票据合计（含 DX 并入） | 91d | 21.85d |
 
 重叠明细：T6 → T14 授权模块与撤权复核 -2d；T5/T6/T7 → T15 供应商客户端 -1.5d；T12 → T15 模型预算门禁 -0.5d；T7 → T16a `apps/web/src/features/chat/` -1d；T8/T9/T12 → T16b 删除证明与报告页面 -0.5d。这些工作原先已计入 T5–T12 的估算，四张新票据成立后只是归属转移，不是净新增范围；净新增为 human ~19.5d / CC ~4.9d。
 

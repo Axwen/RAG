@@ -16,12 +16,13 @@
 | Ticket | 目标 | 关键依赖与时点 |
 |---|---|---|
 | [T0](tickets/T0-monorepo-foundation.md) | pnpm/uv monorepo、Compose、CI 和一键启动基线 | 探针收尾提交后第一项；完成后执行 DX Review 与实现准备增量工程复审 |
-| T1a Manifest/Prisma Core | 租户、知识空间、不可变文档版本、基础 Manifest、Release、兼容矩阵 | T0；`RetrievalManifest.rerankInputSize` 为必填，开发种子显式写 64，不从环境变量读取 |
+| T1a Manifest/Prisma Core | 租户、知识空间、不可变文档版本、基础 Manifest、Release、兼容矩阵 | T0；`RetrievalManifest.rerankInputSize` 为必填，开发种子显式写 64，不从环境变量读取；已并入 devex P1 三项——DX-T1（README 黄金路径 + dev 入口预载 `.env`）、DX-T2（环境预检脚本）、DX-T3（统一 API 错误信封 + 全局异常过滤器，先于首个业务端点）；CI 首次真实运行以建远程为前置，T1a 提交前关注；合并后 /plan-devex-review boomerang 复测黄金路径 <2 min |
 | T1b Chunk/Index Schema | `wide-1024` Chunk 定位和 ADR-0037 mapping | T1a；阶段 1 `parent_child=false`，不实现父子字段或父子展开 |
 | T2 Domain State | 正交状态命令、CAS、`searchable` 派生 | T1a；同步领域审计与状态事务一起落地 |
 | T3 MessageBus | Outbox、Attempt/Generation、Retry/DLQ/Replay | T1a、T2、T10 的 Worker 基础 Profile |
-| T4 Parser/ObjectStorage | 上传、对象认领、异步 Parser、取消和孤儿清扫 | T3；同时落地 T13 的解析入口扫描 |
-| T5 Release/OpenSearch | Candidate Release、Alias Intent/Reconciler、重建与回滚 | T1b、T3、T4、T15 Embedding/预算门禁 |
+| T4a Parser/ObjectStorage | 上传、对象认领、异步 Parser（DeepDOC 后端）、取消和孤儿清扫 | T3；同时落地 T13 的解析入口扫描 |
+| T4b Office/图片解析后端 | JPG/PNG 走本地 DeepDOC OCR、Office 走库提取+内嵌图 OCR、格式路由（零云调用） | PROBE-007（本地探针）冻结 `OfficeImageManifest`；T13 注入检测链随本票接入 OCR 输出；不阻塞 T4a/T5 |
+| T5 Release/OpenSearch | Candidate Release、Alias Intent/Reconciler、重建与回滚 | T1b、T3、T4a、T15 Embedding/预算门禁 |
 | T6 Retrieval | Snapshot、ACL 两段授权、混合检索、融合与 Rerank | T5、T9 的评测 Harness；在本 Ticket 内用真实业务语料比较 N，并在质量/成本基线前拍板 `rerankInputSize` |
 | T7 Answer/Citation | Answer/Citation/Finalizer、SSE、分层引用验证 | T6、T15；同时落地 T13 的输出检查和 T16 `/chat` |
 | T8 Deletion/Replay | 删除目标、墓碑、Legal Hold、证明、恢复与 Replay | T3、T5、T7；包含 `/admin/deletions` 所需 API |
@@ -38,7 +39,7 @@
 
 十八张票据的 `human`/`CC` 估算、重叠转移明细和周期换算集中在[工程评审闭合记录第 16 节与 16.1 节](plan-eng-review-closure.md#16-实施任务)，本文件不复制数字。当前口径：
 
-- 十八张票据合计 human ~84.5d / CC ~20.6d；T0/T14/T15/T16 四张新票据的净新增为 human ~19.5d / CC ~4.9d，其余 ~5.5d 是从 T5–T12 转移而来的归属调整。
+- 十九张票据合计 human ~91d / CC ~21.85d（含 ADR-0038 的 T4b 拆分新增与 T1a 并入的 devex P1 三项，[devex 报告](plan-devex-review-20260828.md)）；T0/T14/T15/T16 四张新票据的净新增为 human ~19.5d / CC ~4.9d，其余 ~5.5d 是从 T5–T12 转移而来的归属调整。PROBE-007 为本地探针，零云成本。
 - 估算只覆盖实现本身。门禁、集成验证、真实语料构建、性能回归和恢复演练不在票据估算内，周期换算按经验系数给出区间而不是承诺。
 - T0/T14/T15/T16 的拆分依据、校准理由和风险项写在各自 Ticket 的“工作量估算”一节。
 
@@ -50,7 +51,8 @@
   -> DX Review + 实现准备增量工程复审
   -> T1a + T14 + T11(同步审计) + T12(Ledger/配置骨架)
   -> T2 + T10(Worker 基础) -> T3 -> T1b
-  -> T15 -> T4 + T13(parse) -> T5
+  -> T15 -> T4a + T13(parse) -> T5
+  -> PROBE-007（本地，零云成本，可与 T5/T9 并行） -> T4b（PROBE-007 BLOCKED 的格式缩回或后置）
   -> T9(Harness/语料) -> T6 + T13(context) -> 拍板 rerankInputSize
   -> Design Review -> T7 + T13(output) + T16a 用户主链
   -> T8 + T9(反馈/报告) + T10/T11/T12 收口 + T16b 管理控制台

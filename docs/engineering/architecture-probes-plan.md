@@ -118,7 +118,8 @@ Keycloak、DeepDOC、OpenSearch 和 RabbitMQ 建议串行，避免中间件与 P
   T2 状态命令 + T10 Worker 基础 -> T3 RabbitMQ/Outbox
                  │
                  ▼
-  T1b Chunk/Index Schema -> T15 ModelAdapter -> T4 Parser/ObjectStorage -> T5 Release/OpenSearch
+  T1b Chunk/Index Schema -> T15 ModelAdapter -> PROBE-007(VLM) -> T4a Parser/ObjectStorage -> T5 Release/OpenSearch
+  （T4b VLM/混合解析后端随 ADR-0038 新增，可与 T5/T9 并行，前置为 PROBE-007 与 T15 准入层）
                  │
                  ▼
   T9 Harness/语料 -> T6 Retrieval/拍板 rerank N -> T7 Answer/Citation/Finalizer/SSE
@@ -127,4 +128,4 @@ Keycloak、DeepDOC、OpenSearch 和 RabbitMQ 建议串行，避免中间件与 P
   T8 Deletion/Replay -> T10/T11/T12 收口 -> T16 Web/Admin 纵向集成
 ```
 
-T13 不可信内容与注入检测是横切项，随 T4 解析扫描、T6 候选进入上下文前检查和 T7 输出检查分别落地，不作为独立的最后阶段。T1a 不编码父子 Chunk 关系和最终 Chunk 字段；PROBE-006 已冻结 `ChunkingManifest`，因此 T1b、T5、T6 可进入实现准备，但必须通过 [Probe Decision Gate](probe-decision-gate.md) 中的真实业务回归与集成门槛。
+T13 不可信内容与注入检测是横切项，随 T4a 解析扫描（T4b 将 VLM 输出接入同一检测链）、T6 候选进入上下文前检查和 T7 输出检查分别落地，不作为独立的最后阶段。T1a 不编码父子 Chunk 关系和最终 Chunk 字段；PROBE-006 已冻结 `ChunkingManifest`，因此 T1b、T5、T6 可进入实现准备，但必须通过 [Probe Decision Gate](probe-decision-gate.md) 中的真实业务回归与集成门槛。

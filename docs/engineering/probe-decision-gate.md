@@ -1,10 +1,10 @@
 # Probe Decision Gate
 
-> 最近核对：2026-08-27。探针 `PASS` 表明所测外部事实成立；不等同于业务实现、真实语料回归或生产数据治理已经完成。
+> 最近核对：2026-08-28。探针 `PASS` 表明所测外部事实成立；不等同于业务实现、真实语料回归或生产数据治理已经完成。
 
 ## 探针层结论
 
-六个架构探针均已达到 `PASS` 或 `PASS_WITH_ADJUSTMENT`。PROBE-006 的真实 Recall@5 已完成，冻结 `wide-1024`，不再阻断 T1b、T5、T6。
+七个架构探针中六个已达到 `PASS` 或 `PASS_WITH_ADJUSTMENT`。PROBE-006 的真实 Recall@5 已完成，冻结 `wide-1024`，不再阻断 T1b、T5、T6。PROBE-007（Office/图片解析，ADR-0038，本地零云成本）已立项未执行；执行前 T4b 不得进入实现。
 
 | 探针 | 结论 | 主结果 |
 |---|---|---|
@@ -14,6 +14,7 @@
 | PROBE-004 | PASS | [结果](probe-results/probe-004-rabbitmq-task-bus.md) |
 | PROBE-005 | PASS_WITH_ADJUSTMENT | [索引](probe-results/README.md) |
 | PROBE-006 | PASS_WITH_ADJUSTMENT | [结果](probe-results/probe-006-chunking-citation-locating.md) |
+| PROBE-007 | 未执行 | [Ticket](tickets/PROBE-007-vlm-parser.md)（Office/图片解析，本地零云成本，冻结 `OfficeImageManifest`；BLOCKED 的格式从 T4b 剔除，T4a 不受影响） |
 
 ## 受影响模块合并前必须落实的决策
 
@@ -32,6 +33,7 @@
 | PROBE-004 | 真实 AMQP 客户端的 Publisher Confirm、`prefetch=1/4`、生产重试阶梯和调度去重 |
 | PROBE-005 | 四条模型路径的数据分级门禁；预算预扣、结算、流式取消和 lease 回收 |
 | PROBE-006 | 真实业务语料、完整混合检索、生产过滤链与 rerank 后质量回归 |
+| PROBE-007 | 图片/Office 内嵌图 OCR 与库提取的统一 `ParseArtifact` 映射；注入判定与 PDF 路径一致；资源画像不超 PROBE-002 边界 |
 
 ## 生产承载真实数据前的治理门槛
 

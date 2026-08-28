@@ -47,6 +47,10 @@
 - "先做 SaaS POC"、"单租户先上"、"6 中间件过重(学习运维本身就是价值)"
 - "治理差异化不是购买驱动力"、"运维TCO对比"
 
+## 落地记录（2026-08-28）
+
+多模态缺口已裁决落地：[ADR-0038](../adr/0038-vlm-parser-backend-and-multimodal-scope.md) 将 Parser 扩展为多后端（DeepDOC/Office 混合/图片 OCR），静态视觉模态纳入阶段 1；经用户二轮裁决，图片理解走本地 DeepDOC OCR（参考实现 RAGFlow `picture.py` 同款模式），**解析链路不引入云模型**，VLM 后置为阶段 2 可选增强槽位。T4 拆为 T4a/T4b，新增 PROBE-007 本地探针（零云成本）。T1/T2 两项 Critical 与 T3/T4/T5/T6 的行动项仍在原票据归属内，未随本 ADR 变更。
+
 ## 结论
 
 架构的工程纪律和协议闭合度在自建 RAG 领域是上乘水平。6 项纯技术发现中 2 项 Critical（维度对照 + 供应商合规）应在对应票据开工前关闭。多模态是最大的先进性缺口，T4 的 Parser Adapter 层应显式预留 VLM 路径。阶段 1 的技术选型整体处于 2026 企业 RAG 主流线上，agentic RAG 和 event-sourcing 是阶段 2 的自然进化方向。
