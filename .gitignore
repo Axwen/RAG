@@ -39,6 +39,11 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.eslintcache
+.vitest-cache/
+/packages/database/src/generated/
+/apps/web/next-env.d.ts
+/services/parser/.uv-cache/
 
 # ── OS / 编辑器 ──
 .DS_Store
