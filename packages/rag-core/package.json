@@ -1,0 +1,16 @@
+{
+  "name": "@rag/rag-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@rag/contracts": "workspace:*"
+  }
+}

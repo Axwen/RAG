@@ -1,0 +1,24 @@
+// 阶段 1 数据库 schema。
+//
+// T0 只建立 datasource 与 generator 边界：PostgreSQL 是业务事实、任务状态、
+// Outbox、审计与删除记录的唯一权威（ADR-0001/0003）。领域模型不在 T0 范围内，
+// 由 T1a 起按票据顺序加入，并全部通过 Prisma Migrate 生成受版本控制的迁移 SQL。
+//
+// 生成器选择 `prisma-client` 而不是已弃用的 `prisma-client-js`；
+// `moduleFormat = "cjs"` 与仓库统一的 CommonJS 产物一致（NestJS 与 Worker 都是 CJS）。
+// 生成产物落在 src/generated/prisma 并被 .gitignore 忽略，安装后由 `pnpm db:generate` 重建。
+//
+// Prisma 7 起 datasource 块不再接受 `url`：迁移用的连接串只在 prisma.config.ts 里
+// 通过 env('DATABASE_URL') 提供，运行时连接由 PrismaClient 的 driver adapter
+// （@prisma/adapter-pg）注入。因此本文件不含、也不允许含任何连接串。
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+  runtime      = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}

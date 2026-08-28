@@ -1,0 +1,17 @@
+{
+  "name": "@rag/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "服务端配置与资源边界 schema。T0 只建立并校验 schema，运行时强制由 T10/T12 落地。",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  }
+}

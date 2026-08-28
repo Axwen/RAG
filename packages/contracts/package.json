@@ -1,0 +1,14 @@
+{
+  "name": "@rag/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "跨模块共享契约。阶段 1 领域契约（Manifest、状态、事件、模型调用）由 T1a 起逐步加入，T0 只建立包边界。",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "clean": "rm -rf dist"
+  }
+}
