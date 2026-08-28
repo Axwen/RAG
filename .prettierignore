@@ -1,0 +1,13 @@
+node_modules
+dist
+.next
+coverage
+pnpm-lock.yaml
+uv.lock
+**/generated/**
+docs/
+diagrams/
+references/
+pdf/
+scripts/probes/
+*.md
