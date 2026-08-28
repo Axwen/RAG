@@ -39,6 +39,18 @@
 - API、Web、Worker、Parser 提供最小健康入口；关闭任一中间件时错误明确，不伪装为可用。
 - CI 执行与本地相同的冻结检查，且不会读取仓库外凭证或触发付费云模型调用。
 
+## 验收记录（2026-08-28）
+
+全部验收项已在真实环境（WSL2 + Docker）通过，逐项证据：
+
+- 冻结安装：`pnpm install --frozen-lockfile`（427 包）与 `uv sync --frozen` 均按 README 命令完成。
+- 根检查：九步 `pnpm run verify` 全链通过（64 Vitest + 5 pytest、lint/typecheck/build/prisma validate/compose config）。
+- Compose：六个 core 服务全部 healthy；`infra:down` → `infra:up` 干净往返，无固定容器名。
+- 幂等：`bootstrap` 连续执行两遍后 Keycloak 恰好 4 个领域角色 + 1 个开发用户、MinIO 恰好 1 个 bucket、迁移为显式空种子（无领域模型，见已冻结决策）。
+- 诚实故障：停止 Redis 后 API `/health/ready` 返回 503，redis 条目给出 `status=down` 与 `ETIMEDOUT` 原因；恢复后回到 200。
+- CI：工作流落库且与本地同一批命令；因仓库无远程尚未真实触发，作为遗留项记录在 DX Review。
+- 实现过程的双轴代码评审与修复记录：[t0-code-review-20260828.md](../t0-code-review-20260828.md)；DX 与实现准备复审：[t0-dx-review-20260828.md](../t0-dx-review-20260828.md)。
+
 ## 不在范围
 
 - 领域 Prisma schema、Manifest、Release、状态机和审计事实。

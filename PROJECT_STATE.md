@@ -8,7 +8,7 @@
 
 本项目不是“向量化文档 + 聊天”的 Demo，而是一个企业级可信 RAG 基础 MVP：共享基座、客服单一纵向闭环，正式覆盖身份、权限、不可变文档版本、异步解析与索引、版本化 Release、混合检索、句级引用、删除、恢复、审计和评测；研发与普通员工工作台后续复用同一基座扩展。
 
-当前状态：架构和工程协议已完成评审，六个架构探针的外部事实已完成（PROBE-001~004 为 `PASS`，PROBE-005~006 为 `PASS_WITH_ADJUSTMENT`）；当前进入“探针收口与受约束实现准备”。尚无业务实现、构建结果、测试结果或完整真实性能基线。探针结果索引、Probe Decision Gate 和 ADR-0037 记录了已冻结事实、集成测试门槛与生产治理遗留项。
+当前状态：架构和工程协议已完成评审，六个架构探针的外部事实已完成（PROBE-001~004 为 `PASS`，PROBE-005~006 为 `PASS_WITH_ADJUSTMENT`）；T0 Monorepo 与本地开发基线实现已完成，正在关闭真实环境验收。T0 已有本地构建与静态检查结果，但尚无业务领域实现、真实容器集成结果或完整真实性能基线。探针结果索引、Probe Decision Gate 和 ADR-0037 记录了已冻结事实、集成测试门槛与生产治理遗留项。
 
 ## 事实源层级
 
@@ -116,8 +116,8 @@
 
 ## 尚未完成且不能假装完成
 
-- 没有业务实现代码、`package.json`、Prisma schema、Compose、CI 或可运行应用。
-- 没有执行构建、类型检查、Lint、单元测试、容器集成测试、Playwright 或部署。
+- T0 工程骨架已在当前工作区落地，但尚未提交；业务领域实现（Manifest、状态机、消息、检索、回答和 UI）仍未开始。
+- Node 的格式、Lint、类型检查、构建、Prisma schema 校验、Python uv/pytest、Compose 配置解析和初始化脚本语法检查已在当前环境执行；真实容器 healthy、容器集成测试、Playwright 和部署尚未验证。
 - 尚无真实业务语料的完整混合检索、Rerank 后质量、生产 ACL/有效期/删除过滤链和 50 题业务回归基线；1024 维相对原生 4096 维也没有同语料对照，不能宣称无召回损失。
 - `rerankInputSize` 正式值尚未拍板；T1a 开发种子使用 N=64，T6 必须用真实业务语料比较质量、延迟和成本后再冻结。
 - ModelAdapter 数据分级门禁和 PostgreSQL Budget Ledger、Parser/Worker 生命周期、AMQP Publisher Confirm/prefetch 仍是实现集成条件，不能把探针结论当成业务实现证据。
@@ -126,7 +126,7 @@
 - 探针收尾改动已于 2026-08-27 在 `chore/probe-closeout` 分支按主题切分提交（gitignore、探针脚本、探针结果与归档、ADR、决策门与探针票据、实施票据、评审记录、顶层状态、归档脱敏补齐、票据工作量估算），工作区干净，T0 的收尾提交前置条件已满足。该分支已于 2026-08-27 以 fast-forward 合并回 `main`（`main` 为 `a626cf9`），仓库仍无远程。
 - `~/.gstack` 评审日志持久化曾因审批服务 503 失败；项目内文档和 JSONL 是当前可靠副本。
 
-## 当前阶段：探针收口与实现准备
+## 当前阶段：T0 已收口，进入第一批业务票据
 
 探针阶段已完成外部事实验证。探针代码可丢弃，只用于复跑证据，不建立第二条产品主链。
 
@@ -149,9 +149,9 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 ## 下一步执行顺序
 
 1. **已完成**：探针收尾提交已在 `chore/probe-closeout` 分支按主题切分；提交前已校验无凭证残留、无供应商注入提示词正文入库、全部 JSON 合法、Markdown 相对链接零断裂，工作区干净。T0/T14/T15/T16 的工作量估算也已补齐，十八张票据的估算与周期换算见[工程评审闭合记录第 16.1 节](docs/engineering/plan-eng-review-closure.md)。该分支已 fast-forward 合并回 `main`，探针收尾阶段结束。
-2. 实现 [T0 Monorepo 基线](docs/engineering/tickets/T0-monorepo-foundation.md)，只搭建工具链、包边界、本地依赖、初始化与 CI，不提前实现领域业务。
-3. T0 完成后执行 DX Review 和一次实现准备增量 `plan-eng-review`，确认真实工具链、依赖图、任务批次与周期。
-4. 按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a/T14/T11(同步审计)/T12(Ledger 骨架) → T2/T10(Worker 基础) → T3 → T1b → T15 → T4/T13(parse) → T5 → T9(Harness/语料) → T6/拍板 rerank N → T7/T13(output)/T16 主链 → T8 及剩余评测、性能、治理收口。
+2. **已完成（2026-08-28）**：[T0 Monorepo 基线](docs/engineering/tickets/T0-monorepo-foundation.md) 在真实环境完成验收——九步 verify 全链（64 Vitest + 5 pytest）通过，六个 core 服务 healthy，`infra:down/up` 干净往返，`bootstrap` 重复执行零重复副作用，停止 Redis 后 API `/health/ready` 诚实 503 并给出依赖级原因。实现与评审记录：[T0 代码评审](docs/engineering/t0-code-review-20260828.md)（含 RabbitMQ 健康检查参数错误的修复）、[T0 DX Review 与实现准备增量复审](docs/engineering/t0-dx-review-20260828.md)。
+3. **已完成（2026-08-28）**：DX Review 与实现准备增量复审已执行——真实工具链与依赖图确认，T0 估算（CC ~1d）与实际吻合，十八张票估算与第一批次（T1a/T14/T11/T12）维持冻结。
+4. **下一步**：按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a/T14/T11(同步审计)/T12(Ledger 骨架) → T2/T10(Worker 基础) → T3 → T1b → T15 → T4/T13(parse) → T5 → T9(Harness/语料) → T6/拍板 rerank N → T7/T13(output)/T16 主链 → T8 及剩余评测、性能、治理收口。
 5. 各模块按 [Probe Decision Gate](docs/engineering/probe-decision-gate.md) 关闭实现与生产治理门槛；集成项全部关闭后，再进行完整增量工程复审和 24 至 36 周窗口重估。
 
 ## 详细文档入口
