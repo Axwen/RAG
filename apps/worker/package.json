@@ -1,0 +1,27 @@
+{
+  "name": "@rag/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "clean": "rm -rf dist",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "start:ingestion": "WORKER_PROFILE=ingestion node dist/main.js",
+    "start:evaluation": "WORKER_PROFILE=evaluation node dist/main.js"
+  },
+  "dependencies": {
+    "@rag/config": "workspace:*",
+    "@rag/contracts": "workspace:*",
+    "@rag/database": "workspace:*",
+    "@rag/observability": "workspace:*",
+    "@rag/rag-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "tsx": "4.23.12"
+  }
+}
