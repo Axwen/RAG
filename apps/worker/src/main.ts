@@ -1,3 +1,4 @@
+import { preloadRootEnv } from '@rag/config'
 import { createLogger } from '@rag/observability'
 import { createHealthServer } from './health-server'
 import { loadWorkerRuntimeConfig } from './profile'
@@ -9,6 +10,8 @@ import { loadWorkerRuntimeConfig } from './profile'
  * 解析编排与评测批处理按票据加入（T3、T4、T10、T13）。
  */
 function main(): void {
+  // DX-T1：先预载仓库根 .env（不覆盖已存在变量），再解析 Profile。
+  preloadRootEnv()
   const config = loadWorkerRuntimeConfig()
   const logger = createLogger({ bindings: { service: 'worker', profile: config.profile } })
   const server = createHealthServer(config)

@@ -10,6 +10,16 @@
 2. [工程评审测试计划](plan-eng-review-test-plan.md)中的对应测试层级和关键路径。
 3. [安全评审清单](security-review-checklist.md)中被改动触发的 P0/P1 条目。
 4. [Probe Decision Gate](probe-decision-gate.md)中对应的探针衍生集成条件。
+5. [阶段人工核验门禁](manual-acceptance-gate.md)：自动化证据齐全后进入 `READY_FOR_HUMAN`，只有用户明确验收并允许继续，才能启动下一实施批次。
+
+其中前四项是“可以提交人工验收”的前置条件，不等于用户已经验收通过。
+
+## 人工核验规则
+
+- 当前已经运行的并行 Agent 可完成原始任务，但不得扩展到下一批次。
+- 每个固定门禁点由主 Agent 汇总 UI/API、代码导览、验证证据和已知缺口；不得以 Agent 自评或测试全绿代替用户结论。
+- 用户未明确给出 `ACCEPTED` 或允许继续的 `ACCEPTED_WITH_ACTIONS` 前，下一批次保持暂停。
+- 固定门禁点、状态流转和验收记录模板见[阶段人工核验门禁](manual-acceptance-gate.md)。
 
 ## Ticket 地图
 
@@ -50,13 +60,20 @@
   -> T0
   -> DX Review + 实现准备增量工程复审
   -> T1a + T14 + T11(同步审计) + T12(Ledger/配置骨架)
+  -> HG-01 人工核验（当前并行 Agent 到此停止，用户通过后继续）
   -> T2 + T10(Worker 基础) -> T3 -> T1b
+  -> HG-02 人工核验
   -> T15 -> T4a + T13(parse) -> T5
   -> PROBE-007（本地，零云成本，可与 T5/T9 并行） -> T4b（PROBE-007 BLOCKED 的格式缩回或后置）
+  -> HG-03 人工核验
   -> T9(Harness/语料) -> T6 + T13(context) -> 拍板 rerankInputSize
+  -> HG-04 人工核验
   -> Design Review -> T7 + T13(output) + T16a 用户主链
+  -> HG-05 人工核验
   -> T8 + T9(反馈/报告) + T10/T11/T12 收口 + T16b 管理控制台
+  -> HG-06 人工核验
   -> Probe Gate 集成项全闭合 -> 完整增量工程复审与周期重估
+  -> HG-07 人工核验
 ```
 
 实现准备增量工程复审用于确认 T0 后的真实工具链、依赖图和工作量；Probe Gate 全闭合后的复审用于确认集成结果、容量和 24–36 周窗口。两者不是同一次评审。

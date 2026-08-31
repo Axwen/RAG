@@ -6,17 +6,22 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "prebuild": "prisma generate",
     "build": "tsc -b",
+    "pretypecheck": "prisma generate",
     "typecheck": "tsc -b",
     "clean": "rm -rf dist",
     "validate": "prisma validate",
     "generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
-    "migrate:status": "prisma migrate status"
+    "migrate:status": "prisma migrate status",
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "@rag/contracts": "workspace:*",
     "@rag/observability": "workspace:*",
     "pg": "8.23.0"
   },
@@ -24,6 +29,7 @@
     "@types/node": "22.20.1",
     "@types/pg": "8.23.1",
     "dotenv": "17.4.2",
-    "prisma": "7.10.0"
+    "prisma": "7.10.0",
+    "tsx": "4.23.12"
   }
 }

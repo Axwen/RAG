@@ -2,7 +2,7 @@
 
 > 这是本项目的会话无关状态入口。新会话先读本文件，再按“事实源层级”读取详细文档；不要把聊天上下文当作唯一事实来源。
 >
-> 最近更新：2026-08-27
+> 最近更新：2026-08-28
 
 ## 一句话结论
 
@@ -84,6 +84,13 @@
 
 超过边界时只能排队、暂停、降级、`EVIDENCE_ONLY` 或 `REFUSED`，不允许运行时自动突破上限，也不允许通过跳过引用验证或缩小候选集来“满足”请求。
 
+### 研发协作与人工验收
+
+- 阶段 1 自 2026-08-28 起执行[阶段人工核验门禁](docs/engineering/manual-acceptance-gate.md)：自动化检查和 Agent 自评只决定是否可进入 `READY_FOR_HUMAN`，不能替代用户人工验收。
+- 当前已经运行的并行 Agent 只完成原始分配范围；主 Agent 汇总当前批次后停在 HG-01，用户未明确允许前不得启动下一批次。
+- 每次验收必须展示范围、UI 或可操作接口、关键代码与数据流、实际验证、已知风险和未完成项；没有产品 UI 的后端批次必须明确说明，不得让用户从测试结果猜测产品现状。
+- 人工验收与 Git/发布授权相互独立；验收通过不自动授权 commit、push、PR、merge 或部署。
+
 ### 质量指标口径
 
 - 越权证据泄漏：硬门禁，必须为 0。
@@ -115,11 +122,12 @@
 - 已完成 /autoplan 架构评审（CEO + 技术先进性双轴）并按"个人学习项目、技术完整性与先进性优先"的前提裁决：6 项纯技术发现保留（2 Critical），商业类发现作废；多模态被确认为最大先进性缺口，[ADR-0038](docs/adr/0038-vlm-parser-backend-and-multimodal-scope.md) 将 Parser 扩展为多后端（DeepDOC/Office 混合/图片 OCR），图片走本地 DeepDOC OCR、Office 走格式库提取，**解析链路零云调用**，VLM 后置为阶段 2 可选增强槽位；T4 拆为 T4a/T4b，新增 PROBE-007 本地探针（零云成本）。
 - 已完成 /gstack-plan-eng-review 对 ADR-0038 设计的增量评审（2026-08-28）：8 项发现（D1 契约一次定形、D2 未列出格式显式拒绝、D3 全异步无例外、D4 自行移植不依赖 ragflow、D5 补管线图、D6/D7/D8 探针补强）全部决议并落文档，报告附于 ADR-0038 末尾；0 critical gap，ENG CLEARED——devex 评审当时"NOT CLEARED（无 7 天内 Eng Review）"的门由此关闭，T1a 开工前无需再跑。/plan-devex-review（2026-08-28，score 5→6，TTHW 目标 <2 min）报告已由用户提供原文并[落盘](docs/engineering/plan-devex-review-20260828.md)，其 P1 三项（.env 预载+README 黄金路径、环境预检脚本、API 错误信封+全局异常过滤器）并入 T1a；T1a 合并后 boomerang 复测。
 - 已完成 StepFun `step-3.5-flash-2603` 的契约探针和 `reasoning_effort=low/high` A/B：两轮各 20 个有效样本合并后，`low` 完整生成 p50 2.05 s、p95 3.752 s、最大 6.969 s，答案与 D1/D2 引用正确率 1.0；因 p95 略超 3.5 s，暂不替换 ADR-0017 的 fluxionai Chat 基线，也不再继续扩大模型探索。
+- 已完成 **T1a Manifest/Prisma Core 切片 + devex P1 三项**（2026-08-28，工作区改动，未提交）：10 个领域模型与仓库首份迁移、内容寻址 contentHash（规范化 JSON + SHA-256）与四条兼容矩阵纯函数、`POST /manifests/{ingestion,retrieval,answer,pipelines}`（含 `/:id/approve`）与 `POST /releases`/`GET /releases/:id` 领域命令端点、DX-T1 `.env` 预载、DX-T2 `preflight`、DX-T3 五字段错误信封与全局异常过滤器。`pnpm run verify` 全绿（15 文件 / 106 测试），黄金路径 `infra:up → bootstrap → api dev → /health/ready` 六项全 `up` 真实实测通过，T1a HTTP 面逐条实测（幂等重放同 id、422 兼容违规、400/404 信封）。同时修复 T0 遗留缺陷：dev 入口用 `tsx`（esbuild 不产出 `emitDecoratorMetadata`）导致 NestJS 注入为 `undefined`、所有请求 500，已改 `node --watch + ts-node` 并加配置不变量测试。验收记录：[HG-01 T1a 切片](docs/engineering/acceptance/hg-01-t1a-manifest-core.md)（状态 `READY_FOR_HUMAN`）。
 
 ## 尚未完成且不能假装完成
 
-- T0 工程骨架已在当前工作区落地，但尚未提交；业务领域实现（Manifest、状态机、消息、检索、回答和 UI）仍未开始。
-- Node 的格式、Lint、类型检查、构建、Prisma schema 校验、Python uv/pytest、Compose 配置解析和初始化脚本语法检查已在当前环境执行；真实容器 healthy、容器集成测试、Playwright 和部署尚未验证。
+- T0 工程骨架与 T1a 切片（Manifest/Release 领域模型、内容寻址、兼容矩阵、领域命令端点）已在当前工作区落地，但**尚未提交**；同一批次的 T14 身份与授权、T11 同步审计、T12 预算 Ledger 骨架未开始，`tenantId` 目前由请求体携带，只能在本地开发环境使用。T1b 分块、Release 状态迁移（`BUILDING` 及之后属 T5）、消息、检索、回答和 UI 仍未开始。
+- Node 的格式、Lint、类型检查、构建、Prisma schema 校验、Python uv/pytest、Compose 配置解析和初始化脚本语法检查已在当前环境执行；六个 core 容器 healthy 与 `/health/ready` 已在 T0/T1a 真实实测通过，容器级集成测试（Testcontainers）、Playwright 和部署仍未验证。
 - 尚无真实业务语料的完整混合检索、Rerank 后质量、生产 ACL/有效期/删除过滤链和 50 题业务回归基线；1024 维相对原生 4096 维也没有同语料对照，不能宣称无召回损失。
 - `rerankInputSize` 正式值尚未拍板；T1a 开发种子使用 N=64，T6 必须用真实业务语料比较质量、延迟和成本后再冻结。
 - ModelAdapter 数据分级门禁和 PostgreSQL Budget Ledger、Parser/Worker 生命周期、AMQP Publisher Confirm/prefetch 仍是实现集成条件，不能把探针结论当成业务实现证据。
@@ -153,7 +161,7 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 1. **已完成**：探针收尾提交已在 `chore/probe-closeout` 分支按主题切分；提交前已校验无凭证残留、无供应商注入提示词正文入库、全部 JSON 合法、Markdown 相对链接零断裂，工作区干净。T0/T14/T15/T16 的工作量估算也已补齐，十八张票据的估算与周期换算见[工程评审闭合记录第 16.1 节](docs/engineering/plan-eng-review-closure.md)。该分支已 fast-forward 合并回 `main`，探针收尾阶段结束。
 2. **已完成（2026-08-28）**：[T0 Monorepo 基线](docs/engineering/tickets/T0-monorepo-foundation.md) 在真实环境完成验收——九步 verify 全链（64 Vitest + 5 pytest）通过，六个 core 服务 healthy，`infra:down/up` 干净往返，`bootstrap` 重复执行零重复副作用，停止 Redis 后 API `/health/ready` 诚实 503 并给出依赖级原因。实现与评审记录：[T0 代码评审](docs/engineering/t0-code-review-20260828.md)（含 RabbitMQ 健康检查参数错误的修复）、[T0 DX Review 与实现准备增量复审](docs/engineering/t0-dx-review-20260828.md)。
 3. **已完成（2026-08-28）**：DX Review 与实现准备增量复审已执行——真实工具链与依赖图确认，T0 估算（CC ~1d）与实际吻合，十八张票估算与第一批次（T1a/T14/T11/T12）维持冻结。
-4. **下一步**：按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a + T14 + T11(同步审计) + T12(Ledger 骨架)。T1a 已并入 devex 评审三个 P1([报告已落盘](docs/engineering/plan-devex-review-20260828.md)):DX-T1 README 黄金路径 + dev 入口预载 `.env`、DX-T2 环境预检脚本、DX-T3 统一 API 错误信封与全局异常过滤器(先于首个业务端点);CI 首次真实运行以建 git 远程为前置(用户动作),T1a 提交前关注。T1a 合并后执行 /plan-devex-review boomerang(先落 dx-baseline 脚本),目标黄金路径 TTHW <2 min、verify <20 s。随后 T2/T10(Worker 基础) → T3 → T1b → T15 → T4a/T13(parse) → T5 → T9(Harness/语料) → T6/拍板 rerank N → T7/T13(output)/T16 主链 → T8 及剩余评测、性能、治理收口;PROBE-007(本地 Office/图片探针)可与 T5/T9 并行,T4b 在其后。
+4. **进行中**：按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a + T14 + T11(同步审计) + T12(Ledger 骨架)。**T1a 切片与并入的 devex P1 三项（DX-T1/DX-T2/DX-T3）已于 2026-08-28 完成并停在 [HG-01 人工核验](docs/engineering/manual-acceptance-gate.md)**，验收记录 [hg-01-t1a-manifest-core.md](docs/engineering/acceptance/hg-01-t1a-manifest-core.md) 状态 `READY_FOR_HUMAN`、用户结论待定，改动尚未提交（按闸门，人工验收不自动授权 commit/push/PR/merge/部署）。同批次剩余的 T14/T11/T12 未开始；用户明确验收并允许继续后，才可启动 T2/T10/T3/T1b。CI 首次真实运行以建 git 远程为前置（用户动作），T1a 提交前关注。T1a 合并后执行 /plan-devex-review boomerang（先落 dx-baseline 脚本），目标黄金路径 TTHW <2 min、verify <20 s。后续每个实施批次都按 HG-02 至 HG-07 停顿并等待人工结论。
 5. 各模块按 [Probe Decision Gate](docs/engineering/probe-decision-gate.md) 关闭实现与生产治理门槛；集成项全部关闭后，再进行完整增量工程复审和 24 至 36 周窗口重估。
 
 ## 详细文档入口
@@ -165,6 +173,7 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 - 架构探针总计划：[docs/engineering/architecture-probes-plan.md](docs/engineering/architecture-probes-plan.md)
 - 设计复审修复记录：[docs/engineering/design-fix-log-20260824.md](docs/engineering/design-fix-log-20260824.md)
 - 安全评审专用清单（实现阶段 T1a–T16 专用，出现业务代码后启用）：[docs/engineering/security-review-checklist.md](docs/engineering/security-review-checklist.md)
+- 阶段人工核验门禁（并行 Agent 收口、UI/代码/验证材料和用户签字规则）：[docs/engineering/manual-acceptance-gate.md](docs/engineering/manual-acceptance-gate.md)
 - 架构图：[diagrams/ts-rag-architecture.mmd](diagrams/ts-rag-architecture.mmd)
 - 探针 Tickets：[docs/engineering/tickets/](docs/engineering/tickets/)
 - 当前实施 Tickets：[docs/engineering/stage1-implementation-tickets.md](docs/engineering/stage1-implementation-tickets.md)

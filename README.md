@@ -1,7 +1,27 @@
 # 可信 RAG Monorepo
 
-阶段 1 的 T0 工程基线：pnpm workspace、TypeScript 应用与共享包、Python Parser、
-本地中间件 Compose、幂等初始化和 CI 冻结检查。领域业务按实施 Tickets 后续加入。
+阶段 1 工程基线：pnpm workspace、TypeScript 应用与共享包、Python Parser、
+本地中间件 Compose、幂等初始化和 CI 冻结检查；T1a 起加入领域核心
+（租户、知识空间、Manifest、Release 与兼容矩阵）。
+
+## 黄金路径（新终端从零到全绿）
+
+```bash
+pnpm install --frozen-lockfile
+cp .env.example .env        # 首次
+pnpm run infra:up           # 环境预检 + 启动六个 core 中间件并等待 healthy
+pnpm run bootstrap          # Keycloak、MinIO、数据库迁移与开发种子（幂等）
+pnpm --filter @rag/api dev  # 无需手工 source .env：应用入口自动预载根 .env
+```
+
+看到 `GET /health/ready` 返回 200 全绿即成功：
+
+```bash
+curl http://localhost:${API_PORT:-3001}/health/ready
+```
+
+每个新终端只需第三、四步：`.env` 由应用自动读取（已存在的环境变量优先），
+中间件保持运行。环境缺项先跑 `pnpm run preflight`，报错会直接给出修复指引。
 
 ## 环境要求
 
@@ -18,25 +38,19 @@ pnpm install --frozen-lockfile
 cp .env.example .env
 ```
 
-`.env` 只用于本地运行，真实密码和模型密钥不得提交。pnpm 不会自动把仓库根目录的
-`.env` 注入每个 workspace，应用脚本也不负责读取文件。启动应用前，在当前 shell
-中显式注入环境变量：
-
-```bash
-set -a
-source .env
-set +a
-```
-
-也可以使用 direnv、IDE launch configuration 或 CI secret 注入同一组变量。Compose 命令
-会自动读取仓库根 `.env`（如果存在），且外围环境变量优先。T0 不会调用云模型。
+`.env` 只用于本地运行，真实密码和模型密钥不得提交。应用入口（API、Worker）
+在解析配置前自动预载仓库根 `.env`，且不覆盖已存在的外围环境变量——新终端
+不需要再执行 `set -a; source .env; set +a`。也可以使用 direnv、IDE launch
+configuration 或 CI secret 注入同一组变量。Compose 命令同样自动读取仓库根
+`.env`，且外围环境变量优先。阶段 1 解析链路零云调用（ADR-0038），T0/T1a
+不调用任何云模型。
 
 ## 本地运行
 
 ```bash
 pnpm run infra:up       # 启动六个 core 中间件并等待 healthy
 pnpm run bootstrap      # 幂等导入 Keycloak、创建 MinIO Bucket、执行数据库迁移
-pnpm --filter @rag/api dev       # 需要先在当前 shell 注入 .env
+pnpm --filter @rag/api dev       # 应用入口自动预载根 .env
 pnpm --filter @rag/web dev
 pnpm --filter @rag/worker dev    # 需要显式设置 WORKER_PROFILE
 ```

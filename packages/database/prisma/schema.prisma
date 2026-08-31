@@ -1,8 +1,21 @@
 // 阶段 1 数据库 schema。
 //
-// T0 只建立 datasource 与 generator 边界：PostgreSQL 是业务事实、任务状态、
-// Outbox、审计与删除记录的唯一权威（ADR-0001/0003）。领域模型不在 T0 范围内，
-// 由 T1a 起按票据顺序加入，并全部通过 Prisma Migrate 生成受版本控制的迁移 SQL。
+// PostgreSQL 是业务事实、任务状态、Outbox、审计与删除记录的唯一权威
+// （ADR-0001/0003）。领域模型按票据顺序加入，全部通过 Prisma Migrate 生成
+// 受版本控制的迁移 SQL：
+// - T1a：租户、知识空间、不可变文档版本、内容寻址 Manifest、Pipeline 兼容组合、
+//   Release 与 IndexPartition 表结构（ADR-0028/0036）
+// - T1b：chunk_manifest 与最终 Chunk 字段（PROBE-006 冻结后）
+// - T2：正交状态命令与状态迁移事实
+// - T3：Outbox 与事件投递事实
+//
+// 边界约定（ADR-0036 §4）：
+// - 所有表都带 tenantId；租户是最高隔离域，即使阶段 1 只有一个租户。
+// - Manifest 是内容寻址、不可变对象：(tenantId, contentHash) 唯一，APPROVED 后
+//   不得修改，任何引用字段变化必须新建。
+// - PipelineManifest 只表达一个已批准兼容组合，不是 Release 的父对象。
+// - ReleaseManifest 不写回激活时间或当前 Alias；激活事实由 ReleaseActivation
+//   记录（T5）。T1a 只落表结构与 CREATED 初始态。
 //
 // 生成器选择 `prisma-client` 而不是已弃用的 `prisma-client-js`；
 // `moduleFormat = "cjs"` 与仓库统一的 CommonJS 产物一致（NestJS 与 Worker 都是 CJS）。
@@ -21,4 +34,264 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ─── 数据等级（ADR-0025）───────────────────────────────────────────────
+// UNKNOWN/SENSITIVE 不允许进入云执行区；等级变化创建新 IndexPartition。
+
+enum DataClass {
+  UNKNOWN
+  PUBLIC
+  INTERNAL
+  CONTROLLED
+  SENSITIVE
+}
+
+// ─── Manifest 生命周期 ────────────────────────────────────────────────
+// Manifest 只有 DRAFT -> APPROVED 一条合法迁移；APPROVED 后内容不可变
+// （不可变约束见 ADR-0036 §4.2：任何字段变化必须新建 Manifest）。
+
+enum ManifestStatus {
+  DRAFT
+  APPROVED
+}
+
+// ─── 发布状态（ADR-0036 §4.4）────────────────────────────────────────
+// T1a 只允许创建（CREATED）；BUILDING 及之后的迁移由 T5 的领域命令驱动，
+// 不提供通用 PATCH status。
+
+enum ReleaseStatus {
+  CREATED
+  BUILDING
+  VALIDATING
+  READY
+  ACTIVE
+  SUPERSEDED
+  ROLLING_BACK
+  FAILED
+  ABORTED
+}
+
+// ─── 租户与知识空间（§4.1）────────────────────────────────────────────
+
+model Tenant {
+  id                  String              @id @default(uuid(7)) @db.Uuid
+  name                String
+  createdAt           DateTime            @default(now()) @db.Timestamptz(6)
+  knowledgeSpaces     KnowledgeSpace[]
+  documents           Document[]
+  documentVersions    DocumentVersion[]
+  ingestionManifests  IngestionManifest[]
+  retrievalManifests  RetrievalManifest[]
+  answerManifests     AnswerManifest[]
+  pipelineManifests   PipelineManifest[]
+  indexPartitions     IndexPartition[]
+  releaseManifests    ReleaseManifest[]
+
+  @@map("tenants")
+}
+
+model KnowledgeSpace {
+  id               String           @id @default(uuid(7)) @db.Uuid
+  tenantId         String           @db.Uuid
+  slug             String
+  name             String
+  defaultDataClass DataClass        @default(INTERNAL)
+  createdAt        DateTime         @default(now()) @db.Timestamptz(6)
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  documents        Document[]
+  indexPartitions  IndexPartition[]
+  releaseManifests ReleaseManifest[]
+
+  @@unique([tenantId, slug])
+  @@unique([tenantId, id])
+  @@map("knowledge_spaces")
+}
+
+// ─── 文档与不可变版本 ─────────────────────────────────────────────────
+// DocumentVersion 一经创建不可修改；同一租户内 contentHash 唯一防止重复入库。
+// 解析产物、Chunk 与投影状态由 T1b/T2/T4a 加入，本表不持有它们。
+
+model Document {
+  id              String           @id @default(uuid(7)) @db.Uuid
+  tenantId        String           @db.Uuid
+  knowledgeSpaceId String          @db.Uuid
+  createdAt       DateTime         @default(now()) @db.Timestamptz(6)
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  knowledgeSpace  KnowledgeSpace   @relation(fields: [knowledgeSpaceId], references: [id])
+  versions        DocumentVersion[]
+
+  @@index([tenantId, knowledgeSpaceId])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @db.Uuid
+  documentId     String   @db.Uuid
+  version        Int
+  sourceFormat   String
+  dataClass      DataClass @default(INTERNAL)
+  contentHash    String
+  objectKey      String
+  sizeBytes      Int
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  document       Document @relation(fields: [documentId], references: [id])
+
+  @@unique([documentId, version])
+  @@unique([tenantId, contentHash])
+  @@index([tenantId, documentId])
+  @@map("document_versions")
+}
+
+// ─── 内容寻址 Manifest（ADR-0036 §4.2）───────────────────────────────
+// 字段口径与工程评审闭合记录 §4.2 的表格一致。contentHash 由契约包的规范化
+// JSON + SHA-256 计算（packages/contracts/src/manifests），数据库唯一约束兜底。
+
+model IngestionManifest {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  tenantId       String         @db.Uuid
+  version        Int
+  status         ManifestStatus @default(DRAFT)
+  parserRef      String
+  chunkerRef     String
+  embeddingRef   String
+  indexSchemaRef String
+  // 解析后端标识（ADR-0038）：契约一次定形，默认 deepdoc；T4b 增量加入
+  // office_hybrid/image_ocr 时只做增量实现，不改契约。
+  parseBackend   String         @default("deepdoc")
+  sourceFormats  String[]
+  contentHash    String
+  createdAt      DateTime       @default(now()) @db.Timestamptz(6)
+  approvedAt     DateTime?      @db.Timestamptz(6)
+  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  pipelines      PipelineManifest[]
+  releases       ReleaseManifest[]
+
+  @@unique([tenantId, contentHash])
+  @@unique([tenantId, id])
+  @@map("ingestion_manifests")
+}
+
+model RetrievalManifest {
+  id              String         @id @default(uuid(7)) @db.Uuid
+  tenantId        String         @db.Uuid
+  version         Int
+  status          ManifestStatus @default(DRAFT)
+  sparsePolicy    Json
+  vectorPolicy    Json
+  fusionPolicy    Json
+  rerankerRef     String
+  candidateBudget Int
+  // rerankInputSize 与 candidateBudget 分离（ADR-0035/PROBE-005）：前者是 OpenSearch
+  // 融合候选上限（冻结 1024），后者是实际送入 Reranker 的候选数，既是调优参数也是
+  // 预算参数。必须是 Manifest 字段而不是环境变量。开发种子显式写 64。
+  rerankInputSize Int
+  contentHash     String
+  createdAt       DateTime       @default(now()) @db.Timestamptz(6)
+  approvedAt      DateTime?      @db.Timestamptz(6)
+  tenant          Tenant         @relation(fields: [tenantId], references: [id])
+  pipelines       PipelineManifest[]
+
+  @@unique([tenantId, contentHash])
+  @@unique([tenantId, id])
+  @@map("retrieval_manifests")
+}
+
+model AnswerManifest {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  tenantId       String         @db.Uuid
+  version        Int
+  status         ManifestStatus @default(DRAFT)
+  promptRef      String
+  modelRouteRef  String
+  citationPolicy Json
+  riskPolicy     Json
+  fallbackPolicy Json
+  contentHash    String
+  createdAt      DateTime       @default(now()) @db.Timestamptz(6)
+  approvedAt     DateTime?      @db.Timestamptz(6)
+  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  pipelines      PipelineManifest[]
+
+  @@unique([tenantId, contentHash])
+  @@unique([tenantId, id])
+  @@map("answer_manifests")
+}
+
+// PipelineManifest：一个已批准的兼容组合，不是 Release 的父对象
+// （ADR-0036 §4）。组合内任何 Manifest 版本变化必须新建 Pipeline。
+
+model PipelineManifest {
+  id                  String            @id @default(uuid(7)) @db.Uuid
+  tenantId            String            @db.Uuid
+  version             Int
+  status              ManifestStatus    @default(DRAFT)
+  ingestionManifestId String            @db.Uuid
+  retrievalManifestId String            @db.Uuid
+  answerManifestId    String            @db.Uuid
+  compatibilityHash   String
+  contentHash         String
+  createdAt           DateTime          @default(now()) @db.Timestamptz(6)
+  approvedAt          DateTime?         @db.Timestamptz(6)
+  tenant              Tenant            @relation(fields: [tenantId], references: [id])
+  ingestionManifest   IngestionManifest @relation(fields: [tenantId, ingestionManifestId], references: [tenantId, id])
+  retrievalManifest   RetrievalManifest @relation(fields: [tenantId, retrievalManifestId], references: [tenantId, id])
+  answerManifest      AnswerManifest    @relation(fields: [tenantId, answerManifestId], references: [tenantId, id])
+
+  @@unique([tenantId, ingestionManifestId, retrievalManifestId, answerManifestId])
+  @@unique([tenantId, contentHash])
+  @@unique([tenantId, id])
+  @@map("pipeline_manifests")
+}
+
+// ─── 索引分区（ADR-0028）─────────────────────────────────────────────
+// 数据等级、索引 Schema 或 Embedding 版本变化创建新分区，不原地重写。
+
+model IndexPartition {
+  id                String           @id @default(uuid(7)) @db.Uuid
+  tenantId          String           @db.Uuid
+  knowledgeSpaceId  String           @db.Uuid
+  dataClass         DataClass
+  indexSchemaVersion String
+  embeddingVersion  String
+  createdAt         DateTime         @default(now()) @db.Timestamptz(6)
+  tenant            Tenant           @relation(fields: [tenantId], references: [id])
+  knowledgeSpace    KnowledgeSpace   @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id])
+  releaseManifests  ReleaseManifest[]
+
+  @@unique([tenantId, knowledgeSpaceId, dataClass, indexSchemaVersion, embeddingVersion])
+  @@unique([tenantId, id])
+  @@map("index_partitions")
+}
+
+// ─── Release（ADR-0036 §4.2/§4.4）────────────────────────────────────
+// 只表达入库事实与成员集；不写回激活时间、当前 Alias 或最终替代关系。
+
+model ReleaseManifest {
+  id                String         @id @default(uuid(7)) @db.Uuid
+  tenantId          String         @db.Uuid
+  knowledgeSpaceId  String         @db.Uuid
+  indexPartitionId  String         @db.Uuid
+  ingestionManifestId String       @db.Uuid
+  status            ReleaseStatus  @default(CREATED)
+  memberSetUri      String
+  memberSetHash     String
+  memberCount       Int
+  docIndexName      String
+  chunkIndexName    String
+  candidateAlias    String
+  indexSchemaVersion String
+  embeddingVersion  String
+  contentHash       String
+  createdAt         DateTime       @default(now()) @db.Timestamptz(6)
+  tenant            Tenant         @relation(fields: [tenantId], references: [id])
+  knowledgeSpace    KnowledgeSpace @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id])
+  indexPartition    IndexPartition @relation(fields: [tenantId, indexPartitionId], references: [tenantId, id])
+  ingestionManifest IngestionManifest @relation(fields: [tenantId, ingestionManifestId], references: [tenantId, id])
+
+  @@unique([tenantId, contentHash])
+  @@index([tenantId, knowledgeSpaceId])
+  @@map("release_manifests")
 }

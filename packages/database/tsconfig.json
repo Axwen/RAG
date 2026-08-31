@@ -6,8 +6,10 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/generated/**"],
   "references": [
+    {
+      "path": "../contracts"
+    },
     {
       "path": "../observability"
     }

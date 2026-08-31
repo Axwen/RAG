@@ -6,7 +6,7 @@ describe('@rag/contracts', () => {
     expect(CONTRACTS_PACKAGE).toBe('@rag/contracts')
   })
 
-  it('阶段 1 契约 schema 版本尚未发布', () => {
-    expect(CONTRACTS_SCHEMA_VERSION).toBe(0)
+  it('T1a 起 Manifest 契约 schema 版本为 1', () => {
+    expect(CONTRACTS_SCHEMA_VERSION).toBe(1)
   })
 })

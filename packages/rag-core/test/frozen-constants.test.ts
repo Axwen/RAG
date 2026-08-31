@@ -25,6 +25,6 @@ describe('冻结常量', () => {
   })
 
   it('契约 schema 版本对齐 @rag/contracts', () => {
-    expect(SUPPORTED_CONTRACTS_SCHEMA_VERSION).toBe(0)
+    expect(SUPPORTED_CONTRACTS_SCHEMA_VERSION).toBe(1)
   })
 })

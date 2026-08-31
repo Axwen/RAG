@@ -29,8 +29,51 @@ describe('Prisma schema 边界', () => {
     expect(config).not.toMatch(/postgresql:\/\/[^'"\s]*:[^'"\s]+@/)
   })
 
-  it('T0 不引入领域模型', () => {
-    expect(schema).not.toMatch(/^\s*model\s+\w+/m)
+  it('T1a 领域模型已加入且所有业务表都带 tenantId（§4.1 最高隔离域）', () => {
+    const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((m) => m[1])
+    expect(models).toEqual(
+      expect.arrayContaining([
+        'Tenant',
+        'KnowledgeSpace',
+        'Document',
+        'DocumentVersion',
+        'IngestionManifest',
+        'RetrievalManifest',
+        'AnswerManifest',
+        'PipelineManifest',
+        'IndexPartition',
+        'ReleaseManifest',
+      ]),
+    )
+    for (const model of models) {
+      if (model === 'Tenant') {
+        continue
+      }
+      const body = schema.slice(schema.indexOf(`model ${model} {`))
+      expect(body.slice(0, body.indexOf('@@')), `model ${model} 缺少 tenantId`).toMatch(
+        /tenantId\s+String\s+@db\.Uuid/,
+      )
+    }
+  })
+
+  it('Manifest 内容寻址：(tenantId, contentHash) 唯一，防重复入库', () => {
+    for (const model of [
+      'IngestionManifest',
+      'RetrievalManifest',
+      'AnswerManifest',
+      'PipelineManifest',
+      'ReleaseManifest',
+      'DocumentVersion',
+    ]) {
+      const body = schema.slice(schema.indexOf(`model ${model} {`))
+      const modelBody = body.slice(0, body.indexOf('\n}'))
+      expect(modelBody).toMatch(/@@unique\(\[tenantId,\s*contentHash\]/)
+    }
+  })
+
+  it('rerankInputSize 是 RetrievalManifest 必填字段（不带 ? 也无默认值）', () => {
+    // 必填且无默认：它必须由注册方显式写入 Manifest，不能退化成隐式配置
+    expect(schema).toMatch(/^\s*rerankInputSize\s+Int$/m)
   })
 
   it('迁移目录固定，且脚本入口只提供 Prisma Migrate', () => {

@@ -2,7 +2,7 @@
 # 幂等应用数据库迁移并写入最小开发种子。
 #
 # 迁移用 prisma migrate deploy（幂等：已应用的迁移会被跳过），不用 db push。
-# T0 没有领域模型，因此没有迁移也没有种子行；这是 T0 的显式状态，不是脚本失败。
+# T1a 起有领域模型、迁移与开发种子；种子按固定 UUID upsert，可重复执行。
 set -Eeuo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
