@@ -41,7 +41,7 @@
 | T11 Audit/Telemetry | 同步领域审计与异步运行遥测 | 同步审计在 T2/T3 前半段落地；遥测消费者和故障恢复可后置 |
 | T12 Performance/Budget | 配置硬上限、Budget Ledger、限流、缓存和性能报告 | Ledger schema/预扣在 T15 前；检索性能随 T6，完整报告随 T9 后关闭 |
 | T13 Untrusted Content | 解析、进入上下文前、输出后三处注入检测 | 分别随 T4、T6、T7 交付，不作为最后一次集中补丁 |
-| [T14](tickets/T14-identity-authorization.md) Identity/Authorization | Keycloak OIDC、用户映射、Workspace 成员、作用域编译和 fail-closed | T0、T1a；在 T6 和所有 Web 路由前完成 |
+| [T14](tickets/T14-identity-authorization.md) Identity/Business User/Authorization | Keycloak OIDC 只负责身份；自有 BusinessUser、租户/Workspace 成员、角色/能力权限、资源授权、作用域编译和 fail-closed | T0、T1a；在 T6 和所有 Web 路由前完成；为客服、研发、普通员工等后续域提供统一身份上下文，不复制用户系统（ADR-0039）|
 | [T15](tickets/T15-model-adapter.md) ModelAdapter | Chat、Embedding、Reranker、引用验证统一准入层及供应商方言 | T1a、T12 Ledger；在 T5 Embedding、T6 Rerank、T7 Chat/Citation 前完成 |
 | [T16](tickets/T16-web-admin-surfaces.md) Web/Admin Surfaces | 登录、知识上传/审核、入库状态、Chat 和三个管理控制台 | 页面开工前执行 Design Review；按后端 Ticket 纵向交付，不单独等待最后集成；拆为 T16a 用户主链与 T16b 管理控制台两批 |
 

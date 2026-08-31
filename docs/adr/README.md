@@ -41,3 +41,5 @@
 | [0035](0035-stage1-runtime-protocol-ratification.md) | accepted | 阶段 1 运行期硬协议从工程评审记录提升为 ADR 级事实 | 2026-08-26 按 PROBE-005 原地修订 |
 | [0036](0036-stage1-protocol-clarifications.md) | accepted | 阶段 1 协议语义收敛：显式授权、临时引用、模型调用、兼容组合与结果门禁 | - |
 | [0037](0037-stage1-index-field-alignment.md) | accepted | 阶段 1 OpenSearch 索引字段与 ACL 作用域口径对齐 | 细化 0026、0028 |
+| [0038](0038-vlm-parser-backend-and-multimodal-scope.md) | accepted | 阶段 1 多模态解析范围重定：DeepDOC OCR 与 Office 库提取，VLM 后置 | - |
+| [0039](0039-business-identity-and-unified-authorization.md) | accepted | 业务身份体系与统一授权入口：外部身份与业务用户分离，能力权限与资源策略分层 | 细化 0002、0026；不改 0036、0037 |

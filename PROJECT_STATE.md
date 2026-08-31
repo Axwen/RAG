@@ -2,7 +2,7 @@
 
 > 这是本项目的会话无关状态入口。新会话先读本文件，再按“事实源层级”读取详细文档；不要把聊天上下文当作唯一事实来源。
 >
-> 最近更新：2026-08-28
+> 最近更新：2026-08-31
 
 ## 一句话结论
 
@@ -34,7 +34,7 @@
 - 共享基座不按客服、研发、普通员工复制分支；角色差异通过 Workspace、KnowledgeSpace、数据源、策略和工具权限表达。
 - 研发工作台未来接入代码仓库和研发文档；普通员工工作台未来接入制度和业务资料；阶段 1 不实现完整工作台。
 - MVP 使用合成或严格脱敏数据，不接入真实敏感客户数据，不自动向终端客户发送消息。
-- 计划周期为 24 至 36 周弹性窗口，不是承诺。十八张实施票据的工作量估算已于 2026-08-27 补齐，合计 human ~84.5d / CC ~20.6d（见[工程评审闭合记录第 16.1 节](docs/engineering/plan-eng-review-closure.md)）；按经验系数换算，人工为主路径约 29–37 周，落在窗口上半段且上界略微超出，机械实现主要由 CC 承担时约 16–24 周。换算系数是假设值，正式重估仍在 T0 后的实现准备增量工程复审中进行。功能报告中的 16 至 24 周为早期估算，已作废。
+- 计划周期为 24 至 36 周弹性窗口，不是承诺。十八张实施票据的工作量估算已于 2026-08-27 补齐，并于 2026-08-31 按 [ADR-0039](docs/adr/0039-business-identity-and-unified-authorization.md) 上调 T14（~6d → ~8d），当前合计 human ~86.5d / CC ~21.1d（见[工程评审闭合记录第 16.1 节](docs/engineering/plan-eng-review-closure.md)）；按经验系数换算，人工为主路径约 29–38 周，上界已超出窗口，机械实现主要由 CC 承担时约 16–24 周。换算系数是假设值，正式重估仍在实现准备增量工程复审中进行。功能报告中的 16 至 24 周为早期估算，已作废。
 
 ### 技术基线
 
@@ -53,6 +53,7 @@
 - RabbitMQ 只负责传递和延迟；逻辑任务、Attempt、Generation、取消和 DLQ 关联由 PostgreSQL 管理。
 - OpenSearch 物理作用域固定为 `tenant_id + knowledge_space_id + index_partition_id`；`IndexPartition` 唯一键为 `(tenantId, knowledgeSpaceId, dataClass, indexSchemaVersion, embeddingVersion)`（ADR-0028）。
 - 授权分两段：PostgreSQL 编译 `acl_scope_key` 集合作为索引预过滤，候选合并后再做一次批量 PostgreSQL 权威复核；索引内不存储主体列表或 ACL 版本号，复核超时或 PostgreSQL 不可用时整个查询 fail closed（ADR-0026）。阶段 1 授权模型为纯作用域型；逐文档正向授权是加法、只能进预过滤，作为已识别扩展点预留但不实现（ADR-0036）。
+- 外部身份与业务用户分离：Keycloak/OIDC 只产出稳定的 `(issuer, subject)`，`BusinessUser` 及租户/Workspace 成员、角色与能力权限由 PostgreSQL 维护；能力权限码只判断能否执行操作，不参与 `acl_scope_key` 编译；租户上下文只能从已验证身份推导，不得信任请求体中的 `tenantId`（ADR-0039）。
 - Workspace 不写入索引事实，不复制文档和 Chunk；Workspace 通过绑定 KnowledgeSpace 和策略组合查询范围。
 - 文档版本不可变；Parser、Chunker、Embedding、Index Schema、Retrieval、Answer 等通过不可变 Manifest 固定组合。
 - Release、ReleaseActivation、IndexActivationIntent 和 RetrievalSnapshot 不可被一个可变状态字段替代。
@@ -122,11 +123,12 @@
 - 已完成 /autoplan 架构评审（CEO + 技术先进性双轴）并按"个人学习项目、技术完整性与先进性优先"的前提裁决：6 项纯技术发现保留（2 Critical），商业类发现作废；多模态被确认为最大先进性缺口，[ADR-0038](docs/adr/0038-vlm-parser-backend-and-multimodal-scope.md) 将 Parser 扩展为多后端（DeepDOC/Office 混合/图片 OCR），图片走本地 DeepDOC OCR、Office 走格式库提取，**解析链路零云调用**，VLM 后置为阶段 2 可选增强槽位；T4 拆为 T4a/T4b，新增 PROBE-007 本地探针（零云成本）。
 - 已完成 /gstack-plan-eng-review 对 ADR-0038 设计的增量评审（2026-08-28）：8 项发现（D1 契约一次定形、D2 未列出格式显式拒绝、D3 全异步无例外、D4 自行移植不依赖 ragflow、D5 补管线图、D6/D7/D8 探针补强）全部决议并落文档，报告附于 ADR-0038 末尾；0 critical gap，ENG CLEARED——devex 评审当时"NOT CLEARED（无 7 天内 Eng Review）"的门由此关闭，T1a 开工前无需再跑。/plan-devex-review（2026-08-28，score 5→6，TTHW 目标 <2 min）报告已由用户提供原文并[落盘](docs/engineering/plan-devex-review-20260828.md)，其 P1 三项（.env 预载+README 黄金路径、环境预检脚本、API 错误信封+全局异常过滤器）并入 T1a；T1a 合并后 boomerang 复测。
 - 已完成 StepFun `step-3.5-flash-2603` 的契约探针和 `reasoning_effort=low/high` A/B：两轮各 20 个有效样本合并后，`low` 完整生成 p50 2.05 s、p95 3.752 s、最大 6.969 s，答案与 D1/D2 引用正确率 1.0；因 p95 略超 3.5 s，暂不替换 ADR-0017 的 fluxionai Chat 基线，也不再继续扩大模型探索。
-- 已完成 **T1a Manifest/Prisma Core 切片 + devex P1 三项**（2026-08-28，工作区改动，未提交）：10 个领域模型与仓库首份迁移、内容寻址 contentHash（规范化 JSON + SHA-256）与四条兼容矩阵纯函数、`POST /manifests/{ingestion,retrieval,answer,pipelines}`（含 `/:id/approve`）与 `POST /releases`/`GET /releases/:id` 领域命令端点、DX-T1 `.env` 预载、DX-T2 `preflight`、DX-T3 五字段错误信封与全局异常过滤器。`pnpm run verify` 全绿（15 文件 / 106 测试），黄金路径 `infra:up → bootstrap → api dev → /health/ready` 六项全 `up` 真实实测通过，T1a HTTP 面逐条实测（幂等重放同 id、422 兼容违规、400/404 信封）。同时修复 T0 遗留缺陷：dev 入口用 `tsx`（esbuild 不产出 `emitDecoratorMetadata`）导致 NestJS 注入为 `undefined`、所有请求 500，已改 `node --watch + ts-node` 并加配置不变量测试。验收记录：[HG-01 T1a 切片](docs/engineering/acceptance/hg-01-t1a-manifest-core.md)（状态 `READY_FOR_HUMAN`）。
+- 已完成 **T1a Manifest/Prisma Core 切片 + devex P1 三项**（2026-08-28，已提交于 `bc99b0a`）：10 个领域模型与仓库首份迁移、内容寻址 contentHash（规范化 JSON + SHA-256）与四条兼容矩阵纯函数、`POST /manifests/{ingestion,retrieval,answer,pipelines}`（含 `/:id/approve`）与 `POST /releases`/`GET /releases/:id` 领域命令端点、DX-T1 `.env` 预载、DX-T2 `preflight`、DX-T3 五字段错误信封与全局异常过滤器。`pnpm run verify` 全绿（15 文件 / 106 测试），黄金路径 `infra:up → bootstrap → api dev → /health/ready` 六项全 `up` 真实实测通过，T1a HTTP 面逐条实测（幂等重放同 id、422 兼容违规、400/404 信封）。同时修复 T0 遗留缺陷：dev 入口用 `tsx`（esbuild 不产出 `emitDecoratorMetadata`）导致 NestJS 注入为 `undefined`、所有请求 500，已改 `nodemon + ts-node` 并加配置不变量测试（期间曾短暂改用 `node --watch`，因它在 Linux 按 inode 监听、原子保存后热重载只生效一次而回退，实测记录见 CHANGELOG）。验收记录：[HG-01 T1a 切片](docs/engineering/acceptance/hg-01-t1a-manifest-core.md)（状态 `READY_FOR_HUMAN`）。
+- 已按 [ADR-0039](docs/adr/0039-business-identity-and-unified-authorization.md) 收口 T14 范围（2026-08-31）：外部身份与业务用户分离、能力权限与资源策略分两层、业务主体多租户/多 Workspace/多角色、租户上下文只从已验证身份推导；组织结构、临时直接赋权与非文档型资源域列为已识别扩展点，阶段 1 不建表。T14 估算随之上调为 human ~8d / CC ~2d，2026-08-27 的十八张票据估算冻结到此结束。
 
 ## 尚未完成且不能假装完成
 
-- T0 工程骨架与 T1a 切片（Manifest/Release 领域模型、内容寻址、兼容矩阵、领域命令端点）已在当前工作区落地，但**尚未提交**；同一批次的 T14 身份与授权、T11 同步审计、T12 预算 Ledger 骨架未开始，`tenantId` 目前由请求体携带，只能在本地开发环境使用。T1b 分块、Release 状态迁移（`BUILDING` 及之后属 T5）、消息、检索、回答和 UI 仍未开始。
+- T0 工程骨架与 T1a 切片（Manifest/Release 领域模型、内容寻址、兼容矩阵、领域命令端点）已提交于 `bc99b0a`；同一批次的 T14 身份与授权、T11 同步审计、T12 预算 Ledger 骨架未开始，`tenantId` 目前由请求体携带，只能在本地开发环境使用。T14 的计划已按 [ADR-0039](docs/adr/0039-business-identity-and-unified-authorization.md) 明确为“Keycloak/OIDC 身份 + 自有 BusinessUser/租户/Workspace/角色/能力权限 + 资源 ACL”，后续客服、研发、普通员工三个角色工作台复用该身份上下文，不复制用户体系。T1b 分块、Release 状态迁移（`BUILDING` 及之后属 T5）、消息、检索、回答和 UI 仍未开始。
 - Node 的格式、Lint、类型检查、构建、Prisma schema 校验、Python uv/pytest、Compose 配置解析和初始化脚本语法检查已在当前环境执行；六个 core 容器 healthy 与 `/health/ready` 已在 T0/T1a 真实实测通过，容器级集成测试（Testcontainers）、Playwright 和部署仍未验证。
 - 尚无真实业务语料的完整混合检索、Rerank 后质量、生产 ACL/有效期/删除过滤链和 50 题业务回归基线；1024 维相对原生 4096 维也没有同语料对照，不能宣称无召回损失。
 - `rerankInputSize` 正式值尚未拍板；T1a 开发种子使用 N=64，T6 必须用真实业务语料比较质量、延迟和成本后再冻结。
@@ -160,8 +162,8 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 
 1. **已完成**：探针收尾提交已在 `chore/probe-closeout` 分支按主题切分；提交前已校验无凭证残留、无供应商注入提示词正文入库、全部 JSON 合法、Markdown 相对链接零断裂，工作区干净。T0/T14/T15/T16 的工作量估算也已补齐，十八张票据的估算与周期换算见[工程评审闭合记录第 16.1 节](docs/engineering/plan-eng-review-closure.md)。该分支已 fast-forward 合并回 `main`，探针收尾阶段结束。
 2. **已完成（2026-08-28）**：[T0 Monorepo 基线](docs/engineering/tickets/T0-monorepo-foundation.md) 在真实环境完成验收——九步 verify 全链（64 Vitest + 5 pytest）通过，六个 core 服务 healthy，`infra:down/up` 干净往返，`bootstrap` 重复执行零重复副作用，停止 Redis 后 API `/health/ready` 诚实 503 并给出依赖级原因。实现与评审记录：[T0 代码评审](docs/engineering/t0-code-review-20260828.md)（含 RabbitMQ 健康检查参数错误的修复）、[T0 DX Review 与实现准备增量复审](docs/engineering/t0-dx-review-20260828.md)。
-3. **已完成（2026-08-28）**：DX Review 与实现准备增量复审已执行——真实工具链与依赖图确认，T0 估算（CC ~1d）与实际吻合，十八张票估算与第一批次（T1a/T14/T11/T12）维持冻结。
-4. **进行中**：按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a + T14 + T11(同步审计) + T12(Ledger 骨架)。**T1a 切片与并入的 devex P1 三项（DX-T1/DX-T2/DX-T3）已于 2026-08-28 完成并停在 [HG-01 人工核验](docs/engineering/manual-acceptance-gate.md)**，验收记录 [hg-01-t1a-manifest-core.md](docs/engineering/acceptance/hg-01-t1a-manifest-core.md) 状态 `READY_FOR_HUMAN`、用户结论待定，改动尚未提交（按闸门，人工验收不自动授权 commit/push/PR/merge/部署）。同批次剩余的 T14/T11/T12 未开始；用户明确验收并允许继续后，才可启动 T2/T10/T3/T1b。CI 首次真实运行以建 git 远程为前置（用户动作），T1a 提交前关注。T1a 合并后执行 /plan-devex-review boomerang（先落 dx-baseline 脚本），目标黄金路径 TTHW <2 min、verify <20 s。后续每个实施批次都按 HG-02 至 HG-07 停顿并等待人工结论。
+3. **已完成（2026-08-28）**：DX Review 与实现准备增量复审已执行——真实工具链与依赖图确认，T0 估算（CC ~1d）与实际吻合。十八张票估算当时维持冻结；该冻结已于 2026-08-31 因 ADR-0039 扩大 T14 范围而结束（T14 ~6d → ~8d，合计 86.5d / 21.1d），后续范围变更同样按“改范围就改估算”处理。
+4. **进行中**：按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a + T14 + T11(同步审计) + T12(Ledger 骨架)。**T1a 切片与并入的 devex P1 三项（DX-T1/DX-T2/DX-T3）已于 2026-08-28 完成并提交为 `bc99b0a`，停在 [HG-01 人工核验](docs/engineering/manual-acceptance-gate.md)**，验收记录 [hg-01-t1a-manifest-core.md](docs/engineering/acceptance/hg-01-t1a-manifest-core.md) 状态 `READY_FOR_HUMAN`、用户结论待定（人工验收不自动授权后续批次或发布）。同批次剩余的 T14/T11/T12 未开始；T14 先按 [ADR-0039](docs/adr/0039-business-identity-and-unified-authorization.md) 的业务身份与统一授权计划实现（含 T1a 请求体 `tenantId` 的退场条件），用户明确验收并允许继续后，才可启动 T2/T10/T3/T1b。CI 首次真实运行以建 git 远程为前置（用户动作），T1a 合并后关注。T1a 合并后执行 /plan-devex-review boomerang（先落 dx-baseline 脚本），目标黄金路径 TTHW <2 min、verify <20 s。后续每个实施批次都按 HG-02 至 HG-07 停顿并等待人工结论。
 5. 各模块按 [Probe Decision Gate](docs/engineering/probe-decision-gate.md) 关闭实现与生产治理门槛；集成项全部关闭后，再进行完整增量工程复审和 24 至 36 周窗口重估。
 
 ## 详细文档入口

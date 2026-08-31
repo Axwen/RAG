@@ -10,7 +10,7 @@
 - `/knowledge`、`/knowledge/upload`、`/knowledge/:id`：知识空间、上传、版本、隔离和发布状态。
 - `/review`、`/ingestion`、`/ingestion/:jobId`：审核、Candidate Release、任务、取消、重试、DLQ/Replay。
 - `/chat`：提问、SSE、停止/续读、风险状态、句级引用和复制草稿。
-- `/admin/users`：用户与 Workspace 成员。
+- `/admin/users`：业务用户、租户成员、Workspace 成员，以及 Workspace 内角色和功能权限绑定；不管理密码，不把 Keycloak Group 直接展示为业务授权事实（ADR-0039）。
 - `/admin/deletions`：Target 状态、Legal Hold、墓碑和删除证明。
 - `/admin/evaluations`：黄金集、门禁报告、Manifest/模型版本和成本。
 - `/admin/operations`：Worker Profile、队列积压、预算熔断、阻断和恢复演练。
@@ -35,7 +35,7 @@
 ## 依赖与时点
 
 - 页面实现开始前执行 Design Review，最迟不晚于 `/chat` 和三个 `/admin/*` 控制台开工。
-- 身份页面依赖 T14；知识/入库依赖 T4/T5；Chat 依赖 T6/T7；管理控制台分别依赖 T8/T9/T10-T12。
+- 身份页面依赖 T14；知识/入库依赖 T4/T5；Chat 依赖 T6/T7；管理控制台分别依赖 T8/T9/T10-T12。`/admin/users` 必须消费 T14 的业务用户和统一授权 API，不能直接读取或修改 Keycloak 管理模型。
 - 按后端 Ticket 纵向交付，不等待所有后端完成后一次性搭空壳页面。
 
 ## 验证

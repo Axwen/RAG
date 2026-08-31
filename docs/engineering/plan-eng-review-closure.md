@@ -365,7 +365,7 @@ type AnswerEvent = {
 
 | 增量 | 用户可见结果 | 独立 DoD | 失败注入和恢复 |
 |---|---|---|---|
-| 1. 身份与授权 | 用户能登录、进入工作台并看到有权知识 | Keycloak OIDC；业务用户/成员/ACL；跨租户、跨工作台、越密级为 0；授权决策可审计；撤权后新查询 fail closed | token 过期、Keycloak 不可用、ACL revision 竞态；恢复后不扩大权限 |
+| 1. 身份与授权 | 用户能登录、进入工作台并看到有权知识；同一用户可在不同工作台承担不同业务角色 | Keycloak OIDC 只证明外部主体；PostgreSQL 维护 BusinessUser、租户/Workspace 成员、角色/能力权限和资源 ACL；跨租户、跨工作台、越密级为 0；授权决策可审计；撤权后新查询 fail closed | token 过期、Keycloak 不可用、业务用户映射缺失、Workspace 切换串权、ACL revision 竞态；恢复后不扩大权限 |
 | 2. 上传与资产 | 上传后得到不可变文档版本和安全状态 | `upload_session` 临时前缀；presign/complete 幂等；hash/MIME/大小/恶意文件检查；正式对象复制并经 `object_claim` 与 PG 关联；重复上传复用或明确新版本；不可变版本可查看；未认领对象可按 TTL 清扫并有证明 | 断点上传、恶意文件、临时对象过期、正式对象复制成功但 PG 失败、响应丢失；Cleanup Worker 和补偿流程必须可恢复 |
 | 3. Parser Artifact | 支持首批格式并能回跳页码/块位置 | Markdown、原生/扫描 PDF、JSON/CSV 通过门禁；ParseArtifact schema、定位、质量告警；Office 仅探针不阻断首批 | Parser 崩溃、OCR 超时、响应丢失、低质量表格；状态可重试且不生成半成品 |
 | 4. 异步投影与 Release | 文档可构建候选索引并安全发布 | Outbox/RabbitMQ；任务、Attempt、Generation、取消、DLQ、重放；BM25/向量候选；Release 校验、Alias 激活、对账和回滚 | 重复消息、旧 Generation、Alias 切换窗口、OpenSearch 不可用；故障注入后可恢复 |
@@ -597,10 +597,10 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
   - 计划文件：`package.json`、`pnpm-workspace.yaml`、`apps/{api,web,worker}`、`packages/{contracts,database,rag-core,config,observability}`、`services/parser/`、`infra/compose/`、CI 配置。
   - 范围补充：见 [T0 Ticket](tickets/T0-monorepo-foundation.md)。冻结 Node `22.23.1`、pnpm `10.34.5`、Python `3.12.3`；Compose 复用探针实测的 Keycloak `26.2.5`、OpenSearch `2.19.1`、RabbitMQ `3.13-management`，PostgreSQL、Redis、MinIO 无探针冻结版本，实现时选定明确标签并记录依据，不用 `latest`。
   - 验证：干净检出冻结安装、根 lint/typecheck/Vitest/pytest/build/Prisma validate、六个 core 中间件 healthy、初始化可重复执行、CI 不读取仓库外凭证也不触发付费模型调用。
-- [ ] **T14 (P1, human: ~6d / CC: ~1.5d)** — Identity/Authorization — 把 Keycloak 外部事实落成业务身份与统一授权决策。
-  - 来源：探针收尾复审，PROBE-001 只验证了外部身份事实，业务用户映射、Workspace 成员和 `acl_scope_key` 编译此前没有票据归属。
-  - 计划文件：`apps/api/src/modules/auth/`、`apps/api/src/modules/authorization/`、`packages/contracts/src/auth/`、`apps/web/src/features/auth/`。
-  - 范围补充：见 [T14 Ticket](tickets/T14-identity-authorization.md)。Token、角色或 Keycloak Group 不等于业务授权；查询前编译作用域预过滤、候选合并后批量权威复核，任何依赖不可用或超时 fail closed（ADR-0026、ADR-0037）。其中约 2d 由 T6 转移而来。
+- [ ] **T14 (P1, human: ~8d / CC: ~2d)** — Identity/Business User/Authorization — 把 Keycloak 外部身份事实融入自有业务用户与统一授权体系，支撑多租户、多 Workspace 和后续客服/研发/普通员工领域。
+  - 来源：探针收尾复审，PROBE-001 只验证了外部身份事实，业务用户映射、Workspace 成员和 `acl_scope_key` 编译此前没有票据归属。范围于 2026-08-31 按 [ADR-0039](../adr/0039-business-identity-and-unified-authorization.md) 扩为自有业务身份体系，估算同步上调 +2d / +0.5d。
+  - 计划文件：`apps/api/src/modules/auth/`、`apps/api/src/modules/authorization/`、`packages/contracts/src/auth/`、`packages/database/prisma/schema.prisma` 与新增迁移目录、`apps/web/src/features/auth/`。
+  - 范围补充：见 [T14 Ticket](tickets/T14-identity-authorization.md)。Keycloak/OIDC 只负责认证和稳定 `issuer + subject`；BusinessUser、租户/Workspace 成员、角色/能力权限和资源策略由 PostgreSQL 维护。Token、角色或 Keycloak Group 不等于业务授权；能力权限码只判断能否执行操作、不参与 `acl_scope_key` 编译；查询前编译作用域预过滤、候选合并后批量权威复核，任何依赖不可用或超时 fail closed（ADR-0026、ADR-0037）。研发文档、制度流程资料等后续域复用统一身份上下文，不复制登录和用户体系；组织结构与非文档型资源为已识别扩展点，阶段 1 不建表。其中约 2d 由 T6 转移而来。
   - 验证：Keycloak 容器集成覆盖 PKCE、JWKS 轮换、过期、禁用、撤权、不可用与恢复；PG/OpenSearch 集成覆盖撤权竞态、过滤与复核一致、复核超时 fail closed，越权证据泄漏为 0。
 - [ ] **T15 (P1, human: ~5d / CC: ~1.25d)** — ModelAdapter — 建立四类模型调用的统一准入层与预算门禁。
   - 来源：探针收尾复审，PROBE-005 的四条供应商路径此前分散依附在 T5/T6/T7/T12，没有单一准入点票据。
@@ -621,20 +621,22 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 |---|---|---|
 | T1a–T13（首次工程评审已估） | 65d | 15.75d |
 | T1a 并入 DX P1 三项（2026-08-28，devex T1–T3） | 1.5d | 0.25d |
-| T0/T14/T15/T16 全范围 | 25d | 6.25d |
+| T0/T14/T15/T16 全范围 | 27d | 6.75d |
 | 减去已隐含在 T5–T12 内的重叠 | -5.5d | -1.4d |
-| 十八张票据合计 | 84.5d | 20.6d |
+| 十八张票据合计 | 86.5d | 21.1d |
 | T4b Office/图片解析后端（ADR-0038 新增） | 4d | 1d |
-| 十九张票据合计（含 DX 并入） | 91d | 21.85d |
+| 十九张票据合计（含 DX 并入） | 93d | 22.35d |
 
-重叠明细：T6 → T14 授权模块与撤权复核 -2d；T5/T6/T7 → T15 供应商客户端 -1.5d；T12 → T15 模型预算门禁 -0.5d；T7 → T16a `apps/web/src/features/chat/` -1d；T8/T9/T12 → T16b 删除证明与报告页面 -0.5d。这些工作原先已计入 T5–T12 的估算，四张新票据成立后只是归属转移，不是净新增范围；净新增为 human ~19.5d / CC ~4.9d。
+重叠明细：T6 → T14 授权模块与撤权复核 -2d；T5/T6/T7 → T15 供应商客户端 -1.5d；T12 → T15 模型预算门禁 -0.5d；T7 → T16a `apps/web/src/features/chat/` -1d；T8/T9/T12 → T16b 删除证明与报告页面 -0.5d。这些工作原先已计入 T5–T12 的估算，四张新票据成立后只是归属转移，不是净新增范围；净新增为 human ~21.5d / CC ~5.4d。
 
-周期换算是假设，不是承诺，也不替代重估：票据估算不含 DX Review、Design Review、两次增量工程复审、[Probe Decision Gate](probe-decision-gate.md) 的 11 项待关闭条件（3 项实现前决策、5 类实现集成验证、3 项生产真实数据治理）、真实业务语料构建与 `rerankInputSize` 拍板实验、性能回归、恢复演练和评审返工。按门禁密集项目 1.7–2.2 倍的经验系数换算：
+估算修订记录：2026-08-31 按 [ADR-0039](../adr/0039-business-identity-and-unified-authorization.md) 将 T14 从 ~6d / ~1.5d 上调为 ~8d / ~2d（新增 7 张业务身份表及迁移、`authorization` 兼顾能力权限与资源策略两层、新增多角色 E2E）。2026-08-27 的「十八张票据估算冻结」到此结束：范围扩了就改估算，不保留一个和拆分算不平的旧数字。
 
-- 人工为主路径约 144–186 人日，单人 5 天/周约 29–37 周，落在 24–36 周窗口的上半段，上界略微超出窗口。
+周期换算是假设，不是承诺，也不替代重估：票据估算不含 DX Review、Design Review、两次增量工程复审、[Probe Decision Gate](probe-decision-gate.md) 的 11 项待关闭条件（3 项实现前决策、5 类实现集成验证、3 项生产真实数据治理）、真实业务语料构建与 `rerankInputSize` 拍板实验、性能回归、恢复演练和评审返工。按门禁密集项目 1.7–2.2 倍的经验系数换算（基数取十八张票据合计 86.5d，不含 T4b）：
+
+- 人工为主路径约 147–190 人日，单人 5 天/周约 29–38 周，落在 24–36 周窗口的上半段，上界超出窗口。
 - 机械实现主要由 CC 承担、人工只做评审与门禁时，实现部分压缩而门禁与集成部分不压缩，合计约 16–24 周，落在窗口下半段。
 
-系数为经验假设值而非实测值，因此 24–36 周窗口在“人工为主”路径下已接近上界。若窗口不成立，按[产品与架构边界](../design/企业级可信RAG基础MVP-产品与架构边界.md)第 17 节优先削减首批文件格式、运营界面和影响分析覆盖面，不削减身份、权限、引用、消息幂等、发布回滚和数据删除门禁。正式重估仍按计划在 T0 后的实现准备增量工程复审中进行。
+系数为经验假设值而非实测值，因此 24–36 周窗口在“人工为主”路径下上界已被突破（38 > 36 周）。若窗口不成立，按[产品与架构边界](../design/企业级可信RAG基础MVP-产品与架构边界.md)第 17 节优先削减首批文件格式、运营界面和影响分析覆盖面，不削减身份、权限、引用、消息幂等、发布回滚和数据删除门禁。正式重估仍按计划在 T0 后的实现准备增量工程复审中进行。
 
 探针 Tickets：
 
