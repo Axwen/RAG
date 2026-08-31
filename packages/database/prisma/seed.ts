@@ -117,6 +117,10 @@ async function seed(): Promise<void> {
         chunkerRef: ingestionContent.chunkerRef,
         embeddingRef: ingestionContent.embeddingRef,
         indexSchemaRef: ingestionContent.indexSchemaRef,
+        // 每个参与 contentHash 的字段都必须显式写入：靠列默认值"凑巧等于"契约常量，
+        // 一旦默认值或默认后端变化（T4b），种子行就无法复现自己的 contentHash，
+        // 内容寻址不变量会在每个开发库里静默失效。
+        parseBackend: ingestionContent.parseBackend,
         sourceFormats: [...ingestionContent.sourceFormats],
         contentHash: contentHashOf(ingestionContent),
         approvedAt: new Date(),

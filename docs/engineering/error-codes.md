@@ -27,12 +27,42 @@
 
 HTTP 400。请求参数不合法（zod 校验失败、非法枚举、缺字段）。
 修复：按 `message` 与 `param` 修正请求体；Manifest 字段口径见
-[工程评审闭合记录 §4.2](engineering/plan-eng-review-closure.md)。
+[工程评审闭合记录 §4.2](plan-eng-review-closure.md)。
 
 ### NOT_FOUND
 
 HTTP 404。路径或引用的对象不存在（如 `manifests/:id/approve` 的 id）。
 修复：先 `GET` 列表确认 id；种子对象见 `packages/database/prisma/seed.ts`。
+
+### UNAUTHORIZED
+
+HTTP 401。身份未通过验证：缺少凭证、凭证过期或签名校验失败。
+修复：重新登录取新凭证后重试，不要重试原请求。身份与 `BusinessUser` 的
+分离口径见 [ADR-0039](../adr/0039-business-identity-and-unified-authorization.md)，
+落地在 T14。
+
+### FORBIDDEN
+
+HTTP 403。身份有效但没有该能力或该资源的权限。与 401 的区别是重登录无用，
+需要管理员授予能力或调整资源策略。两阶段授权见
+[ADR-0026](../adr/0026-acl-scope-key-and-authoritative-recheck.md)。
+
+### METHOD_NOT_ALLOWED
+
+HTTP 405。路径存在但不接受该 HTTP 方法（如对领域命令端点发 `GET`）。
+修复：Manifest 只提供注册与批准两条领域命令，没有通用 `PATCH`；按 OpenAPI
+描述改用正确方法。
+
+### PAYLOAD_TOO_LARGE
+
+HTTP 413。请求体或上传文件超过服务端上限。
+修复：拆分上传或压缩内容；上限口径随 T4 摄取落地。
+
+### UNSUPPORTED_MEDIA_TYPE
+
+HTTP 415。`Content-Type` 不受支持，或上传文件格式不在解析后端的支持集内。
+修复：JSON 端点用 `application/json`；可解析格式见 IngestionManifest 的
+`sourceFormats` 与 [ADR-0038](../adr/0038-vlm-parser-backend-and-multimodal-scope.md)。
 
 ### CONFLICT
 
@@ -54,7 +84,7 @@ HTTP 503。依赖的中间件不可用（如数据库未启动）。
 
 ### RATE_LIMITED
 
-HTTP 429。触发用户级配额（T15 落地）。修复：按 `Retry-After` 退避。
+HTTP 429。触发用户级配额（T12 落地）。修复：按 `Retry-After` 退避。
 
 ### INTERNAL_ERROR
 

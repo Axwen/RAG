@@ -322,17 +322,21 @@ export class ManifestsService {
       )
     }
 
-    const pipeline = await this.prisma.pipelineManifest.findFirst({
+    // 只按 (tenantId, ingestionManifestId) 取候选，不在查询里过滤 status：状态判定
+    // 交给 checkPipelineToRelease，否则那条规则永远为真、变成读起来像安全网的死代码，
+    // 且开发者只会看到"没有已批准的兼容 Pipeline"，看不到"存在但还是 DRAFT"。
+    const candidates = await this.prisma.pipelineManifest.findMany({
       where: {
         tenantId: input.tenantId,
         ingestionManifestId: input.ingestionManifestId,
-        status: 'APPROVED',
       },
+      orderBy: { version: 'desc' },
     })
-    if (pipeline === null) {
+    const pipeline = candidates.find((row) => row.status === 'APPROVED') ?? candidates[0]
+    if (pipeline === undefined) {
       throw new ApiErrorException(
         'COMPATIBILITY_VIOLATION',
-        'Release 引用的 IngestionManifest 没有已批准的兼容 Pipeline',
+        'Release 引用的 IngestionManifest 没有对应的 PipelineManifest',
       )
     }
     const pipelineResult = checkPipelineToRelease(
@@ -384,35 +388,36 @@ export class ManifestsService {
       )
   }
 
+  /**
+   * DRAFT -> APPROVED。
+   *
+   * 状态判定下推为 UPDATE 的 WHERE 条件，不做"先读后写"：两个并发 approve 都读到
+   * DRAFT 时，后一个的 UPDATE 会撞上 APPROVED 不可变触发器
+   * （prevent_approved_*_update）抛 check_violation，那是一条裸库错误，只会变成
+   * 500 INTERNAL_ERROR。受影响 0 行只可能是"已经是 APPROVED"（id 不存在已由
+   * requireManifest 排除），按幂等返回既有行。
+   */
   private async approve(model: ManifestModel, id: string) {
-    const existing = await this.requireManifest(model, id)
-    if (existing.status === 'APPROVED') {
-      return existing
-    }
-    // Prisma 的联合模型代理无法直接调用（update/findUnique 签名互不兼容），
+    await this.requireManifest(model, id)
+    const data = { status: 'APPROVED' as const, approvedAt: new Date() }
+    const where = { id, status: 'DRAFT' as const }
+    // Prisma 的联合模型代理无法直接调用（updateMany/findUnique 签名互不兼容），
     // 按模型分发保持每条分支的精确类型。
     switch (model) {
       case 'ingestionManifest':
-        return this.prisma.ingestionManifest.update({
-          where: { id },
-          data: { status: 'APPROVED', approvedAt: new Date() },
-        })
+        await this.prisma.ingestionManifest.updateMany({ where, data })
+        break
       case 'retrievalManifest':
-        return this.prisma.retrievalManifest.update({
-          where: { id },
-          data: { status: 'APPROVED', approvedAt: new Date() },
-        })
+        await this.prisma.retrievalManifest.updateMany({ where, data })
+        break
       case 'answerManifest':
-        return this.prisma.answerManifest.update({
-          where: { id },
-          data: { status: 'APPROVED', approvedAt: new Date() },
-        })
+        await this.prisma.answerManifest.updateMany({ where, data })
+        break
       case 'pipelineManifest':
-        return this.prisma.pipelineManifest.update({
-          where: { id },
-          data: { status: 'APPROVED', approvedAt: new Date() },
-        })
+        await this.prisma.pipelineManifest.updateMany({ where, data })
+        break
     }
+    return this.requireManifest(model, id)
   }
 
   /** 联合分发：只取回行并校验存在性，调用方拿到的仍是各模型的精确类型。 */

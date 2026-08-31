@@ -9,7 +9,7 @@
     "prebuild": "prisma generate",
     "build": "tsc -b",
     "pretypecheck": "prisma generate",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.seed.json",
     "clean": "rm -rf dist",
     "validate": "prisma validate",
     "generate": "prisma generate",

@@ -10,23 +10,50 @@
 /** 稳定错误码。新增码只允许追加，不允许改义或复用。 */
 export type ErrorCode =
   | 'VALIDATION_ERROR'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
   | 'NOT_FOUND'
+  | 'METHOD_NOT_ALLOWED'
   | 'CONFLICT'
+  | 'PAYLOAD_TOO_LARGE'
+  | 'UNSUPPORTED_MEDIA_TYPE'
   | 'COMPATIBILITY_VIOLATION'
   | 'DEPENDENCY_UNAVAILABLE'
   | 'RATE_LIMITED'
   | 'INTERNAL_ERROR'
 
-/** HTTP 状态码与错误码的固定映射；过滤器按此回写状态行。 */
+/**
+ * HTTP 状态码与错误码的固定映射；过滤器按此回写状态行。
+ *
+ * 每个码占用一个状态码，映射是双射：反向查找由 {@link errorCodeForStatus} 从本表
+ * 派生，不在过滤器里另写一份 switch——两处枚举必然漂移，鉴权类状态码就是这么漏掉的。
+ */
 export const ERROR_STATUS: Readonly<Record<ErrorCode, number>> = Object.freeze({
   VALIDATION_ERROR: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
   NOT_FOUND: 404,
+  METHOD_NOT_ALLOWED: 405,
   CONFLICT: 409,
+  PAYLOAD_TOO_LARGE: 413,
+  UNSUPPORTED_MEDIA_TYPE: 415,
   COMPATIBILITY_VIOLATION: 422,
   DEPENDENCY_UNAVAILABLE: 503,
   RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
 })
+
+const CODE_BY_STATUS: ReadonlyMap<number, ErrorCode> = new Map(
+  Object.entries(ERROR_STATUS).map(([code, status]) => [status, code as ErrorCode]),
+)
+
+/**
+ * HTTP 状态码 -> 错误码的反向查找。无对应码时返回 undefined，由调用方决定兜底，
+ * 不在这里替它猜。
+ */
+export function errorCodeForStatus(status: number): ErrorCode | undefined {
+  return CODE_BY_STATUS.get(status)
+}
 
 /** 统一错误信封：恰好五个字段，响应体不再携带其他顶层键。 */
 export interface ApiErrorEnvelope {

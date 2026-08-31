@@ -87,21 +87,47 @@ const pipelineRow = {
 /** stub 行的宽松形状：真实行类型由服务侧契约保证，这里只驱动行为。 */
 type StubRow = Record<string, unknown>
 
+/**
+ * approve 把状态判定下推成 UPDATE ... WHERE status='DRAFT'，因此 stub 必须真的
+ * 按 where 过滤并原地改写行：若 updateMany 无条件成功，"受影响 0 行时幂等返回既有行"
+ * 这条分支在测试里就永远走不到。
+ */
+function makeUpdateMany(rows: Record<string, StubRow>) {
+  return vi.fn(
+    async ({ where, data }: { where: { id: string; status?: string }; data: StubRow }) => {
+      const row = rows[where.id]
+      if (row === undefined || (where.status !== undefined && row.status !== where.status)) {
+        return { count: 0 }
+      }
+      rows[where.id] = { ...row, ...data }
+      return { count: 1 }
+    },
+  )
+}
+
 function makeService(rows: Record<string, StubRow> = {}): ManifestsService {
   const prisma = {
     ingestionManifest: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
+      findFirst: vi.fn(async () => null),
       create: vi.fn(async ({ data }: { data: StubRow }) => ({ id: 'new', ...data })),
+      updateMany: makeUpdateMany(rows),
     },
     retrievalManifest: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
+      findFirst: vi.fn(async () => null),
       create: vi.fn(async ({ data }: { data: StubRow }) => ({ id: 'new', ...data })),
+      updateMany: makeUpdateMany(rows),
     },
     answerManifest: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
+      findFirst: vi.fn(async () => null),
       create: vi.fn(async ({ data }: { data: StubRow }) => ({ id: 'new', ...data })),
+      updateMany: makeUpdateMany(rows),
     },
     releaseManifest: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
+      findFirst: vi.fn(async () => null),
       create: vi.fn(async ({ data }: { data: StubRow }) => ({ id: 'new', ...data })),
     },
     knowledgeSpace: {
@@ -112,16 +138,21 @@ function makeService(rows: Record<string, StubRow> = {}): ManifestsService {
     indexPartition: {
       findUnique: vi.fn(async () => rows[partitionId] ?? null),
     },
-    // createRelease requires an already-approved pipeline for the ingestion manifest.
-    // Keep this lookup data-driven so the negative path is testable.
+    // createRelease 按 (tenantId, ingestionManifestId) 取全部候选，状态判定交给
+    // checkPipelineToRelease；stub 也照此过滤，DRAFT 的 Pipeline 才能被测出来。
     pipelineManifest: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
-      findFirst: vi.fn(async () => rows[pipelineRow.id] ?? null),
+      findFirst: vi.fn(async () => null),
+      findMany: vi.fn(
+        async ({ where }: { where: { tenantId: string; ingestionManifestId: string } }) =>
+          Object.values(rows).filter(
+            (row) =>
+              row.ingestionManifestId === where.ingestionManifestId &&
+              row.tenantId === where.tenantId,
+          ),
+      ),
       create: vi.fn(async ({ data }: { data: StubRow }) => ({ id: 'new', ...data })),
-      update: vi.fn(async ({ data }: { data: StubRow }) => ({
-        ...(rows['pipeline-1'] ?? {}),
-        ...data,
-      })),
+      updateMany: makeUpdateMany(rows),
     },
   }
   return new ManifestsService(prisma as never)
@@ -257,5 +288,56 @@ describe('ManifestsService.createRelease', () => {
     await expect(service.createRelease(releaseInput)).rejects.toMatchObject({
       envelope: { code: 'COMPATIBILITY_VIOLATION' },
     })
+  })
+
+  // 只按 (tenantId, ingestionManifestId) 取候选后，DRAFT 的 Pipeline 会被取回并由
+  // checkPipelineToRelease 判负——这条规则此前因查询里带 status 过滤而永不触发。
+  it('存在但尚未批准的 Pipeline 也拒绝创建，而不是当作不存在', async () => {
+    const service = makeService({
+      [ingestionId]: ingestionRow,
+      [partitionId]: partitionRow,
+      [pipelineRow.id]: { ...pipelineRow, status: 'DRAFT' },
+    })
+    await expect(service.createRelease(releaseInput)).rejects.toMatchObject({
+      envelope: { code: 'COMPATIBILITY_VIOLATION' },
+    })
+  })
+})
+
+describe('ManifestsService.approve', () => {
+  it('DRAFT -> APPROVED 并写入 approvedAt', async () => {
+    const rows = { [ingestionId]: { ...ingestionRow, status: 'DRAFT', approvedAt: null } }
+    const service = makeService(rows)
+    const approved = await service.approveIngestion(ingestionId)
+    expect(approved).toMatchObject({ id: ingestionId, status: 'APPROVED' })
+    expect(approved.approvedAt).toBeInstanceOf(Date)
+  })
+
+  // 并发 approve：后到的那次 UPDATE 匹配 0 行。此时正确行为是幂等返回既有
+  // APPROVED 行；若改成"0 行即报错"，两个正常请求里就有一个拿到 5xx。
+  it('已是 APPROVED 时受影响 0 行，幂等返回既有行而不报错', async () => {
+    const service = makeService({ [ingestionId]: ingestionRow })
+    await expect(service.approveIngestion(ingestionId)).resolves.toMatchObject({
+      id: ingestionId,
+      status: 'APPROVED',
+    })
+  })
+
+  it('id 不存在时以 NOT_FOUND 拒绝，不静默成功', async () => {
+    const service = makeService({})
+    await expect(service.approveIngestion(ingestionId)).rejects.toMatchObject({
+      envelope: { code: 'NOT_FOUND', param: 'id' },
+    })
+  })
+
+  it('四类 Manifest 的批准都走同一条状态机', async () => {
+    const service = makeService({
+      [retrievalId]: { ...retrievalRow, status: 'DRAFT', approvedAt: null },
+      [answerId]: { ...answerRow, status: 'DRAFT', approvedAt: null },
+      [pipelineRow.id]: { ...pipelineRow, status: 'DRAFT' },
+    })
+    expect(await service.approveRetrieval(retrievalId)).toMatchObject({ status: 'APPROVED' })
+    expect(await service.approveAnswer(answerId)).toMatchObject({ status: 'APPROVED' })
+    expect(await service.approvePipeline(pipelineRow.id)).toMatchObject({ status: 'APPROVED' })
   })
 })

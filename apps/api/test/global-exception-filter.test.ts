@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { HttpException, HttpStatus } from '@nestjs/common'
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  UnauthorizedException,
+} from '@nestjs/common'
 import type { ArgumentsHost } from '@nestjs/common'
 import { z } from 'zod'
 import { GlobalExceptionFilter } from '../src/common/global-exception.filter'
@@ -73,6 +78,59 @@ describe('全局异常过滤器（DX-T3 错误信封）', () => {
     filter.catch(new HttpException('路由不存在', HttpStatus.NOT_FOUND), host)
     expect(status).toHaveBeenCalledWith(404)
     expect(sentEnvelope(json).code).toBe('NOT_FOUND')
+  })
+
+  // T14 的 guard 抛的就是这两个异常。它们若归到 INTERNAL_ERROR/500，客户端拿到的
+  // 信号是"服务端故障、请重试"而不是"重新登录"，并且每次鉴权拒绝都会带堆栈写进
+  // 错误日志、当成未处理异常。
+  it('鉴权异常保留 401/403，不落到 INTERNAL_ERROR', () => {
+    const unauthorized = mockHost()
+    filter.catch(new UnauthorizedException('token 已过期'), unauthorized.host)
+    expect(unauthorized.status).toHaveBeenCalledWith(401)
+    expect(sentEnvelope(unauthorized.json).code).toBe('UNAUTHORIZED')
+
+    const forbidden = mockHost()
+    filter.catch(new ForbiddenException('无该 Workspace 的能力权限'), forbidden.host)
+    expect(forbidden.status).toHaveBeenCalledWith(403)
+    expect(sentEnvelope(forbidden.json).code).toBe('FORBIDDEN')
+  })
+
+  it('带 4xx 数字 status 的库层错误按该状态码归一（body-parser 畸形 JSON）', () => {
+    const { host, status, json } = mockHost({ method: 'POST', url: '/manifests/ingestion' })
+    // express body-parser 抛的形状：SyntaxError + status 400 + expose:true
+    const malformed = Object.assign(new SyntaxError('Unexpected token } in JSON at position 5'), {
+      status: 400,
+      expose: true,
+    })
+    filter.catch(malformed, host)
+    expect(status).toHaveBeenCalledWith(400)
+    expect(sentEnvelope(json).code).toBe('VALIDATION_ERROR')
+  })
+
+  it('带 5xx status 或 expose 非 true 的库层错误不外泄原文', () => {
+    const upstream = mockHost()
+    filter.catch(
+      Object.assign(new Error('vendor said: quota exhausted'), { status: 502 }),
+      upstream.host,
+    )
+    expect(upstream.status).toHaveBeenCalledWith(500)
+    const upstreamEnvelope = sentEnvelope(upstream.json)
+    expect(upstreamEnvelope.code).toBe('INTERNAL_ERROR')
+    expect(JSON.stringify(upstreamEnvelope)).not.toContain('quota exhausted')
+
+    const hidden = mockHost()
+    filter.catch(Object.assign(new Error('internal-secret'), { status: 409 }), hidden.host)
+    expect(hidden.status).toHaveBeenCalledWith(409)
+    const hiddenEnvelope = sentEnvelope(hidden.json)
+    expect(hiddenEnvelope.code).toBe('CONFLICT')
+    expect(JSON.stringify(hiddenEnvelope)).not.toContain('internal-secret')
+  })
+
+  it('未列入映射的 4xx 归 VALIDATION_ERROR，不冒充服务端故障', () => {
+    const { host, status, json } = mockHost()
+    filter.catch(new HttpException('teapot', 418), host)
+    expect(status).toHaveBeenCalledWith(400)
+    expect(sentEnvelope(json).code).toBe('VALIDATION_ERROR')
   })
 
   it('未知异常映射 INTERNAL_ERROR，不泄露堆栈与原始消息', () => {

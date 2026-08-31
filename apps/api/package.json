@@ -8,7 +8,7 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "clean": "rm -rf dist",
-    "dev": "node --watch -r ts-node/register/transpile-only src/main.ts",
+    "dev": "nodemon --watch src --watch ../../packages/config/dist --watch ../../packages/contracts/dist --watch ../../packages/database/dist --watch ../../packages/observability/dist --watch ../../packages/rag-core/dist --ext ts,js --exec \"node -r ts-node/register/transpile-only src/main.ts\"",
     "start": "node dist/main.js"
   },
   "dependencies": {
@@ -28,6 +28,7 @@
   "devDependencies": {
     "@types/express": "5.0.6",
     "@types/node": "22.20.1",
+    "nodemon": "3.1.14",
     "ts-node": "10.9.2"
   }
 }

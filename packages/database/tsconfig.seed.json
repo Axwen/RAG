@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "//": "prisma/ 下的脚本（seed、prisma.config）用 tsx 以 transpile-only 运行，不进 dist；主工程的 include 只有 src/**，它们因此从不被类型检查——改一个契约字段名，build 与 typecheck 全绿，而 bootstrap 里的 db:seed 在新克隆上运行时才炸。本工程只做类型检查（noEmit），不参与 tsc -b 的构建图。",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "noEmit": true
+  },
+  "include": ["prisma/**/*.ts", "prisma.config.ts"]
+}

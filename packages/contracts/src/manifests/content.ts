@@ -33,7 +33,7 @@ export type ReleaseStatus =
 
 /** 阶段 1 解析链路唯一后端（ADR-0038）；T4b 增量加入 office_hybrid/image_ocr。 */
 export const PARSE_BACKENDS = ['deepdoc'] as const
-export type ParseBackend = (typeof PARSE_BACKENDS)[0]
+export type ParseBackend = (typeof PARSE_BACKENDS)[number]
 
 /** T0/T1a 支持的源格式；未列出格式必须显式拒绝（ADR-0038）。 */
 export const SOURCE_FORMATS = ['pdf', 'md', 'json', 'csv'] as const

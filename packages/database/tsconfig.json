@@ -1,5 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
+  "//": "references 里的 ../contracts 不被 src/** 使用，而是给 prisma/seed.ts 用的：tsc -b 会先把 contracts 的 .d.ts 产出，随后 tsconfig.seed.json 的类型检查才能解析 @rag/contracts。删掉它，seed 的类型检查会依赖构建顺序的巧合。",
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",

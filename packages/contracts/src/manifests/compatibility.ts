@@ -61,7 +61,14 @@ export function checkEmbeddingChannels(
     })
   }
   const dimensions = new Set<string>()
-  for (const channel of channels) {
+  for (const [index, channel] of channels.entries()) {
+    if (channel === null) {
+      violations.push({
+        rule: 'EMBEDDING_TO_VECTOR_INDEX',
+        message: `向量通道 #${index} 不是对象：channels 元素必须形如 { name, embeddingRef, dimension }`,
+      })
+      continue
+    }
     if (channel.embeddingRef !== ingestion.content.embeddingRef) {
       violations.push({
         rule: 'EMBEDDING_TO_VECTOR_INDEX',
@@ -195,12 +202,23 @@ interface VectorChannel {
 
 /**
  * 读取 vectorPolicy.channels。通道结构由契约约定：
- * `[{ name, embeddingRef, dimension }]`；结构缺失时返回空数组，由调用规则报违例。
+ * `[{ name, embeddingRef, dimension }]`。
+ *
+ * `vectorPolicy` 是自由 Json 列，写入方不止 zod schema 一条路（种子、数据迁移、
+ * psql 都能写）。因此这里只做形状归一：整体缺失或不是数组时返回空数组，单个元素
+ * 不是对象时返回 `null` 占位——由调用规则报违例，而不是让解引用抛 TypeError 变成
+ * 500。
  */
-function readVectorChannels(retrieval: RetrievalManifestContent): readonly VectorChannel[] {
+function readVectorChannels(
+  retrieval: RetrievalManifestContent,
+): readonly (VectorChannel | null)[] {
   const channels = retrieval.vectorPolicy['channels']
   if (!Array.isArray(channels)) {
     return []
   }
-  return channels as VectorChannel[]
+  return channels.map((channel) =>
+    typeof channel === 'object' && channel !== null && !Array.isArray(channel)
+      ? (channel as VectorChannel)
+      : null,
+  )
 }
