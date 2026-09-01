@@ -23,7 +23,10 @@ OUT_DIR="${OUT_DIR:-$REPO_ROOT/docs/engineering/probe-results}"
 ENV_FILE="${PROBE_ENV_FILE:-$REPO_ROOT/.env.probe005}"
 
 if [[ -z "${OPENROUTER_API_KEY:-}" && -f "$ENV_FILE" ]]; then
-  set -a; . "$ENV_FILE"; set +a
+  set -a
+  # shellcheck source=/dev/null  # 运行期 .env，路径不定
+  . "$ENV_FILE"
+  set +a
 fi
 if [[ -z "${OPENROUTER_API_KEY:-}" && -z "${RERANK_API_KEY:-}" ]]; then
   echo "ERROR: no OPENROUTER_API_KEY / RERANK_API_KEY (and none in '$ENV_FILE')." >&2

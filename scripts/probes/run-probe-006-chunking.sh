@@ -10,6 +10,7 @@ ENV_FILE="${PROBE_ENV_FILE:-${REPO_ROOT}/.env.probe005}"
 
 if [[ -z "${OPENROUTER_API_KEY:-}" && -f "${ENV_FILE}" ]]; then
   set -a
+  # shellcheck source=/dev/null  # 运行期 .env，路径不定
   . "${ENV_FILE}"
   set +a
 fi

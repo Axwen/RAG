@@ -54,3 +54,6 @@ Thumbs.db
 *.swp
 *~
 .idea/
+
+# 冒烟脚本的进程日志与临时响应体（scripts/smoke-api.sh）
+/.smoke/

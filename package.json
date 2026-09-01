@@ -19,6 +19,11 @@
     "test:watch": "vitest",
     "preflight": "bash scripts/check-env.sh",
     "dx:baseline": "bash scripts/dx-baseline.sh",
+    "check:links": "bash scripts/check-links.sh",
+    "check:commits": "bash scripts/check-commits.sh",
+    "check:shell": "bash scripts/check-shell.sh",
+    "smoke:api": "bash scripts/smoke-api.sh",
+    "test:coverage": "vitest run --coverage",
     "postinstall": "pnpm --filter @rag/database run generate",
     "db:validate": "pnpm --filter @rag/database run validate",
     "db:migrate": "pnpm --filter @rag/database run migrate:dev",
@@ -33,7 +38,7 @@
     "infra:reset": "docker compose --project-directory . -f infra/compose/compose.yml down -v",
     "compose:config": "docker compose --project-directory . -f infra/compose/compose.yml --profile parser --profile evaluation config -q",
     "bootstrap": "bash infra/compose/init/init-all.sh",
-    "verify": "pnpm run format && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run db:validate && pnpm run py:sync && pnpm run py:test && pnpm run compose:config"
+    "verify": "pnpm run format && pnpm run lint && pnpm run check:shell && pnpm run check:links && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run db:validate && pnpm run py:sync && pnpm run py:test && pnpm run compose:config"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -27,7 +27,10 @@ OUT_DIR="${OUT_DIR:-$REPO_ROOT/docs/engineering/probe-results}"
 ENV_FILE="${PROBE_CHAT_ENV_FILE:-$REPO_ROOT/.env.probe005-chat}"
 
 if [[ -z "${CHAT_API_KEY:-}" && -f "$ENV_FILE" ]]; then
-  set -a; . "$ENV_FILE"; set +a
+  set -a
+  # shellcheck source=/dev/null  # 运行期 .env，路径不定
+  . "$ENV_FILE"
+  set +a
 fi
 if [[ -z "${CHAT_API_KEY:-}" ]]; then
   echo "ERROR: CHAT_API_KEY not set and no key in '$ENV_FILE'." >&2
