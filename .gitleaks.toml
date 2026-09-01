@@ -1,0 +1,38 @@
+# gitleaks 配置：在默认规则集之上，把本仓库里"看起来像凭证但确实不是"的位置放行。
+#
+# 放行的判据只有一条：这个值本身就是刻意无效的占位符或测试夹具，泄漏它没有任何后果。
+# 真实凭证只存在于 .env / .env.*（已 gitignore）与运行期环境变量里，绝不进仓库。
+#
+# 本地复跑：gitleaks detect --config .gitleaks.toml --redact
+# （--redact 让命中的值不打印到终端，排查时也不该把凭证抄进日志）
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "占位符、测试夹具与第三方参考快照"
+
+paths = [
+  # 固定版本的第三方参考仓库快照，不是我们的代码，也不参与构建
+  '''^references/''',
+  # 生成产物与构建输出
+  '''^packages/database/src/generated/''',
+  '''(^|/)dist/''',
+  '''(^|/)\.next/''',
+  '''(^|/)coverage/''',
+  # 全是无效占位值的模板；真实值在被 gitignore 的 .env 里
+  '''^\.env\.example$''',
+  # 本地开发用的 Keycloak Realm 导入文件：仅 start-dev 使用，口令是占位值
+  '''^infra/compose/keycloak/realm-rag-local\.json$''',
+]
+
+regexes = [
+  # .env.example 与文档里的统一占位口令
+  '''CHANGE_ME_LOCAL_ONLY''',
+  # 刻意无效的模型 key 占位符（前缀形似真 key，故默认规则会命中）
+  '''sk-INVALID-[A-Za-z0-9_-]*''',
+  # 单测里的假连接串：postgresql://rag:pw@localhost/... 一类
+  '''(postgresql|postgres|redis|amqp|http)://[A-Za-z0-9_-]+:(pw|pass|password|secret|test)@''',
+  # 测试与文档里的示例 token/密钥字面量
+  '''(?i)(fake|dummy|example|placeholder|test)[-_]?(token|secret|key|password)''',
+]

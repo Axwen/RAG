@@ -1,0 +1,90 @@
+# 安全检查：密钥扫描、依赖漏洞、PR 依赖变更审查。
+#
+# 三条各管一件事，不要互相替代：
+#   gitleaks          历史与工作区里有没有真凭证。仓库的 .env/.env.* 已被 gitignore，
+#                     但"被忽略"和"从没被提交过"是两件事——只有扫全历史才能确认。
+#   pnpm audit        已装依赖有没有已知漏洞。critical 阻断，high 只报告：没有修复版本
+#                     的传递依赖告警会把所有 PR 堵死，那样的门禁最后一定被绕过。
+#   dependency-review PR 里新引入的依赖及其许可证。供应链的入口在这一刻，不在事后。
+#
+# 本工作流同样不读取 repository secret，也不做付费云调用。
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # 每周一 05:23 UTC：漏洞库是变的，代码不动也要重扫
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: gitleaks（全历史密钥扫描）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 全历史：只扫当前树等于假设"以前没提交过凭证"
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 个人账号仓库免许可证；一旦迁到 organization 下，这个 action 会要求
+          # GITLEAKS_LICENSE，届时改用 gitleaks 二进制自建步骤（见 docs/engineering/ci-cd.md）
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  deps-audit:
+    name: pnpm audit（critical 阻断 / high 报告）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 冻结安装
+        run: pnpm install --frozen-lockfile
+
+      - name: critical 漏洞（阻断）
+        # 显式指定官方 registry：本地开发常配 npmmirror，其 audit 端点不存在
+        run: pnpm audit --audit-level critical --registry https://registry.npmjs.org
+
+      - name: high 及以下（只报告，不阻断）
+        continue-on-error: true
+        run: pnpm audit --audit-level high --registry https://registry.npmjs.org
+
+  dependency-review:
+    name: dependency-review（PR 新增依赖与许可证）
+    # 这个 action 只在 PR 上有意义：它比较 base 与 head 的依赖差异
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # 把差异摘要贴到 PR
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          # 阶段 1 只用宽松许可证；copyleft 依赖进来前必须先有决策记录
+          deny-licenses: AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later, SSPL-1.0

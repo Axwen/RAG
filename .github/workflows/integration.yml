@@ -1,0 +1,94 @@
+# 集成冒烟：真起六个 core 容器 -> bootstrap -> 编译产物起进程 -> HTTP 与日志断言。
+#
+# 为什么必须和 ci.yml 分开：这一条要拉六个镜像、等健康检查，耗时与失败面都和纯 CPU
+# 的静态检查不是一个量级。分开跑，PR 上的快速反馈不被中间件拖住，而这条挂了也能
+# 一眼看出是"跑起来"的问题而不是"编译过"的问题。
+#
+# 它覆盖的正是单测结构上抓不到的一类回归：单测直接 new 领域服务、绕过 NestJS DI，
+# 所以"进程起来了但每个请求都 500"（T0 遗留缺陷）能一路绿灯溜过去。
+#
+# 不读取任何 repository secret：变量全部来自 .env.example 的占位值，模型 key 是
+# 刻意无效的 sk-INVALID-...，本工作流也不启动 parser/evaluation profile，零云调用。
+name: Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  DO_NOT_TRACK: '1'
+  # runner 只有 16 GiB，OpenSearch 默认 2g 堆没必要；本冒烟不做规模检索
+  OPENSEARCH_JAVA_OPTS: '-Xms1g -Xmx1g'
+
+jobs:
+  smoke:
+    name: smoke（六容器 + bootstrap + 进程级 HTTP/日志断言）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 准备占位环境变量
+        run: cp .env.example .env
+
+      - name: 冻结安装
+        run: pnpm install --frozen-lockfile
+
+      - name: 起 core 中间件（含 preflight，--wait 等健康检查）
+        run: pnpm run infra:up
+
+      - name: bootstrap（Keycloak Realm / MinIO Bucket / 迁移 / 种子，幂等）
+        run: pnpm run bootstrap
+
+      - name: bootstrap 重复执行零重复副作用
+        # 幂等性是这套初始化脚本的核心承诺，跑两遍才算验证过
+        run: pnpm run bootstrap
+
+      - name: 构建（冒烟跑编译产物，不跑 dev 入口）
+        run: pnpm run build
+
+      - name: 冒烟：HTTP 契约 + 日志结构 + 日志泄漏
+        run: pnpm run smoke:api
+
+      - name: 失败时收集诊断
+        if: failure()
+        run: |
+          echo '::group::API 进程日志'
+          tail -n 200 .smoke/api.log || echo '（无 .smoke/api.log）'
+          echo '::endgroup::'
+          echo '::group::容器状态'
+          docker compose --project-directory . -f infra/compose/compose.yml ps || true
+          echo '::endgroup::'
+          echo '::group::容器日志（各 100 行）'
+          docker compose --project-directory . -f infra/compose/compose.yml logs --tail=100 || true
+          echo '::endgroup::'
+
+      - name: 上传冒烟日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-${{ github.run_id }}
+          path: .smoke/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: 停容器
+        if: always()
+        run: pnpm run infra:down

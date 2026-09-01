@@ -1,0 +1,13 @@
+# 代码所有者。配合分支保护的 "Require review from Code Owners" 使用。
+#
+# 单人项目里它的作用不是"找人审"，而是保证任何 PR 都会把变更通知到默认所有者——
+# 尤其是自动化开出的依赖升级 PR。
+
+*                                   @Axwen
+
+# 下面这些路径的改动会绕过或放宽既有安全约束，改它们时值得多看一眼：
+/.github/                           @Axwen
+/infra/                             @Axwen
+/packages/database/prisma/          @Axwen
+/packages/observability/src/redaction.ts @Axwen
+/docs/adr/                          @Axwen

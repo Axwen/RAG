@@ -1,0 +1,63 @@
+# CodeQL 静态安全分析（TypeScript + Python）。
+#
+# 与 ci.yml 里 ESLint 的分工：ESLint 管代码风格与明显错误，CodeQL 做跨函数、跨文件
+# 的数据流分析，找的是"用户输入一路流到危险汇点"这类问题——注入、路径穿越、SSRF、
+# 日志里带上未脱敏输入。本项目对这类问题格外敏感：ADR-0032 把"文档内容永远是数据
+# 不是指令"定为不变量，而 ACL 两段授权（ADR-0026）一旦被绕过就是越权证据泄漏。
+#
+# 结果进仓库的 Security 页签（Code scanning alerts），不阻断 PR。要当门禁用，
+# 在分支保护里把 CodeQL 加进 required checks。
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 每周一 04:17 UTC 全量扫一次：新规则会发现旧代码里的老问题，只靠 push 触发扫不到
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze（${{ matrix.language }}）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # 上传 SARIF 结果
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 初始化 CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          # security-and-quality 比默认的 security-extended 还多一档质量规则；
+          # 学习项目要的是看全，不是过门禁
+          queries: security-and-quality
+          config: |
+            paths-ignore:
+              - references          # 固定快照的第三方参考仓库，不是我们的代码
+              - '**/dist'
+              - '**/generated'
+              - scripts/probes      # 探针脚本，只用于复跑证据
+
+      # 两种语言都是解释型，autobuild 实际只是扫源码；不需要 pnpm install
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: 分析
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}

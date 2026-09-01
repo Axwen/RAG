@@ -7,6 +7,13 @@
 #   刻意无效的 `sk-INVALID-...`），不使用任何 repository secret。
 # - 不触发付费云模型调用：本工作流不运行 evals，也不启动 parser/evaluation profile。
 # - 依赖安装全部冻结：pnpm `--frozen-lockfile`，uv `--frozen`。
+#
+# 工作流分工（详见 docs/engineering/ci-cd.md）：
+#   ci.yml           本文件——静态检查、单测、覆盖率、构建，纯 CPU，无中间件
+#   integration.yml  真起六个容器 + bootstrap + 进程级冒烟与日志断言
+#   security.yml     密钥扫描、依赖漏洞、依赖变更审查
+#   codeql.yml       静态安全分析（TS + Python）
+#   release.yml      打标签后的镜像与 Release 产物
 name: CI
 
 on:
@@ -71,6 +78,51 @@ jobs:
       - name: 确认工作区未被构建产物污染
         # 构建不应改写任何被跟踪文件（例如 Next.js 回写 tsconfig.json）
         run: git diff --exit-code
+
+  quality:
+    name: quality（shell / 链接 / 提交信息 / 覆盖率）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 提交信息检查要比较 origin/main..HEAD，需要完整历史
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 准备占位环境变量
+        run: cp .env.example .env
+
+      - name: 冻结安装
+        run: pnpm install --frozen-lockfile
+
+      - name: Shell 静态检查（shellcheck，阈值 warning）
+        # --strict：CI 里 shellcheck 必须存在，不允许像本地那样降级跳过
+        run: bash scripts/check-shell.sh --strict
+
+      - name: Markdown 相对链接与锚点
+        run: pnpm run check:links
+
+      - name: 提交信息规范（Conventional Commits）
+        run: pnpm run check:commits
+
+      - name: 覆盖率（阈值见 vitest.config.ts）
+        run: pnpm run test:coverage
+
+      - name: 上传覆盖率报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: warn
 
   python:
     name: python（parser uv / pytest）

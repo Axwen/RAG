@@ -1,0 +1,81 @@
+# 依赖更新。
+#
+# 分组是刻意的：不分组的话，一个 monorepo 每周能开出十几个 PR，最后没人看——
+# 而"没人看的自动 PR"比不开 PR 更糟，它让仓库看起来在维护。
+# 按生态各开一个 PR，安全更新单独走，方便优先处理。
+#
+# 更新只是提议：每个 PR 都要过 CI + Integration，锁文件冻结安装的纪律不因自动化放宽。
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    groups:
+      # 类型定义与 lint 工具一起升，它们几乎总是一起变
+      dev-tooling:
+        patterns: ['@types/*', 'eslint*', 'typescript-eslint', 'prettier', 'vitest', '@vitest/*']
+        update-types: [minor, patch]
+      nestjs:
+        patterns: ['@nestjs/*']
+      prisma:
+        patterns: ['prisma', '@prisma/*']
+      others:
+        patterns: ['*']
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+    labels: [dependencies, javascript]
+
+  # uv 生态（services/parser 的 uv.lock）。若 Dependabot 报"unknown ecosystem"，
+  # 说明该账号尚未开放 uv 支持，改成 package-ecosystem: pip 即可（见 docs/engineering/ci-cd.md）
+  - package-ecosystem: uv
+    directory: /services/parser
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:15'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore
+      include: scope
+    labels: [dependencies, python]
+    ignore:
+      # PROBE-002 结论：updown_concat_xgb.model 是二进制模型文件，xgboost 3.1 起
+      # 拒绝加载，必须锁 <3.1。升级要先重训或转格式，不能由自动 PR 决定
+      - dependency-name: xgboost
+        versions: ['>=3.1']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:30'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
+      include: scope
+    labels: [dependencies, github-actions]
+
+  - package-ecosystem: docker
+    directory: /services/parser
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+      include: scope
+    labels: [dependencies, docker]
