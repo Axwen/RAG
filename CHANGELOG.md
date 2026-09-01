@@ -6,6 +6,40 @@
 
 ### Added
 
+- **CI/CD 与质量·日志检测流水线**（五条工作流，见
+  [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md)）：
+  - `ci.yml` 扩为四个 job——`node`（lint/typecheck/test/prisma/build）、
+    新增 `quality`（shellcheck `--strict`、Markdown 链接、提交信息规范、覆盖率并上传报告）、
+    `python`、`compose`。
+  - `integration.yml`（新）：真起六个 core 容器 → `bootstrap` **跑两遍**验证幂等 →
+    `build` → `smoke:api`；失败时按 `::group::` 打包 `.smoke/api.log`、`compose ps`
+    与容器日志尾部，`infra:down` 在 `always()`。
+  - `security.yml`（新）：gitleaks 全历史密钥扫描（配置 `.gitleaks.toml`）、
+    `pnpm audit`（critical 阻断 / high 只报告，避免无修复版本的传递告警堵死所有 PR）、
+    PR 依赖变更审查（high 阻断，拒绝 AGPL/SSPL）。
+  - `codeql.yml`（新）：TS + Python 双语言 `security-and-quality`，每周定时；
+    暂不设为 required check。
+  - `release.yml`（新）：推 `v*` 标签触发，先重跑全量 `verify` 与标签↔CHANGELOG 对齐
+    校验，再把 Parser 镜像推 GHCR（provenance + SBOM）并建 GitHub Release。
+    **不含部署**，也不构建 api/web/worker 镜像（三者尚无 Dockerfile）。
+  - 配套：`.github/dependabot.yml`（npm 分组 / uv / actions / docker，其中
+    `xgboost >=3.1` 按 PROBE-002 的二进制模型显式忽略）、`CODEOWNERS`、PR 模板。
+- **进程级冒烟与日志检测** `pnpm run smoke:api`（`scripts/smoke-api.sh`）：用编译产物真起
+  进程打真实 HTTP，断言 31 项——T1a 端点状态码与五字段信封、内容寻址幂等、
+  未定义路由与畸形 JSON 走信封、`traceparent` 严格校验、响应体不含堆栈；再对进程
+  stdout 断言"每行都是带 `level/time/service` 的 JSON"、存在 `nest:true` 行，
+  以及 `.env` 中七个口令/密钥与 `DATABASE_URL` 口令均未出现在输出里。
+  单测直接 `new` 领域服务、绕过 NestJS DI，抓不到"进程起来了但每个请求都 500"这类回归。
+- **`pnpm run check:shell`**（`scripts/check-shell.sh`）：对 `git ls-files` 里的 18 个
+  shell 脚本与 Compose init 脚本跑 shellcheck（`--severity=warning --external-sources`）；
+  本地缺 shellcheck 只警告，CI 的 `--strict` 视为硬失败。
+- **`pnpm run check:commits`**、**`pnpm run test:coverage`**、
+  **`scripts/release-notes.sh`**（从 CHANGELOG 抽取指定版本段落，标签与 CHANGELOG
+  不对齐即失败）。
+- **覆盖率阈值**（`vitest.config.ts`）：statements 86 / branches 81 / functions 82 /
+  lines 86。取自 2026-09-01 实测（87.15 / 82.43 / 83.16 / 87.83，已排除 Prisma 生成
+  产物、`apps/web`、种子脚本）。这是棘轮值而非理想值，只上调。
+
 - **T1a Manifest/Prisma Core**：领域数据模型首份迁移——租户（`Tenant`）、知识空间
   （`KnowledgeSpace`）、不可变文档版本（`Document`/`DocumentVersion`）、内容寻址
   Manifest（`IngestionManifest`/`RetrievalManifest`/`AnswerManifest`/`PipelineManifest`）、
@@ -82,6 +116,24 @@
 - **`preflight` 误把 uv 当阻断项**：脚本判 `fail=1`，文案却说「可跳过」，而它已实际
   拦住 `pnpm run infra:up`；uv 降为警告并计入警告数。同时补 `.nvmrc` 存在性守卫——
   `set -Eeuo pipefail` 下缺文件会直接杀掉脚本。
+
+- **NestJS 框架日志绕过脱敏**（写冒烟断言时发现）：应用日志走 `@rag/observability` 的
+  pino（带不可关闭的 redact），但框架自身的日志走 `ConsoleLogger` 的彩色纯文本，
+  既不经过 redact——框架级异常栈可能含连接串或鉴权头——也破坏了「进程输出每行都是
+  结构化 JSON」这条日志契约。现在 `main.ts` 装 `NestPinoLogger`
+  （`apps/api/src/common/nest-logger.ts`）把六个级别映射到 pino，并带 `nest: true` 标记。
+  非字符串消息放进 `payload` 字段而不是 `JSON.stringify` 进 `msg`：redact 只作用于
+  对象字段，拼成字符串就永久绕过脱敏（`apps/api/test/nest-logger.test.ts` 用真实密钥
+  形态的对象断言这一点）。冒烟同时断言存在 `nest:true` 行，`useLogger` 被移除即失败。
+- **`trace_id` 与日志行的关联此前只是声明**：`INTERNAL_ERROR` 契约里「细节不外泄、
+  用户手里只剩一个能反查日志的标识」有一半无法从响应体自证。`GlobalExceptionFilter`
+  现允许注入 logger（仅为可测，生产不传参），测试把日志写进内存流并断言：响应体
+  `message` 不含连接串、同一次异常只产生一行错误日志、该行 `traceId` 等于信封的
+  `trace_id`、原始文本在 `err` 字段里；另断言 4xx **不写**错误日志（鉴权拒绝不该污染
+  错误日志）。
+- **六个探针脚本的 shellcheck 指令无效**：`# shellcheck source=/dev/null` 写在
+  `set -a; . "$ENV_FILE"; set +a` 这行复合命令之上时只绑定到 `set -a`，SC1090 仍然报。
+  已拆成四行，指令直接贴在 `.` 之上。
 
 ### 首次领域迁移说明
 

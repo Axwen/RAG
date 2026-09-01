@@ -75,20 +75,31 @@ pnpm run db:migrate:deploy # CI/部署迁移（migrate deploy）
 ## 检查与测试
 
 ```bash
-pnpm run format
-pnpm run lint
-pnpm run typecheck
+pnpm run verify          # 一条命令跑完下面全部
+pnpm run format          # Prettier --check（不自动改）
+pnpm run lint            # ESLint
+pnpm run check:shell     # shellcheck（未装 shellcheck 只警告；CI 用 --strict 硬失败）
+pnpm run check:links     # Markdown 相对链接与锚点
+pnpm run typecheck       # 含 prisma/seed.ts
 pnpm run test
 pnpm run build
 pnpm run db:validate
 pnpm run py:sync
 pnpm run py:test
 pnpm run compose:config
-pnpm run verify
 ```
 
-`verify` 汇总格式、Lint、类型、Vitest、构建、Prisma、Python 和 Compose 配置检查。
-CI 使用同样的冻结安装和检查命令，不启动付费模型调用。
+不在 `verify` 里的三条（各有前置条件）：
+
+```bash
+pnpm run test:coverage   # 覆盖率与阈值（棘轮，见 vitest.config.ts）
+pnpm run check:commits   # 提交信息规范，需要 git 历史
+pnpm run smoke:api       # 真起编译产物：HTTP 契约 + 日志结构 + 日志泄漏
+                         # 前置：infra:up && bootstrap && build
+```
+
+CI 跑的是同一批命令，不启动付费模型调用。流水线全貌、需要在 GitHub 页面手工点的分支
+保护设置，以及明确不做的事，见 [CI/CD 与质量·日志检测](docs/engineering/ci-cd.md)。
 
 ### DX 基线
 
