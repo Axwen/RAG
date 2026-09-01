@@ -9,6 +9,9 @@
 /.gstack-design-source
 /.claude/settings.local.json
 
+# ── DX 基线测量产物（可复跑，机器相关，不进版本库）──
+/.dx-baseline/
+
 # ── 探针本地运行产物(临时日志/容器卷;curated 结果可手动 git add -f)──
 /docs/engineering/probe-results/*.log
 /docs/engineering/probe-results/tmp/

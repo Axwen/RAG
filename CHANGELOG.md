@@ -27,6 +27,13 @@
   （不覆盖已存在变量），新终端无需手工 `source .env`。
 - **DX-T2**：环境预检脚本 `pnpm run preflight`（node/pnpm/uv/Docker daemon/Compose v2/.env
   缺项友好报错），已并入 `infra:up` 前置。
+- **DX-T6**：DX 基线测量脚本 `pnpm run dx:baseline`（`scripts/dx-baseline.sh`）——量
+  `install`/`verify`/`infra:up`/`bootstrap` 与「起 API 到 `/health/ready` 200」的耗时，
+  给出目标判定（verify ≤20s、TTHW <120s）并把结果写成 `.dx-baseline/latest.json`
+  供前后对比。默认热态非破坏；阶段失败才退出非 0，超目标只 ⚠️（`--strict` 可当门禁）；
+  `--cold`（删数据卷与 `node_modules`）必须再加 `--yes-destroy-data`。
+  据此跑完 /plan-devex-review boomerang 复测：
+  [报告](docs/engineering/plan-devex-review-20260901-boomerang.md)，DX 6/10 → 8/10。
 
 ### Fixed
 

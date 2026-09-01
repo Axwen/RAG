@@ -90,6 +90,17 @@ pnpm run verify
 `verify` 汇总格式、Lint、类型、Vitest、构建、Prisma、Python 和 Compose 配置检查。
 CI 使用同样的冻结安装和检查命令，不启动付费模型调用。
 
+### DX 基线
+
+```bash
+pnpm run dx:baseline          # 量 install / verify / infra:up / bootstrap / API 就绪耗时
+```
+
+默认热态、非破坏，把结果写到 `.dx-baseline/latest.json`（不进版本库）并打印对照表：
+`verify` 目标 ≤20s，TTHW（`infra:up` + `bootstrap` + `/health/ready` 200）目标 <120s。
+阶段失败才退出非 0；只是超目标退 0 加 ⚠️，需要当门禁时加 `--strict`。
+冷启动测量（`--cold`）会删数据卷与 `node_modules`，必须再加 `--yes-destroy-data`。
+
 ## 健康检查
 
 - API：`GET http://localhost:${API_PORT:-3001}/health/live`、`/health/ready`
