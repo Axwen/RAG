@@ -1,8 +1,8 @@
 # HG-01（T1a 切片）：Manifest/Prisma Core + devex P1 人工验收
 
-- 状态：READY_FOR_HUMAN
+- 状态：ACCEPTED_WITH_ACTIONS
 - 提交验收日期：2026-08-28
-- 用户结论日期：待定
+- 用户结论日期：2026-09-01
 
 > HG-01 的完整范围是 T1a + T14 + T11(同步审计) + T12(Ledger 骨架)。本记录只覆盖
 > 其中的 T1a 切片与并入的 devex P1 三项，按用户要求先行提交核验；T14/T11/T12 未开始。
@@ -192,8 +192,21 @@ EXIT=0    Test Files 15 passed (15)    Tests 122 passed (122)
 
 ## 6. 用户验收结论
 
-- 结论：待用户填写（通过 / 有条件通过 / 不通过）
-- 意见：
+- 结论：**ACCEPTED_WITH_ACTIONS（有条件通过）**
+- 用户原话（2026-09-01）：「那你标记着 后续计划里修复就行 可认可通过」
+- 条件（未达标项的归属，均已写入对应票据，不依赖会话记忆）：
+  1. **§5.1 第 2 项（缺租户谓词）与 §5 的「`tenantId` 由请求体携带」** → 归 [T14 DoD](../tickets/T14-identity-authorization.md#dod)
+     的两条：请求体 `tenantId` 移除（并有测试钉住携带不生效或被拒绝）、所有按 id 读写带身份推导的
+     `tenantId` 谓词（每类对象一条「A 租户身份带 B 租户 id → `NOT_FOUND`」测试，且断言目标行无副作用）。
+     T14 不关闭这两条即为未完成，不得再次延后。
+  2. **§5 的「幂等重放仍返回 201」** → 归 T2 Domain State（该批次本就要动状态命令端点），
+     见 [Ticket 地图 T2 行](../stage1-implementation-tickets.md#ticket-地图)。
+  3. 其余遗留（本机开发库残留行、`rerankInputSize` 待 T6 拍板、回滚不在阶段 1 范围）
+     已各有归属或对开发无影响，不作为条件。
+- 本结论的范围：**只覆盖本记录所述的 T1a 切片 + devex P1 三项**，不等于 HG-01 门禁通过。
+  HG-01 的完整范围仍是 T1a + T14 + T11(同步审计) + T12(Ledger/配置骨架)；T2/T10/T3/T1b
+  须等完整 HG-01 核验通过后才可启动。允许继续的是同批次剩余的 T12 → T11 → T14。
 
 > 按 [人工验收闸门](../manual-acceptance-gate.md)，人工验收与 Git/发布授权相互独立：
-> 验收通过不自动授权 commit、push、PR、merge 或部署。本批次改动尚未提交。
+> 验收通过不自动授权 commit、push、PR、merge 或部署。本记录的改动与 boomerang 批次
+> 均尚未提交。

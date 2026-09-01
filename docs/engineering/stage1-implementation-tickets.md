@@ -28,7 +28,7 @@
 | [T0](tickets/T0-monorepo-foundation.md) | pnpm/uv monorepo、Compose、CI 和一键启动基线 | 探针收尾提交后第一项；完成后执行 DX Review 与实现准备增量工程复审 |
 | T1a Manifest/Prisma Core | 租户、知识空间、不可变文档版本、基础 Manifest、Release、兼容矩阵 | T0；`RetrievalManifest.rerankInputSize` 为必填，开发种子显式写 64，不从环境变量读取；已并入 devex P1 三项——DX-T1（README 黄金路径 + dev 入口预载 `.env`）、DX-T2（环境预检脚本）、DX-T3（统一 API 错误信封 + 全局异常过滤器，先于首个业务端点）；CI 首次真实运行以建远程为前置，T1a 提交前关注；合并后 /plan-devex-review boomerang 复测黄金路径 <2 min |
 | T1b Chunk/Index Schema | `wide-1024` Chunk 定位和 ADR-0037 mapping | T1a；阶段 1 `parent_child=false`，不实现父子字段或父子展开 |
-| T2 Domain State | 正交状态命令、CAS、`searchable` 派生 | T1a；同步领域审计与状态事务一起落地 |
+| T2 Domain State | 正交状态命令、CAS、`searchable` 派生 | T1a；同步领域审计与状态事务一起落地；承接 HG-01 T1a 切片有条件通过的遗留——Manifest/Release 幂等重放的响应码由 201 改为 200（见 [HG-01 验收记录 §6](acceptance/hg-01-t1a-manifest-core.md#6-用户验收结论)）|
 | T3 MessageBus | Outbox、Attempt/Generation、Retry/DLQ/Replay | T1a、T2、T10 的 Worker 基础 Profile |
 | T4a Parser/ObjectStorage | 上传、对象认领、异步 Parser（DeepDOC 后端）、取消和孤儿清扫 | T3；同时落地 T13 的解析入口扫描 |
 | T4b Office/图片解析后端 | JPG/PNG 走本地 DeepDOC OCR、Office 走库提取+内嵌图 OCR、格式路由（零云调用） | PROBE-007（本地探针）冻结 `OfficeImageManifest`；T13 注入检测链随本票接入 OCR 输出；不阻塞 T4a/T5 |
