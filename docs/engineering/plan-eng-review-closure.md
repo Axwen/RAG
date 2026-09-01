@@ -700,6 +700,13 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 | Design Review | `/plan-design-review` | UI/UX 缺口 | 0 | NOT RUN | 当前为架构方案，进入页面实现前再执行 |
 | DX Review | `/plan-devex-review` | 本地开发体验 | 0 | NOT RUN | 实现仓库、Compose 和启动链建立后执行 |
 
+> **现状更新（2026-09-01）**：DX Review 行已过期。`/plan-devex-review` 于 2026-08-28 首跑
+> （总体 DX 6/10，DONE_WITH_CONCERNS，三个 P1 并入 T1a），2026-09-01 在 T1a 提交后跑完
+> boomerang 复测（DX 8/10，CLEARED WITH MINOR CONCERNS，§16 的退场条件 TTHW <2 min、
+> verify <20 s 均达成）。即 Runs 2 / CLEARED WITH MINOR CONCERNS，见
+> [首跑报告](plan-devex-review-20260828.md) 与 [boomerang 报告](plan-devex-review-20260901-boomerang.md)。
+> Design Review 仍为 NOT RUN。
+
 两项 `NOT RUN` 不是可以无限期挂起的状态，必须绑定明确触发点：
 
 - Design Review 在页面实现开始前执行，最迟不晚于 `/chat` 与三个 `/admin/*` 控制台开工。`/admin/deletions`、`/admin/evaluations`、`/admin/operations` 是硬 DoD，删除证明、预算熔断和恢复演练必须有界面可人工验证，所以它们的信息架构不能在没有 Design Review 的情况下直接实现。

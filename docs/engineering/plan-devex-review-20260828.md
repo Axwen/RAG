@@ -79,3 +79,8 @@ STAGE     | 开发者动作                          | 摩擦                   
 当时 VERDICT: NOT CLEARED(无 7 天内 Eng Review)。**现状更新(2026-08-28 下午)**:当日的 /gstack-plan-eng-review(ADR-0038 设计,8 项决议全部落文档)已满足该门,Eng Review = CLEAR (PLAN);T1a 开工前无需再跑一轮。
 
 **完成状态:DONE_WITH_CONCERNS** — 三个 P1 缺口建议在 T1a 开工前随票解决;CI 从未真实运行(无远程),建远程后首次 push 是硬验证点;boomerang 目标黄金路径 <2 min、verify 保持 ~20s 内。
+
+**现状更新(2026-09-01,boomerang 已跑)**:三个 P1 与 T4/T6 均已闭合,复测 TTHW 7.3–11.0s、
+verify 17.0–22.5s,总体 DX 6/10 → 8/10,状态 CLEARED WITH MINOR CONCERNS。测量口径已脚本化为
+`scripts/dx-baseline.sh`(`pnpm run dx:baseline`)。数据、重评分与剩余四项 concerns 见
+[boomerang 复测报告](plan-devex-review-20260901-boomerang.md);T5/T7 仍未做。
