@@ -8,7 +8,7 @@ import {
   type ApiErrorEnvelope,
   type ErrorCode,
 } from '@rag/contracts'
-import { createLogger } from '@rag/observability'
+import { createLogger, type Logger } from '@rag/observability'
 
 /**
  * 全局异常过滤器（DX-T3）：所有错误响应统一为五字段信封。
@@ -26,7 +26,16 @@ import { createLogger } from '@rag/observability'
  */
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
-  private readonly logger = createLogger({ bindings: { service: 'api' } })
+  private readonly logger: Logger
+
+  /**
+   * 允许注入 logger 只为一个目的：让"响应体的 trace_id 能反查到那条日志"可被测试。
+   * 这是 INTERNAL_ERROR 契约里唯一无法从响应体自证的一半——细节不外泄，用户手里
+   * 只剩标识；若日志行没带上同一个 traceId，这个标识就是死的。生产不传参。
+   */
+  constructor(logger?: Logger) {
+    this.logger = logger ?? createLogger({ bindings: { service: 'api' } })
+  }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp()

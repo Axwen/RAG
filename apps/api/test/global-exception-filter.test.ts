@@ -1,4 +1,6 @@
+import { Writable } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
+import { createLogger } from '@rag/observability'
 import {
   ForbiddenException,
   HttpException,
@@ -35,8 +37,27 @@ function sentEnvelope(json: ReturnType<typeof vi.fn>): Record<string, unknown> {
   return call[0] as Record<string, unknown>
 }
 
+/** 把过滤器的日志接到内存流，用来验证响应体的 trace_id 确实能反查日志。 */
+function filterWithLogSink(): {
+  filter: GlobalExceptionFilter
+  lines: Record<string, unknown>[]
+} {
+  const lines: Record<string, unknown>[] = []
+  const stream = new Writable({
+    write(chunk, _enc, cb) {
+      for (const raw of String(chunk).split('\n')) {
+        if (raw.trim() !== '') lines.push(JSON.parse(raw) as Record<string, unknown>)
+      }
+      cb()
+    },
+  })
+  const logger = createLogger({ bindings: { service: 'api' }, destination: stream })
+  return { filter: new GlobalExceptionFilter(logger), lines }
+}
+
 describe('全局异常过滤器（DX-T3 错误信封）', () => {
-  const filter = new GlobalExceptionFilter()
+  // 走内存 sink，避免 INTERNAL_ERROR 用例把堆栈打进测试输出
+  const { filter } = filterWithLogSink()
 
   it('领域异常直接回写五字段信封与映射状态码', () => {
     const { host, status, json } = mockHost()
@@ -157,5 +178,40 @@ describe('全局异常过滤器（DX-T3 错误信封）', () => {
     const bogus = mockHost({ headers: { traceparent: '00-not-a-trace-id-01' } })
     filter.catch(new Error('boom'), bogus.host)
     expect(String(sentEnvelope(bogus.json).trace_id)).toMatch(/^[0-9a-f-]{36}$/)
+  })
+})
+
+describe('INTERNAL_ERROR 的日志可反查性', () => {
+  it('响应体的 trace_id 与日志行的 traceId 是同一个，且堆栈只在日志里', () => {
+    const { filter, lines } = filterWithLogSink()
+    const { host, status, json } = mockHost({
+      method: 'POST',
+      url: '/manifests/ingestion',
+      headers: { traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01' },
+    })
+
+    filter.catch(new Error('数据库连接串 postgresql://u:p@h/db 泄漏风险'), host)
+
+    expect(status).toHaveBeenCalledWith(500)
+    const envelope = sentEnvelope(json)
+    expect(envelope.code).toBe('INTERNAL_ERROR')
+    // 响应体里没有原始错误信息，只有一个可反查的标识
+    expect(String(envelope.message)).not.toContain('postgresql://')
+    expect(envelope.trace_id).toBe('4bf92f3577b34da6a3ce929d0e0e4736')
+
+    expect(lines).toHaveLength(1)
+    const line = lines[0] as { traceId?: string; err?: string; method?: string; url?: string }
+    expect(line.traceId).toBe(envelope.trace_id)
+    expect(String(line.err)).toContain('数据库连接串')
+    expect(line.method).toBe('POST')
+    expect(line.url).toBe('/manifests/ingestion')
+  })
+
+  it('4xx 不写错误日志——鉴权拒绝与参数错误不该污染错误日志', () => {
+    const { filter, lines } = filterWithLogSink()
+    filter.catch(new UnauthorizedException('token 过期'), mockHost().host)
+    filter.catch(new ApiErrorException('NOT_FOUND', '不存在'), mockHost().host)
+
+    expect(lines).toHaveLength(0)
   })
 })
