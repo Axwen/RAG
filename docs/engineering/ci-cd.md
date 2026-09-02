@@ -100,6 +100,22 @@ CI 上脚本报 47 条、gitleaks 报 `49 commits scanned.`，差在 `fetch-dept
 工作流文件进仓库就会跑，但下面这些是仓库设置，只能在网页上点：
 
 1. **分支保护**（Settings → Branches → Add rule，Branch name pattern `main`）
+   ——**本仓库当前开不了，下面这份是目标态，不是现状。** 2026-09-02 实测
+   `gh api repos/Axwen/myRAG/branches/main/protection` 返回
+   `403 Upgrade to GitHub Pro or make this repository public to enable this feature.`，
+   网页上的 Add rule 同样点不动：private repo 的分支保护是付费能力，与 §3.3 的
+   `analyze` / `dependency-review` 卡在同一个根因（private + 免费档）。出路只有两条：
+   把仓库改公开，或升级 GitHub Pro。和 §3.3 有一处不同要说清：那边的"掏钱"不是真实选项
+   （Advanced Security 只卖给 organization，个人账号的 private repo 买不到），而分支保护
+   的 Pro 是**个人**订阅，确实买得到——两条路都能走通。
+
+   所以**现状是 main 上没有任何保护**，`git push origin main` 会直接过去，required
+   checks 一条都没生效。当下只能靠纪律代替门禁：日常走分支 + PR（理由见 §6.5），merge
+   前自己把 Checks 看全绿。纪律不是保护——它拦不住手误直推，也没有任何机械留痕，只是
+   眼下唯一可用的替代。**不要因为这一节写在这里，就以为它已经配好了**（这正是 §6.5
+   那条"绿也要看是怎么绿的"的同一个坑：写下来的门禁和生效的门禁是两件事）。
+
+   等能开了要勾的：
    - Require a pull request before merging（勾 Require approvals = 1；单人项目可留 0，
      但保留 PR 流程，让每次改动都有 CI 记录）
    - Require status checks to pass，把这些加为 required（搜索框里按 job 名找，
@@ -370,7 +386,7 @@ actionlint 那一层在 CI 用 `--strict`：自行下载钉死版本（v1.7.12�
 目前只有 `## [Unreleased]`），并且它会对外产出——GHCR 上的包和一个 GitHub Release。
 这是需要单独决定的动作，不在本轮里顺手做。
 
-### 6.5 第五轮（2026-09-02）：`gitleaks` 这个 required check 一直只扫两条提交
+### 6.5 第五轮（2026-09-02）：`gitleaks（全历史密钥扫描）` 一直只扫两条提交
 
 第四轮修完推上去，四条工作流全绿。接着去清理 GitHub 上那三个 Dependabot PR，顺手翻了
 一眼它们为什么全红——**在这里撞到了本轮最严重的一个缺陷，而它不在任何计划里。**
@@ -384,9 +400,11 @@ RequestError [HttpError]: Resource not accessible by integration
 
 `gitleaks/gitleaks-action` 在 `pull_request` 事件下改走 `ScanPullRequest`，要通过 API 读
 PR 的提交列表；而工作流按最小权限只声明了 `contents: read`，默认 token 没有
-`pull-requests` 权限，于是这一步直接抛异常。**它是 required check**——也就是说每个 PR
-上都挂着一个不可能变绿的必需门禁，这已经是这套流水线里第三个"永远红"（前两个是 CodeQL
-与 dependency-review，§3.3）。
+`pull-requests` 权限，于是这一步直接抛异常。**§3 的清单把它列为 required check**——按那份
+清单的意图，每个 PR 上都挂着一个不可能变绿的必需门禁，这已经是这套流水线里第三个"永远红"
+（前两个是 CodeQL 与 dependency-review，§3.3）。（它实际拦不住 merge，因为分支保护根本
+开不了——那是本节第五项，一个更靠后才发现的事实；不生效只是让这个红叉更容易被当成背景噪音，
+并不减轻缺陷。）
 
 顺着去看它在 main 上为什么反而是绿的，问题比 PR 那个更严重。同一天最后一次成功运行的
 日志里，这个 action 自己拼出来的命令是：
@@ -465,12 +483,32 @@ guard 上**，只是死因从 §6.4 的 `uv: command not found` 换成了"当前
 fetch-depth 是 None`，并且临时删掉修复再跑一遍确认它真的会红。这是这一轮里唯一一条
 **在被写成文档之前就先被写成检查**的结论。
 
-一条要带走的经验，和 §6.3 那三条并列：
+**第五个，在清理 PR 的路上撞到：§3 的第一条手工配置根本做不到。** 那一节从建立起就写着
+"设分支保护 + 把六个 job 设为 required check"，而实测：
+
+```text
+$ gh api repos/Axwen/myRAG/branches/main/protection
+gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)
+```
+
+个人账号下的 private repo 开不了分支保护。所以这套流水线**没有任何一条 required check 是
+真的生效的**：`git push origin main` 直接就过去了，PR 上的红叉也拦不住 merge。前面几项是
+"门禁在跑但没检查它声称检查的东西"，这一项是"门禁只存在于文档里"——同一个形状的最后一层。
+
+已把 §3 第 1 条明确标成**目标态而非现状**，写清两条真实出路（把仓库改公开，或升级个人
+Pro——注意这与 §3.3 不同，那边的 Advanced Security 只卖给 organization，个人 private repo
+掏钱也买不到，而 Pro 是个人订阅，确实买得到）。在能开之前只能靠"日常走分支 + PR、merge
+前自己把 Checks 看全绿"的纪律代替，而纪律拦不住手误直推，也不留任何机械痕迹。
+
+两条要带走的经验，和 §6.3 那三条并列：
 
 - **绿也要看是怎么绿的。** 一个门禁报绿有两种可能——它检查了并且通过，或者它其实没检查。
   这两者在日志里长得一模一样，区别只在那些没人读的细节行里（`2 commits scanned.`、
   `范围 origin/main..HEAD 内无非 merge 提交`）。两轮审计里最严重的三个问题全属于这一类，
   没有一个是靠"看红叉"发现的。
+- **写下来的门禁和生效的门禁是两件事。** §3 那份手工配置清单看着像"照着点一遍就有保护"，
+  实际第一条就点不动；文档本身不会因为写错而变红。审计流水线时不能只审工作流文件，
+  还要拿 API 去问一遍仓库的真实状态。
 
 
 
