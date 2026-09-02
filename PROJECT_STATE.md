@@ -167,11 +167,13 @@
   跨包 import 解析到 `dist`，未构建时 6 个测试文件加载失败、129 个测试静默只剩 80 个
   （首轮该 job 死在 `check:links`、没走到这一步；`node` job 一直绿是因为它的 `typecheck`
   就是会 emit 的 `tsc -b`）。已在覆盖率前补构建步骤，并由 `vitest.config.ts` 校验入口存在。
-  已验证为绿：`node`、`compose`、`python`、`smoke`（干净 checkout 起六容器 + bootstrap
-  跑两遍 + 进程级冒烟）、`gitleaks（全历史密钥扫描）`、`pnpm audit`。仍未验证：`quality`
-  的覆盖率阈值（第三轮待复跑）、`dependency-review`（只在 PR 上跑，push 时 skip）；
-  CodeQL 在 private repo 上无法启用，已改为按仓库变量 `CODE_SCANNING_ENABLED` 开关，
-  默认 skip。
+  第三轮（`3610daa`）**四条工作流全绿**：`node` 81s、`quality` 51s、`python` 11s、
+  `compose` 22s、`smoke` 183s、`gitleaks` 10s、`pnpm audit` 29s，覆盖率报告作为 artifact
+  上传（115 KB）。分支保护要的六个 required check 至此都绿过一次，名字能在网页上搜到。
+  `analyze`（CodeQL）与 `dependency-review` 在本仓库都无法启用——private repo 要
+  Code Security / Advanced Security，而那是面向组织与企业的产品，个人账号下的 private
+  repo 买不到；两者已按同一个仓库变量 `ADVANCED_SECURITY_ENABLED` 关掉（skip 是灰色，
+  不是永远红的检查），唯一确定可行的启用路径是把仓库设为 public。
 - `~/.gstack` 评审日志持久化曾因审批服务 503 失败；项目内文档和 JSONL 是当前可靠副本。
 
 ## 当前阶段：T0 已收口，进入第一批业务票据
@@ -201,7 +203,7 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 3. **已完成（2026-08-28）**：DX Review 与实现准备增量复审已执行——真实工具链与依赖图确认，T0 估算（CC ~1d）与实际吻合。十八张票估算当时维持冻结；该冻结已于 2026-08-31 因 ADR-0039 扩大 T14 范围而结束（T14 ~6d → ~8d，合计 86.5d / 21.1d），后续范围变更同样按“改范围就改估算”处理。
 4. **进行中**：按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a + T14 + T11(同步审计) + T12(Ledger 骨架)。**T1a 切片与并入的 devex P1 三项（DX-T1/DX-T2/DX-T3）已提交为 `bc99b0a` + `1b2a2ed`，并于 2026-09-01 获用户 `ACCEPTED_WITH_ACTIONS`**（[验收记录 §6](docs/engineering/acceptance/hg-01-t1a-manifest-core.md#6-用户验收结论)：租户谓词与请求体 `tenantId` 退场归 [T14 DoD](docs/engineering/tickets/T14-identity-authorization.md#dod)，幂等重放 201→200 归 T2）。该结论只覆盖 T1a 切片，**不等于 HG-01 门禁通过**，也不授权 commit/push/PR/merge/部署。
    同批次剩余按依赖顺序推进：**T12 Ledger/配置骨架 → T11 同步审计骨架 → T14a（Keycloak auth + 7 张身份表与迁移）→ T14b（统一授权入口、能力权限、资源策略、`acl_scope_key` 编译、fail closed）**；T11 必须先于 T14b，因为 T14 DoD 要求授权决策写同步领域审计。T14 按 [ADR-0039](docs/adr/0039-business-identity-and-unified-authorization.md) 实现，票据要求身份迁移与授权代码分开提交、分开评审，故 T14a 结束时增设一个临时人工门禁（[门禁文档](docs/engineering/manual-acceptance-gate.md)允许对过大批次或安全边界决策加设临时门禁）。四项全部完成后才是完整 HG-01 核验，通过后方可启动 T2/T10/T3/T1b。
-   **前置待用户动作**：远端已换成 SSH（`git@github.com:Axwen/myRAG.git`）并推送成功，CI 已于 2026-09-02 真跑首轮——四条工作流全红，抓到四个本地永不复现的真缺陷（全新克隆上 `bootstrap` 必失败、文档死链、audit job 缺 `.env`、`setup-uv@v10` 不存在），已全部修复并留档于 [CI/CD 文档](docs/engineering/ci-cd.md) §6；CodeQL 因 private repo 无 code scanning 权限改为按仓库变量 `CODE_SCANNING_ENABLED` 开关，默认 skip。**剩余待用户动作**：按 CI/CD 文档 §3 在网页上设分支保护与 required checks（要等各 job 至少绿一次，名字才会出现在列表里），并决定 CodeQL 走哪条启用路径（设为 public / 买 Code Security / 就这样放着）。/plan-devex-review boomerang 已于 2026-09-01 跑完（dx-baseline 脚本已落，两个目标达成，见 [复测报告](docs/engineering/plan-devex-review-20260901-boomerang.md)）；verify 门禁阈值暂不设定，待 CI 有真实分布后再定；devex T5/T7 仍未做，低优先级自由安排。后续每个实施批次都按 HG-02 至 HG-07 停顿并等待人工结论。
+   **前置待用户动作**：远端已换成 SSH（`git@github.com:Axwen/myRAG.git`）并推送成功，CI 已于 2026-09-02 跑通——首轮四条工作流全红，三轮共抓到五个本地永不复现的真缺陷（全新克隆上 `bootstrap` 必失败、文档死链、audit job 缺 `.env`、单测依赖未构建的 `packages/*/dist`，外加配置错 `setup-uv@v10` 不存在），已全部修复，第三轮四条工作流全绿，留档于 [CI/CD 文档](docs/engineering/ci-cd.md) §6；CodeQL 与 dependency-review 因 private repo 缺 Code Security 一起改为按仓库变量 `ADVANCED_SECURITY_ENABLED` 开关，默认 skip。**剩余待用户动作**：按 CI/CD 文档 §3 在网页上设分支保护与 required checks（六个 job 都已绿过一次，名字能搜到了），处理三个 Dependabot PR（都需先 rebase 到修复后的 main 才有可信信号），并决定要不要为了 CodeQL / dependency-review 把仓库设为 public。/plan-devex-review boomerang 已于 2026-09-01 跑完（dx-baseline 脚本已落，两个目标达成，见 [复测报告](docs/engineering/plan-devex-review-20260901-boomerang.md)）；verify 门禁阈值暂不设定，待 CI 有真实分布后再定；devex T5/T7 仍未做，低优先级自由安排。后续每个实施批次都按 HG-02 至 HG-07 停顿并等待人工结论。
 5. 各模块按 [Probe Decision Gate](docs/engineering/probe-decision-gate.md) 关闭实现与生产治理门槛；集成项全部关闭后，再进行完整增量工程复审和 24 至 36 周窗口重估。
 
 ## 详细文档入口

@@ -101,11 +101,15 @@
     覆盖率前加 `pnpm --filter "./packages/*" run build`（冷启约 2s，`apps/*` 的测试
     import 各自 `src`、不需其 `dist`），并由 `vitest.config.ts` 在加载时校验这些入口
     存在、缺失即报出"先跑 `pnpm run build`"——本地全新克隆同样受这条保护。
-- **CodeQL 在 private repo 上必然红**：code scanning 需要付费的 Code Security，个人账号
-  free plan 开不了，`analyze` 上传 SARIF 直接失败（`Code scanning is not enabled for
-  this repository`）。每次 push 挂一个永远红的检查只会训练人忽略红叉，因此 job 改为
-  `if: vars.CODE_SCANNING_ENABLED == 'true'`——未开启时 skip（灰色）而不是失败。启用
-  路径（设为 public，或买 Code Security）见 ci-cd.md §3.3。
+- **CodeQL 与 dependency-review 在 private repo 上必然红**：两者都要求
+  Code Security / Advanced Security，实测报错分别是 `Code scanning is not enabled for
+  this repository` 与 `Dependency review is not supported on this repository`（后者是
+  三个 Dependabot PR 上一起红的那条）。永远红的检查只会训练人忽略红叉，而
+  dependency-review 挂的位置更糟——PR 恰恰是人真会盯着红叉看的地方。两个 job 现在共用
+  一个仓库变量 `if: vars.ADVANCED_SECURITY_ENABLED == 'true'`，未开启时 skip（灰色）
+  而不是失败；按"根因"命名而不是各起一个开关，因为它们要的是同一件东西。个人账号下的
+  private repo 买不到该产品（面向组织与企业），唯一确定可行的启用路径是把仓库设为
+  public，见 ci-cd.md §3.3。
 
 - **`pnpm --filter @rag/api dev` 下 NestJS 依赖注入失效**（T0 遗留，本批次实测发现）：
   开发入口原用 `tsx`（esbuild）转译，不产出 `emitDecoratorMetadata` 的

@@ -14,7 +14,7 @@
 | [`ci.yml`](../../.github/workflows/ci.yml) | push main / PR / 手动 | 分钟级 | 静态检查、单测、覆盖率、构建、Compose 配置解析 |
 | [`integration.yml`](../../.github/workflows/integration.yml) | push main / PR / 手动 | 十分钟级 | 真起六个 core 容器 → bootstrap → 编译产物起进程 → HTTP 契约与日志断言 |
 | [`security.yml`](../../.github/workflows/security.yml) | push main / PR / 每周一 / 手动 | 分钟级 | 全历史密钥扫描、依赖漏洞、PR 依赖变更与许可证 |
-| [`codeql.yml`](../../.github/workflows/codeql.yml) | push main / PR / 每周一 / 手动 | 十分钟级 | 跨函数数据流的静态安全分析（TS + Python）。**当前整条 skip**，需仓库变量 `CODE_SCANNING_ENABLED=true`（见 §3.3） |
+| [`codeql.yml`](../../.github/workflows/codeql.yml) | push main / PR / 每周一 / 手动 | 十分钟级 | 跨函数数据流的静态安全分析（TS + Python）。**当前整条 skip**，需仓库变量 `ADVANCED_SECURITY_ENABLED=true`（见 §3.3） |
 | [`release.yml`](../../.github/workflows/release.yml) | 推 `v*` 标签 / 手动 | 十分钟级 | 发布前重跑 verify、Parser 镜像进 GHCR、SBOM、GitHub Release |
 
 为什么分成五条而不是一条：失败信号要能直接指向原因。"编译不过"和"跑起来不对"是两
@@ -73,8 +73,8 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 |---|---|---|
 | gitleaks（全历史） | 任何命中 | `.env` 被 gitignore 与"从没被提交过"是两件事，只有扫全历史能确认 |
 | `pnpm audit` | critical 阻断，high 只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过 |
-| dependency-review（仅 PR） | high；拒绝 AGPL / SSPL | 供应链的入口在引入那一刻，不在事后 |
-| CodeQL | 不阻断，进 Security 页签 | 先看全（`security-and-quality`），要当门禁再加进 required checks。**private repo 需先有 Code Security（付费）才能开 code scanning**，否则上传 SARIF 必然 403 |
+| dependency-review（仅 PR） | high；拒绝 AGPL / SSPL | 供应链的入口在引入那一刻，不在事后。**当前 skip**：private repo 上这个 action 同样要 Code Security，见 §3.3 |
+| CodeQL | 不阻断，进 Security 页签 | 先看全（`security-and-quality`），要当门禁再加进 required checks。**private repo 需先有 Code Security 才能开 code scanning**，否则上传 SARIF 必然失败，见 §3.3 |
 
 放行清单在 [`.gitleaks.toml`](../../.gitleaks.toml)，判据只有一条：值本身是刻意无效的
 占位符或测试夹具，泄漏它没有后果。
@@ -87,7 +87,8 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
    - Require a pull request before merging（勾 Require approvals = 1；单人项目可留 0，
      但保留 PR 流程，让每次改动都有 CI 记录）
    - Require status checks to pass，把这些加为 required（搜索框里按 job 名找，
-     列表要等这些 job 至少跑过一次才会出现）：
+     列表要等这些 job 至少跑过一次才会出现——**六个都已于 2026-09-02 第三轮全绿**，
+     现在都能搜到）：
      - `node（lint / typecheck / test / prisma / build）`
      - `quality（shell / 链接 / 提交信息 / 覆盖率）`
      - `python（parser uv / pytest）`
@@ -95,8 +96,9 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
      - `smoke（六容器 + bootstrap + 进程级 HTTP/日志断言）`
      - `gitleaks（全历史密钥扫描）`
 
-     `pnpm audit`、`dependency-review` 与 CodeQL 暂不设为 required：前两者按设计对
-     high 只报告，CodeQL 首轮结果还没人看过，先观察一段再决定。
+     剩下三个都不设为 required，各有各的理由：`pnpm audit` 按设计对 high 只报告
+     （critical 才阻断，它自己会红）；`dependency-review` 与 CodeQL 在本仓库整条 skip，
+     把 skip 设成 required 只是给自己一个假的安全感（见 §3.3）。
    - Require branches to be up to date before merging
    - Require conversation resolution before merging
    - 不要勾 Allow force pushes / Allow deletions
@@ -105,23 +107,40 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
      （各工作流已按需在 job 级声明 `packages: write` / `security-events: write`，
      不需要默认给写权限）
    - 勾 Allow GitHub Actions to create and approve pull requests：**不要勾**
-3. **Code scanning**（Settings → Code security）
+3. **Code scanning 与 dependency review**（Settings → Code security）
    - 打开 Dependabot alerts 与 Dependabot security updates
    - Secret scanning 与 push protection：公开仓库免费；private repo 属于付费的
      Secret Protection，开不了就靠 `security.yml` 里的 gitleaks 兜底（它已扫全历史）
-   - **CodeQL 在当前配置下整条 skip**。private repo 要用 code scanning 必须先有
-     GitHub Code Security（原 GHAS，付费）；没有时 `analyze` 上传 SARIF 会以
-     `Code scanning is not enabled for this repository` 失败——那会让每次 push 都挂一个
-     永远红的检查，比没有更糟。因此 `codeql.yml` 的 job 加了开关：
+   - **`analyze`（CodeQL）与 `dependency-review` 当前都是 skip。** 两者卡在同一件事上：
+     private repo 上它们都要求 Code Security / Advanced Security。没有时的实测报错分别是
 
-     ```yaml
-     if: vars.CODE_SCANNING_ENABLED == 'true'
+     ```text
+     Code scanning is not enabled for this repository
+     Dependency review is not supported on this repository
      ```
 
-     启用路径二选一，之后在 Settings → Secrets and variables → Actions → Variables
-     加 `CODE_SCANNING_ENABLED=true`（工作流文件不用改）：
-     - 仓库设为 **public**——公开库的 CodeQL 与 code scanning 免费；
-     - 买 **Code Security**，private repo 才能开 code scanning。
+     真让它们跑就会各挂一个永远红的检查——CodeQL 挂在每次 push 上，dependency-review
+     挂在每个 PR 上（首批三个 Dependabot PR 全是这样红的，而 PR 恰恰是人真会去看红叉
+     的地方）。永远红的门禁只会训练人忽略红叉，比没有更糟，所以两个 job 都用同一个
+     仓库变量当开关：
+
+     ```yaml
+     # codeql.yml
+     if: vars.ADVANCED_SECURITY_ENABLED == 'true'
+     # security.yml
+     if: github.event_name == 'pull_request' && vars.ADVANCED_SECURITY_ENABLED == 'true'
+     ```
+
+     变量按"根因"命名而不是按功能各起一个：它们要的是同一件东西，分成两个开关只会
+     让人以为可以单独打开其中一个。
+
+     启用路径：在 Settings → Secrets and variables → Actions → Variables 加
+     `ADVANCED_SECURITY_ENABLED=true`（工作流文件不用改），前提是先满足下面之一——
+     - 仓库设为 **public**：公开库的 CodeQL、code scanning 与 dependency review 都免费，
+       这是个人账号下唯一确定可行的路；
+     - 让仓库归属一个开了 **Code Security / Advanced Security** 的 organization。该产品
+       面向组织与企业销售，个人账号下的 private repo 买不到——所以在当前归属下，
+       "掏钱开启"并不是一个真实选项。
 4. **Actions secrets**：**当前一个都不需要**。所有工作流只用 `.env.example` 的占位值和
    自动注入的 `GITHUB_TOKEN`。哪天要加，先回答"CI 为什么需要真实凭证"。
 
@@ -179,7 +198,7 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
 | `quality` | `check:links` 报 `PROJECT_STATE.md:214` 两个目标不存在 | 文档用相对链接指向 `references/ragent/`、`references/ragflow/`，而 `/references/` 是 gitignore 的本地工作副本——本地能点开，克隆下来是死链 | 改成上游 URL，并写明它只在本地存在 |
 | `deps-audit` | `pnpm install --frozen-lockfile` 失败：`PrismaConfigEnvError: Cannot resolve environment variable: DATABASE_URL` | 根 `postinstall` 会跑 `prisma generate`，它要求 `DATABASE_URL` 存在；`ci.yml` 的 job 有前置 `cp .env.example .env`，这个 job 没有 | 该 job 改 `--ignore-scripts`：审计只需要依赖图，不需要生成的 Prisma Client |
 | `smoke` | `bootstrap` 死在 seed：`Cannot find module '.../@rag/contracts/dist/index.js'` | **README 黄金路径在全新克隆上是坏的**。`seed.ts` import 工作区包的编译产物，而 `pnpm install` 的 postinstall 只跑 `prisma generate`、不构建；本地一直不复现只因为 `dist` 是历次 build 的残留 | `init-database.sh` 在 seed 前 `pnpm --filter "...@rag/database" run build`。让 bootstrap 自给自足，而不是往 README 里加一步——它对外的承诺就是"一条命令、可重复执行" |
-| `analyze`（×2） | `Code scanning is not enabled for this repository` | private repo 的 code scanning 需要付费的 Code Security；个人账号 free plan 开不了 | job 加 `if: vars.CODE_SCANNING_ENABLED == 'true'`，skip 是灰色而不是红色（见 §3.3） |
+| `analyze`（×2） | `Code scanning is not enabled for this repository` | private repo 的 code scanning 需要付费的 Code Security；个人账号 free plan 开不了 | job 加 `if: vars.ADVANCED_SECURITY_ENABLED == 'true'`（当时叫 `CODE_SCANNING_ENABLED`，§6.3 改名），skip 是灰色而不是红色（见 §3.3） |
 
 `gitleaks（全历史密钥扫描）`、`node`、`compose` 三个 job 首跑即绿。
 
@@ -213,6 +232,24 @@ vite 按 Node 规则解析到该包 `main`（`dist/index.js`），只有**当前
   `pnpm test` 会命中它，而不是去查 `exports` 字段。
 
 这是第一轮那三个真缺陷的第四个同源实例：**本地长期有历次构建的残留，掩盖了真实依赖。**
+
+### 6.3 顺带查清：`dependency-review` 也永远不可能绿
+
+三个 Dependabot PR 上 `dependency-review` 全是红的。查日志不是许可证或漏洞命中，而是
+
+```text
+Dependency review is not supported on this repository.
+Please ensure that Dependency graph is enabled along with GitHub Advanced Security
+```
+
+和 CodeQL 同一个前置：private repo 要 Code Security / Advanced Security。已按同一个
+仓库变量 `ADVANCED_SECURITY_ENABLED` 一起关掉（§3.3），顺手把原先只管 CodeQL 的
+`CODE_SCANNING_ENABLED` 改成这个名字——两者要的是同一件东西，分成两个开关只会让人
+以为能单独打开其中一个。这个变量还没被设过，改名零成本。
+
+值得单独记一句的是**红在哪里**比红本身更要紧：CodeQL 挂在 push 上，dependency-review
+挂在每个 PR 上——PR 恰恰是人真会盯着红叉看的地方，放一个永远红的检查在那儿，代价比
+push 上的大。
 
 三条可以带走的经验：
 
