@@ -1,4 +1,48 @@
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
+
+const root = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * 跨包 import 解析到**编译产物**，不是源码：vite 按 Node 规则把
+ * `from '@rag/contracts'` 落到该包 package.json 的 main（`dist/index.js`），只有当前
+ * 包的源文件才由 vitest 现场转译。所以全新克隆里 `pnpm test` 有 6 个测试文件根本加载
+ * 不起来（129 → 80 个测试静默变少），vite 报的却是
+ *   Failed to resolve entry for package "@rag/config".
+ *   The package may have incorrect main/module/exports specified in its package.json.
+ * ——把人指向 package.json 的 exports 字段，而真正缺的只是一次 build。
+ *
+ * CI 首跑第二轮就是这样红的：quality job 只装依赖就跑覆盖率，而 node job 恰好因为
+ * `typecheck` 也是 `tsc -b`（会 emit）才没暴露这条依赖。与 seed 缺 dist 是同一个根因：
+ * 本地长期有历次构建的残留，掩盖了"测试需要先构建"这件事。
+ *
+ * 与其让下一个人去查 exports 字段，这里提前失败并说清怎么办。
+ */
+const unbuilt = readdirSync(join(root, 'packages'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => join(root, 'packages', entry.name, 'package.json'))
+  .filter((manifestPath) => existsSync(manifestPath))
+  .map((manifestPath) => ({
+    dir: dirname(manifestPath),
+    manifest: JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      main?: string
+      scripts?: Record<string, string>
+    },
+  }))
+  // 只查"声明了 main 且有 build 脚本"的包：将来若加入无需构建的包，这里不该误报
+  .filter(({ manifest }) => manifest.main !== undefined && manifest.scripts?.build !== undefined)
+  .map(({ dir, manifest }) => resolve(dir, manifest.main as string))
+  .filter((entryPoint) => !existsSync(entryPoint))
+
+if (unbuilt.length > 0) {
+  const list = unbuilt.map((p) => `  - ${relative(root, p)}`).join('\n')
+  throw new Error(
+    `工作区包尚未构建，跨包 import 会解析失败：\n${list}\n` +
+      '先跑 `pnpm run build`（或 `pnpm --filter "./packages/*" run build`）再跑测试。',
+  )
+}
 
 export default defineConfig({
   test: {

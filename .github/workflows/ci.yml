@@ -112,6 +112,14 @@ jobs:
       - name: 提交信息规范（Conventional Commits）
         run: pnpm run check:commits
 
+      - name: 构建工作区包（覆盖率前置）
+        # 跨包 import 解析到 package.json 的 main（dist/index.js），不是源码——不先构建，
+        # 6 个测试文件会直接加载失败，报的却是"exports 写错了"。首跑第二轮就是这样红的：
+        # node job 恰好因为 typecheck 也是 `tsc -b`（会 emit）才没暴露这条依赖。
+        # 只构建 packages/*（约 2s）：apps/* 的测试 import 的是各自 src，不需要其 dist，
+        # 也不必在这个 job 里跑 next build。vitest.config.ts 里有同源的前置校验。
+        run: pnpm --filter "./packages/*" run build
+
       - name: 覆盖率（阈值见 vitest.config.ts）
         run: pnpm run test:coverage
 
