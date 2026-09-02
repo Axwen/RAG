@@ -156,7 +156,11 @@
   修的过程中又撞到第三个同形状的：`.gitignore` 里刻意宽的 `*secret*` 把新脚本
   `scripts/check-secrets.sh` 一起忽略了，而 `check-shell.sh` 用 `git ls-files` 枚举脚本、
   **看不见被忽略的文件**——加例外前 26 个、加后 27 个，此前所有"shellcheck 通过"都不含它。
-  四项都是"绿着的"或"红在没人看的地方"，没有一个是靠看红叉发现的。gitleaks 现已改为
+  修完还差点埋一颗新雷：`check:secrets` 串进 `verify` 后，`release.yml` 的 guard（浅克隆）
+  会在它上面失败——第一次推 `v*` 标签的死因只是从 `uv` 换成"浅克隆"。这条已补
+  `fetch-depth: 0`，并**写成机械检查而不是文档**：工作流基线层第 5 条规则要求跑
+  `check:secrets` / `check:commits` / `verify` 的 job 必须显式写 `fetch-depth: 0`。
+  五项都是"绿着的"或"红在没人看的地方"，没有一个是靠看红叉发现的。gitleaks 现已改为
   `scripts/check-secrets.sh` 直接调钉死版本的二进制（v8.30.1 + 三平台 sha256），三种事件
   同一条命令。详见 ci-cd.md §6.4 / §6.5。
 
