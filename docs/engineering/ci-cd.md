@@ -1,6 +1,6 @@
 # CI/CD、质量检测与日志检测
 
-> 本文件描述仓库当前**真实存在**的流水线。没做的事在第 6 节明确列出，不写成"计划中"
+> 本文件描述仓库当前**真实存在**的流水线。没做的事在第 7 节明确列出，不写成"计划中"
 > 混在能力清单里。
 
 - 建立日期：2026-09-01
@@ -11,8 +11,8 @@
 
 | 工作流 | 触发 | 时长量级 | 管什么 |
 |---|---|---|---|
-| [`ci.yml`](../../.github/workflows/ci.yml) | push main / PR / 手动 | 分钟级 | 静态检查、单测、覆盖率、构建、Compose 配置解析 |
-| [`integration.yml`](../../.github/workflows/integration.yml) | push main / PR / 手动 | 十分钟级 | 真起六个 core 容器 → bootstrap → 编译产物起进程 → HTTP 契约与日志断言 |
+| [`ci.yml`](../../.github/workflows/ci.yml) | push main / PR / 手动 | 分钟级 | 静态检查（含工作流 YAML 自身）、单测、覆盖率与增量覆盖率、构建、Compose 配置解析、Parser 镜像构建并真起一次 |
+| [`integration.yml`](../../.github/workflows/integration.yml) | push main / PR / 每周一 / 手动 | 十分钟级 | 真起六个 core 容器 → bootstrap → 编译产物起进程 → HTTP 契约与日志断言 |
 | [`security.yml`](../../.github/workflows/security.yml) | push main / PR / 每周一 / 手动 | 分钟级 | 全历史密钥扫描、依赖漏洞、PR 依赖变更与许可证 |
 | [`codeql.yml`](../../.github/workflows/codeql.yml) | push main / PR / 每周一 / 手动 | 十分钟级 | 跨函数数据流的静态安全分析（TS + Python）。**当前整条 skip**，需仓库变量 `ADVANCED_SECURITY_ENABLED=true`（见 §3.3） |
 | [`release.yml`](../../.github/workflows/release.yml) | 推 `v*` 标签 / 手动 | 十分钟级 | 发布前重跑 verify、Parser 镜像进 GHCR、SBOM、GitHub Release |
@@ -30,15 +30,18 @@
 | 格式 | `pnpm run format` | 是 | Prettier `--check`，不自动改 |
 | Lint | `pnpm run lint` | 是 | ESLint，含 `no-console`（业务代码零 `console.*`） |
 | Shell | `pnpm run check:shell` | 是 | shellcheck，阈值 `warning`。CI 用 `--strict`：未安装即失败，不许静默跳过 |
+| 工作流 YAML | `pnpm run check:workflows` | 是 | 两层：基线（YAML 可解析 / `needs` 与 `steps.<id>` 引用 / `uses` 必须钉 40 位 SHA，只用 PyYAML，永远跑）+ actionlint（表达式、上下文、`run:` 块交 shellcheck；本地缺则警告，CI 用 `--strict` 下载钉死版本并校验 sha256） |
 | Markdown 链接 | `pnpm run check:links` | 是 | 相对链接与 `#锚点` 是否存在。文档是本项目的事实源，断链等于事实源失效 |
-| 提交信息 | `pnpm run check:commits` | 是 | Conventional Commits + 主题行显示宽度 ≤72（中文按双宽算） |
+| 提交信息 | `pnpm run check:commits` | 是 | Conventional Commits + 主题行显示宽度 ≤72（中文按双宽算）。CI 在 push 上显式传 `${{ github.event.before }}..${{ github.sha }}`——不传就是空区间（§6.4） |
 | 类型 | `pnpm run typecheck` | 是 | 含 `prisma/seed.ts`（它曾长期落在所有 tsconfig 之外） |
 | 单测 | `pnpm run test` | 是 | 16 文件 / 129 测试（2026-09-01） |
-| 覆盖率 | `pnpm run test:coverage` | 是 | 阈值见 [`vitest.config.ts`](../../vitest.config.ts) |
+| 覆盖率 | `pnpm run test:coverage` | 是 | 全局阈值见 [`vitest.config.ts`](../../vitest.config.ts) |
+| 增量覆盖率 | `pnpm run check:diff-coverage` | 是 | 本次改动新增的、被插桩的行 ≥80%。全局阈值拦整体退化，拦不住"这次新增的没测"——仓库越大，一个全新未测文件对整体的拉低越小 |
 | 构建 | `pnpm run build` | 是 | 构建后 `git diff --exit-code`，确认没有回写被跟踪文件 |
 | Prisma | `pnpm run db:validate` | 是 | schema 校验 |
 | Python | `uv lock --check` + `uv sync --frozen` + `pytest -q` | 是 | 锁文件与 pyproject 必须一致 |
 | Compose | `pnpm run compose:config` | 是 | 含 parser / evaluation profile 的配置解析 |
+| Parser 镜像 | `pnpm run check:parser-image <ref>` | 是 | 构建完真 `docker run` 一次：等 HEALTHCHECK 变 healthy，再从宿主机打 `/health/live`。构建成功只证明依赖装得上 |
 
 覆盖率阈值是**棘轮**：取实测值下取整一档，只往上调，不往下让。当前基线（已排除
 Prisma 生成产物、`apps/web`、种子脚本）：statements 87.15 / branches 82.43 /
@@ -88,11 +91,12 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
      但保留 PR 流程，让每次改动都有 CI 记录）
    - Require status checks to pass，把这些加为 required（搜索框里按 job 名找，
      列表要等这些 job 至少跑过一次才会出现——**六个都已于 2026-09-02 第三轮全绿**，
-     现在都能搜到）：
+     其中 `quality` 与 `compose` 在第四轮（§6.4）**改过名**，改名后的名字要等这一轮
+     跑完才会出现在选择器里，老名字要手动去掉）：
      - `node（lint / typecheck / test / prisma / build）`
-     - `quality（shell / 链接 / 提交信息 / 覆盖率）`
+     - `quality（shell / YAML / 链接 / 提交信息 / 覆盖率）`
      - `python（parser uv / pytest）`
-     - `compose（配置解析 / parser 镜像构建）`
+     - `compose（配置解析 / parser 镜像构建与启动）`
      - `smoke（六容器 + bootstrap + 进程级 HTTP/日志断言）`
      - `gitleaks（全历史密钥扫描）`
 
@@ -147,13 +151,20 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 ## 4. 本地怎么跑同一批检查
 
 ```bash
-pnpm run verify          # format + lint + shell + links + typecheck + test + build + prisma + python + compose
-pnpm run test:coverage   # 覆盖率与阈值
-pnpm run check:commits   # 提交信息（默认比 origin/main..HEAD）
+pnpm run verify              # format + lint + shell + 工作流 + links + typecheck + test + build + prisma + python + compose
+pnpm run test:coverage       # 全局覆盖率与阈值
+pnpm run check:diff-coverage # 增量覆盖率（要先跑过 test:coverage，它读 coverage/lcov.info）
+pnpm run check:commits       # 提交信息（默认 origin/main..HEAD，可显式传区间）
+pnpm run check:workflows     # 工作流基线；加 --strict 才下载 actionlint
 pnpm run infra:up && pnpm run bootstrap && pnpm run build
-pnpm run smoke:api       # HTTP 契约 + 日志结构 + 日志泄漏（需中间件已起）
-pnpm run dx:baseline     # DX 耗时基线
+pnpm run smoke:api           # HTTP 契约 + 日志结构 + 日志泄漏（需中间件已起）
+docker build -t rag-parser:ci services/parser && pnpm run check:parser-image rag-parser:ci
+pnpm run dx:baseline         # DX 耗时基线
 ```
+
+`verify` 里的 `check:workflows` 不带 `--strict`：本机没装 actionlint 时只跑基线那一层
+（YAML 可解析、引用一致、`uses` 钉 SHA），不会为了一次本地检查去联网下载二进制。
+CI 里带 `--strict`，两层都跑。
 
 单独跑 `pnpm test` / `pnpm test:coverage` 前要先 `pnpm run build`——跨包 import 解析到
 `dist`，全新克隆里没有它就有 6 个测试文件加载不起来（§6.2）。`verify` 不受影响：它的
@@ -178,13 +189,17 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
 - **`integration.yml` 的资源**：runner 16 GiB，工作流把 `OPENSEARCH_JAVA_OPTS` 降到
   `-Xms1g -Xmx1g`。这条冒烟不做规模检索，够用；真实性能基线永远在本机 23.47 GiB
   profile 上测，不看 CI 数字。
-- **`check:commits` 实际只在 PR 上生效**：它比较 `origin/main..HEAD`（所以 `quality`
-  job 要 `fetch-depth: 0`），而 push 到 main 时 `origin/main` 就是 `HEAD`，范围为空、
-  直接通过。真正被检查的是 PR 里的提交。顺带确认过 Dependabot 不会被 72 列宽度规则
-  卡住：它的 **PR 标题**很长，但**提交主题**是缩写过的（如
+- **`check:commits` 在 push 上曾是空转**（已修，见 §6.4）：它默认比 `origin/main..HEAD`，
+  而 `actions/checkout` 在 push 到 main 时会把本地 `main` 指到 `origin/main`，区间恒为空。
+  现在 CI 在 push 上显式传 `${{ github.event.before }}..${{ github.sha }}`，脚本本身也不再
+  允许"自动区间为空"当作通过。顺带确认过 Dependabot 不会被 72 列宽度规则卡住：它的
+  **PR 标题**很长，但**提交主题**是缩写过的（如
   `chore(deps): bump python in /services/parser`，44 列）。
+- **actionlint 的版本与校验和写死在脚本里**（`scripts/check-workflows.sh` 顶部）。升级时
+  同改版本号与三个平台的 sha256；校验和不从同一个来源运行时拉取，这样上游资产被替换
+  会当场失败而不是静默通过。这条纪律对检查工具自己和对 action 一视同仁。
 
-## 6. 首跑记录（2026-09-02）：两轮修完，五个真缺陷
+## 6. 真跑记录（2026-09-02）：三轮修到全绿，第四轮主动审计
 
 ### 6.1 第一轮：五条工作流全红
 
@@ -260,6 +275,80 @@ push 上的大。
   才知道不存在，写文档写得再细也发现不了。
 - **"修完了"要靠下一次真跑证明。** 第一轮的失败会把后面的步骤挡在门外，所以一轮全绿
   之前，"还剩几个问题"是不可知的——第二轮那个缺陷从一开始就在，只是排在死链后面。
+
+### 6.4 第四轮（2026-09-02）：全绿之后主动审计，两个"还没机会红"的 P0
+
+三轮修到全绿只证明**跑过的那些步骤是对的**，不证明该跑的都跑了，更不证明从没执行过的
+工作流是对的。所以在全绿之后又做了一轮审计，找的正是这两类盲区。九项改动，两个 P0。
+
+**P0-1：`check:commits` 十次运行一条提交都没检查。** 日志原文：
+
+```text
+✅ 提交信息检查通过（范围 origin/main..HEAD 内无非 merge 提交）
+```
+
+`actions/checkout` 在 push 到 main 时做的是 `git checkout -B main refs/remotes/origin/main`，
+于是 `origin/main == HEAD`，`origin/main..HEAD` 恒为空——脚本按"没有可检查的提交"宣布
+通过。一个自称在管提交规范的门禁，十次运行里检查了 0 条提交。这类缺陷比红叉危险：
+红叉会被看见，空转不会。两处一起修——CI 在 push 上显式传
+`${{ github.event.before }}..${{ github.sha }}`（PR 上仍走默认，那时区间就是 PR 的提交集），
+脚本本身也不再允许"自动推导出的区间为空"当作通过，只有**显式传入**的空区间才算通过
+（那是 CI 传来的真实情况：这次推送里只有 merge）。端点不可解析时（`main` 被 force push
+过，`before` 已不可达）退化为检查最近一条并给出警告，而不是崩掉。
+
+**P0-2：`release.yml` 的 guard 第一次跑就会死在 `uv: command not found`。** `verify` 链
+第 9、10 环是 `py:sync` / `py:test`，两者都要 uv，而 `ubuntu-24.04` runner 镜像不预装它
+（Package Management 段只有 cpan / Miniconda / Pip / Pipx / Yarn）。`ci.yml` 的 python job
+有 `astral-sh/setup-uv`，release 的 guard 没有。这条到今天才被审出来的唯一原因是
+**`release.yml` 从来没执行过**：0 个标签、0 次运行、145 行 YAML 没有一行跑过。
+
+**P0-3（同一个文件）：手动派发会检出错的 ref。** `workflow_dispatch` 时 `github.ref` 是
+默认分支而不是要发布的标签，三个 job 的 checkout 都没显式指定 ref——那样 guard 验的是
+main、镜像从 main 构建、notes 从 main 的 CHANGELOG 抽，而 Release 挂在标签上。发出去的
+产物和标签指向的代码不是一回事，比直接失败更糟。三处都改成
+`ref: ${{ inputs.tag || github.ref }}`。
+
+其余六项：
+
+| 项 | 问题 | 修法 |
+|---|---|---|
+| 供应链 | 17 处 `uses:` 全是浮动 tag。tag 是可变引用，同一个 `@v7` 明天可以指向别的代码，而这些 action 在 CI 里拿得到 `GITHUB_TOKEN` | 全部钉 40 位 commit SHA，尾部保留 `# vX` 注释（Dependabot 认这个形式，会继续跟更新）。基线检查把"必须钉 SHA"变成硬门禁，Dependabot 的分组 PR 若换回浮动 tag 会当场红 |
+| 定时扫 | `security.yml` / `codeql.yml` 的 concurrency group 不含事件名，周一定时扫和同时段推 main 落进同一组，`cancel-in-progress` 让 push 把定时扫取消掉——而定时扫的全部意义就是"代码不动也要重扫" | group 加 `-${{ github.event_name }}` |
+| 定时扫 | `integration.yml` 没有周扫。它是全套里最 flaky 的一条（六个镜像、健康检查、内核参数），偏偏只有它完全靠"恰好有人提交" | 加每周一 03:41 UTC，与另两条错开时刻，不抢 runner |
+| 镜像 | 构建成功不等于起得来。缺模块入口、非 root 用户读不到 `/opt/venv`、端口没人监听，全都能构建通过再在第一次 `docker run` 时失败 | 新增 [`check-parser-image.sh`](../../scripts/check-parser-image.sh)：等 HEALTHCHECK 变 healthy（预算 90s，镜像有 `--start-period=20s`），再从宿主机打一次 `/health/live`；容器提前退出就立刻报 exit code 并 dump 日志。`ci.yml` 对本地构建的镜像跑，`release.yml` 对**推送后的摘要**跑 |
+| 工作流自身 | 仓库里 23 个 shell 脚本过 shellcheck，740 行工作流 YAML 一个检查都没有——而它偏偏最容易写错、最难在本地复现（`setup-uv@v10` 就是推上去才知道不存在） | 新增 [`check-workflows.sh`](../../scripts/check-workflows.sh)，两层，见下 |
+| 覆盖率 | 全局阈值拦整体退化，拦不住"这次新增的没测"：仓库越大，一个全新未测文件对整体的拉低越小 | 新增 [`check-diff-coverage.sh`](../../scripts/check-diff-coverage.sh)，取 `git diff` 新增行 ∩ lcov 插桩行，阈值 80%，报未覆盖的具体行号 |
+
+**工作流检查为什么分两层，以及它当场抓到了什么。** 第一版只有 actionlint，本地没装就
+整段跳过——等于本地零检查，跟改之前没区别。于是补了一层只用 PyYAML 的基线检查，永远
+跑：YAML 可解析、`needs` 指向存在的 job、`${{ steps.<id>.… }}` 引用存在的 step、`uses`
+钉 40 位 SHA。这一层写完第一次跑，就抓到本批改动自己的一个错——`ci.yml` 里有个步骤名
+写成（下面这行是错的示范，`run:` 后面跟了空格）：
+
+```text
+- name: 工作流 YAML 静态检查（actionlint + run: 块的 shellcheck）
+```
+
+名字里的 `run:` 加空格被 YAML 当成映射键，整个 `ci.yml` 不可解析。GitHub 上的表现是
+Invalid workflow file，**四个 job 一个都不会跑**——而这批改动的其余部分正是为了让门禁
+更严。修法是给整个字符串加引号。这件事本身就是这一层存在的理由：本地跳过、推上去才
+报错，正是它要消除的那种反馈延迟。
+
+actionlint 那一层在 CI 用 `--strict`：自行下载钉死版本（v1.7.12）的二进制并校验 sha256，
+不执行上游的 install 脚本、也不接受浮动版本。"钉死上游"这条纪律不能只对 action 生效，
+对检查工具自己也一样。
+
+**明确不改的一项：`node` 的 `test` 与 `quality` 的 `test:coverage` 重复跑同 129 个测试。**
+两个 job 并行，墙钟成本为零；合并会把测试结果耦合到 lint 门禁上，为省约 20s 计算换来
+反馈独立性的退化，不值。
+
+**仍然未验证的最大一块：`release.yml`。** 上面三个 P0 里有两个在它身上，说明"从没跑过
+的代码就是没写对的代码"这条在这里已经应验一次。要真验证它，得推一个一次性的
+`v0.0.1-rc.1` 预发布（`release-notes.sh` 要求 CHANGELOG 里有对应的 `## [版本]` 小节，
+目前只有 `## [Unreleased]`），并且它会对外产出——GHCR 上的包和一个 GitHub Release。
+这是需要单独决定的动作，不在本轮里顺手做。
+
+
 
 ## 7. 明确不做的事（阶段 1）
 

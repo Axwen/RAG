@@ -39,8 +39,23 @@
 - **覆盖率阈值**（`vitest.config.ts`）：statements 86 / branches 81 / functions 82 /
   lines 86。取自 2026-09-01 实测（87.15 / 82.43 / 83.16 / 87.83，已排除 Prisma 生成
   产物、`apps/web`、种子脚本）。这是棘轮值而非理想值，只上调。
+- **三条新增门禁**（第四轮审计产出，见 ci-cd.md §6.4）：
+  - **`pnpm run check:workflows`**（`scripts/check-workflows.sh` + `scripts/lib/lint-workflows.py`）：
+    工作流 YAML 的静态检查，两层。基线层只用 PyYAML、永远跑——YAML 可解析、`needs` 指向
+    存在的 job、`${{ steps.<id>.… }}` 引用存在的 step、`uses` 必须钉 40 位 SHA；
+    actionlint 层本地缺则警告，CI 用 `--strict` 下载钉死版本（v1.7.12）并校验 sha256。
+    仓库里 23 个 shell 脚本一直过 shellcheck，而 740 行工作流此前零检查。
+  - **`pnpm run check:diff-coverage`**（`scripts/check-diff-coverage.sh`）：增量覆盖率，
+    取 `git diff` 新增行 ∩ `coverage/lcov.info` 插桩行，阈值 80%，失败时直接给未覆盖的
+    行号。全局阈值拦整体退化，拦不住"这次新增的没测"。
+  - **`pnpm run check:parser-image`**（`scripts/check-parser-image.sh`）：构建完真
+    `docker run` 一次——等 HEALTHCHECK 变 healthy（预算 90s），再从宿主机打
+    `/health/live`；容器提前退出立刻报 exit code 并 dump 日志与 `State`。
+    `ci.yml` 对本地镜像跑，`release.yml` 对推送后的摘要跑。
+- **`integration.yml` 每周一 03:41 UTC 定时全量**：它是全套里最 flaky 的一条（六个镜像、
+  健康检查、内核参数），此前是唯一没有周扫、完全靠"恰好有人提交"的工作流。
 
-- **T1a Manifest/Prisma Core**：领域数据模型首份迁移——租户（`Tenant`）、知识空间
+——租户（`Tenant`）、知识空间
   （`KnowledgeSpace`）、不可变文档版本（`Document`/`DocumentVersion`）、内容寻址
   Manifest（`IngestionManifest`/`RetrievalManifest`/`AnswerManifest`/`PipelineManifest`）、
   索引分区（`IndexPartition`，ADR-0028）与 `ReleaseManifest`（ADR-0036 §4.2 字段口径）。
@@ -70,6 +85,39 @@
   [报告](docs/engineering/plan-devex-review-20260901-boomerang.md)，DX 6/10 → 8/10。
 
 ### Fixed
+
+- **CI 全绿之后的第四轮主动审计（2026-09-02）：两个"还没机会红"的 P0**（完整记录见
+  [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6.4）：
+  - **`check:commits` 在十次 CI 运行里检查了 0 条提交**。日志原文
+    `✅ 提交信息检查通过（范围 origin/main..HEAD 内无非 merge 提交）`——`actions/checkout`
+    在 push 到 main 时做 `git checkout -B main refs/remotes/origin/main`，于是
+    `origin/main == HEAD`，区间恒为空，脚本按"没有可检查的提交"宣布通过。空转比红叉
+    危险：红叉会被看见。现在 CI 在 push 上显式传
+    `${{ github.event.before }}..${{ github.sha }}`（PR 上仍走默认），脚本也不再允许
+    **自动推导**出的空区间当作通过，只有显式传入的空区间才算（那是"这次推送里只有
+    merge"的真实情况）；区间端点不可解析时（`main` 被 force push，`before` 已不可达）
+    退化为检查最近一条并警告，而不是崩掉。
+  - **`release.yml` 第一次推标签就会死在 `uv: command not found`**：guard 重跑全量
+    `verify`，其第 9、10 环 `py:sync` / `py:test` 都要 uv，而 `ubuntu-24.04` runner
+    不预装（Package Management 段只有 cpan/Miniconda/Pip/Pipx/Yarn）。已补
+    `astral-sh/setup-uv`，版本与 `ci.yml` 的 python job 一致。这条到今天才发现的唯一
+    原因是**该工作流从未执行过**：0 个标签、0 次运行、145 行 YAML 没有一行跑过。
+  - **`release.yml` 手动派发会检出错的 ref**：`workflow_dispatch` 时 `github.ref` 是默认
+    分支而非要发布的标签，三个 job 的 checkout 都没指定 ref——guard 验 main、镜像从 main
+    构建、notes 从 main 的 CHANGELOG 抽，而 Release 挂在标签上。产物与标签指向的代码
+    不是一回事，比直接失败更糟。三处改为 `ref: ${{ inputs.tag || github.ref }}`。
+  - **17 处 `uses:` 全部由浮动 tag 改为 40 位 commit SHA**（尾部保留 `# vX`，Dependabot
+    认这个形式）。tag 是可变引用，而这些 action 在 CI 里拿得到 `GITHUB_TOKEN`。
+    "必须钉 SHA"同时成为 `check:workflows` 基线层的硬门禁。
+  - **周一定时扫会被同时段的 push 取消**：`security.yml` / `codeql.yml` 的 concurrency
+    group 不含事件名，两者落进同一组后 `cancel-in-progress` 取消掉定时扫——而定时扫的
+    全部意义就是"代码不动也要重扫"。group 加 `-${{ github.event_name }}`。
+  - **`ci.yml` 差点整个文件不可解析**：新加的步骤名里有裸的 `run:` 加空格，YAML 会把它
+    当成映射键，GitHub 上表现为 Invalid workflow file、四个 job 一个都不跑。这个错是新
+    加的基线检查自己抓到的（本地当场，而不是推上去之后），也正是它存在的理由。
+  - **`check-parser-image.sh` 的诊断顺序**：容器退出时 HEALTHCHECK 也会被记成 unhealthy，
+    先判健康状态就会把"进程压根没起来"报成"健康检查失败"，指向完全不同的排查方向。
+    改为先看 `.State.Running`。
 
 - **CI 首跑（2026-09-02）抓到的五个真缺陷**（两轮修完，完整记录见
   [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6）：
