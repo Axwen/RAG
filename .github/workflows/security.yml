@@ -42,15 +42,17 @@ jobs:
           # 全历史：只扫当前树等于假设"以前没提交过凭证"
           fetch-depth: 0
 
-      - name: gitleaks（HEAD 全部祖先提交）
+      - name: gitleaks（所有引用可达的提交）
         # 不用 gitleaks/gitleaks-action：它按事件名自己决定扫描范围。实测它在 push 上
         # 拼出 `--log-opts=--no-merges --first-parent <before>^..<sha>`，日志写着
         # 「2 commits scanned.」——一个叫「全历史密钥扫描」的 required check，实际只扫
         # 这次推送的两条提交；而在 pull_request 上它改走 ScanPullRequest，要读 PR 的提交
         # 列表，默认只读 token 没有 pull-requests 权限，直接
         # 「Resource not accessible by integration」，于是每个 PR 上都挂一个永远红的门禁。
-        # 直接调二进制没有这些隐式行为，三种事件下跑的是同一条命令；版本与 sha256 钉在
-        # 脚本里（见 scripts/check-secrets.sh 与 ci-cd.md §2.3）。
+        # 根因在 gitleaks 源码里：不传 --log-opts 时它跑
+        # `git log -p -U0 --full-history --all --diff-filter=tuxdb`；一旦传了 --log-opts，
+        # 这三个默认遍历参数会被整个丢掉，只剩用户给的范围。直接调二进制就没有这层隐式
+        # 行为，三种事件下跑同一条命令；版本与 sha256 钉在脚本里（见 ci-cd.md §2.3）。
         run: bash scripts/check-secrets.sh --strict
 
   deps-audit:

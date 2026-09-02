@@ -31,7 +31,7 @@
 | Lint | `pnpm run lint` | 是 | ESLint，含 `no-console`（业务代码零 `console.*`） |
 | Shell | `pnpm run check:shell` | 是 | shellcheck，阈值 `warning`。CI 用 `--strict`：未安装即失败，不许静默跳过 |
 | 工作流 YAML | `pnpm run check:workflows` | 是 | 两层：基线（YAML 可解析 / `needs` 与 `steps.<id>` 引用 / `uses` 必须钉 40 位 SHA / 跑 `check:secrets`、`check:commits`、`verify` 的 job 必须写 `fetch-depth: 0`，只用 PyYAML，永远跑）+ actionlint（表达式、上下文、`run:` 块交 shellcheck；本地缺则警告，CI 用 `--strict` 下载钉死版本并校验 sha256） |
-| 密钥 | `pnpm run check:secrets` | 是 | gitleaks 扫 HEAD 的全部祖先提交。本地缺 gitleaks 只警告，CI 用 `--strict` 下载钉死版本（v8.30.1）并校验 sha256。详见 §2.3 |
+| 密钥 | `pnpm run check:secrets` | 是 | gitleaks 扫所有引用可达的提交（它默认走 `--all`）。本地缺 gitleaks 只警告，CI 用 `--strict` 下载钉死版本（v8.30.1）并校验 sha256。详见 §2.3 |
 | Markdown 链接 | `pnpm run check:links` | 是 | 相对链接与 `#锚点` 是否存在。文档是本项目的事实源，断链等于事实源失效 |
 | 提交信息 | `pnpm run check:commits` | 是 | Conventional Commits + 主题行显示宽度 ≤72（中文按双宽算）。CI 在 push 上显式传 `${{ github.event.before }}..${{ github.sha }}`——不传就是空区间（§6.4） |
 | 类型 | `pnpm run typecheck` | 是 | 含 `prisma/seed.ts`（它曾长期落在所有 tsconfig 之外） |
@@ -75,13 +75,19 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 
 | 检查 | 阻断阈值 | 为什么这样定 |
 |---|---|---|
-| gitleaks（HEAD 全部祖先提交） | 任何命中 | `.env` 被 gitignore 与"从没被提交过"是两件事，只有扫全历史能确认。**2026-09-02 起才真的在扫全历史**——此前用的 `gitleaks/gitleaks-action` 按事件名自行收窄范围，见 §6.5 |
+| gitleaks（所有引用可达的提交） | 任何命中 | `.env` 被 gitignore 与"从没被提交过"是两件事，只有扫全历史能确认。**2026-09-02 起才真的在扫全历史**——此前用的 `gitleaks/gitleaks-action` 按事件名自行收窄范围，见 §6.5 |
 | `pnpm audit` | critical 阻断，high 只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过 |
 | dependency-review（仅 PR） | high；拒绝 AGPL / SSPL | 供应链的入口在引入那一刻，不在事后。**当前 skip**：private repo 上这个 action 同样要 Code Security，见 §3.3 |
 | CodeQL | 不阻断，进 Security 页签 | 先看全（`security-and-quality`），要当门禁再加进 required checks。**private repo 需先有 Code Security 才能开 code scanning**，否则上传 SARIF 必然失败，见 §3.3 |
 
 密钥扫描的命令收在 [`scripts/check-secrets.sh`](../../scripts/check-secrets.sh)，本地与 CI
-同一条（`pnpm run check:secrets`，CI 加 `--strict`）。它明确**不**扫工作区（不加
+同一条（`pnpm run check:secrets`，CI 加 `--strict`）。**范围由"不传 `--log-opts`"决定**：
+gitleaks 源码 `sources/git.go` 里默认跑
+`git log -p -U0 --full-history --all --diff-filter=tuxdb`，一旦传了 `--log-opts`，这三个
+默认遍历参数会被整个丢掉、只剩用户给的范围——`gitleaks-action` 正是这么把范围收窄成两条
+提交的（§6.5）。因为默认带 `--all`，实际扫的是**所有引用**可达的提交而不只是 HEAD 的祖先：
+CI 上脚本报 47 条、gitleaks 报 `49 commits scanned.`，差在 `fetch-depth: 0` 顺带取下来的
+其他远端分支——多扫不是问题，脚本的计数已改成 `git rev-list --count --all` 与它对齐。它明确**不**扫工作区（不加
 `--no-git`）：那样会扫到被 gitignore 的真 `.env`，而本机有一份带真口令的 `.env` 是正常
 状态、不是缺陷，让 `verify` 因此变红只会训练人忽略这条门禁。git 忽略的文件进不了仓库，
 本就不在这条门禁的射程内；"提交之前拦一次"属于 pre-commit 钩子的职责。
@@ -123,7 +129,7 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
    - Secret scanning 与 push protection：公开仓库免费；private repo 属于付费的
      Secret Protection，开不了就靠 `security.yml` 里的 gitleaks 兜底——注意这句话在
      2026-09-02 之前是**不成立**的：当时那个 job 只扫本次推送的提交（§6.5）。现在它扫
-     HEAD 的全部祖先提交，兜底才真的成立
+     所有引用可达的提交，兜底才真的成立
    - **`analyze`（CodeQL）与 `dependency-review` 当前都是 skip。** 两者卡在同一件事上：
      private repo 上它们都要求 Code Security / Advanced Security。没有时的实测报错分别是
 
@@ -407,7 +413,10 @@ INF 2 commits scanned.
 
 修法是把 action 换成直接调二进制（[`scripts/check-secrets.sh`](../../scripts/check-secrets.sh)）：
 
-- **不传 `--log-opts`**，遍历 HEAD 的全部祖先提交，三种触发事件下跑的是同一条命令；
+- **不传 `--log-opts`**——这是关键。gitleaks 默认跑
+  `git log -p -U0 --full-history --all --diff-filter=tuxdb`，一旦传了 `--log-opts`，这三个
+  默认遍历参数会被**整个丢掉**、只剩用户给的范围（`sources/git.go`）。action 走的就是后者。
+  不传，于是遍历所有引用可达的提交，三种触发事件下跑的是同一条命令；
 - 用 `gitleaks git .` 而不是 `gitleaks detect`——后者自 v8.19.0 起废弃（仍能跑，但已从
   `--help` 隐掉），支持的三种模式是 `git` / `dir` / `stdin`；
 - 版本（v8.30.1）与三个平台的 sha256 钉在脚本顶部，`--strict` 下才下载，与

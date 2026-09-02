@@ -56,7 +56,7 @@
     `/health/live`；容器提前退出立刻报 exit code 并 dump 日志与 `State`。
     `ci.yml` 对本地镜像跑，`release.yml` 对推送后的摘要跑。
 - **`pnpm run check:secrets`**（`scripts/check-secrets.sh`，第五轮审计产出，见 ci-cd.md
-  §6.5）：gitleaks 扫 HEAD 的全部祖先提交，本地与 CI 同一条命令。取代
+  §6.5）：gitleaks 扫所有引用可达的提交（它默认走 `--all`），本地与 CI 同一条命令。取代
   `gitleaks/gitleaks-action`——后者按事件名自行收窄范围。用 `gitleaks git`（`detect` 自
   v8.19.0 起废弃），版本 v8.30.1 与三个平台 sha256 钉在脚本顶部，本地缺则警告、
   CI 用 `--strict` 下载并校验。明确**不**扫工作区：那样会命中被 gitignore 的真 `.env`，
@@ -106,8 +106,10 @@
     列表，而工作流只给 `contents: read`，直接
     `RequestError [HttpError]: Resource not accessible by integration`。三个 Dependabot PR
     上的红叉即此——继 CodeQL、dependency-review 之后第三个"永远红"的门禁。
-  改为 `scripts/check-secrets.sh` 直接调二进制：不传 `--log-opts`，三种事件下跑同一条命令，
-  遍历 HEAD 的全部祖先提交；浅克隆显式报错（`git rev-parse --is-shallow-repository`）；
+  改为 `scripts/check-secrets.sh` 直接调二进制：**不传 `--log-opts`**——gitleaks 默认跑
+  `git log -p -U0 --full-history --all --diff-filter=tuxdb`，传了 `--log-opts` 这三个默认
+  遍历参数就被整个丢掉（`sources/git.go`），action 走的正是后者。不传于是遍历所有引用可达
+  的提交，三种事件下同一条命令；浅克隆显式报错（`git rev-parse --is-shallow-repository`）；
   `--exit-code 2` 把"检出凭证"与"工具自身失败"分开；`--redact` 保证命中值不进公开日志。
   同时修掉 `security.yml` 里那个"全历史 + 工作区"的步骤名——工作区扫描是刻意不做的。
   - **附带修掉第三个同类缺陷**：`.gitignore` 里刻意宽的 `*secret*` 把新脚本

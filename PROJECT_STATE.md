@@ -133,7 +133,7 @@
   `--strict`、工作流 YAML 静态检查、Markdown 链接、提交信息规范、覆盖率棘轮 86/81/82/86
   与增量覆盖率 80%；compose 含 Parser 镜像构建并真起一次）、`integration.yml`
   （真起六容器 → `bootstrap` 跑两遍验幂等 → 编译产物起进程 → `smoke:api`）、
-  `security.yml`（gitleaks 扫 HEAD 全部祖先提交 + `pnpm audit` critical 阻断 + PR 依赖/
+  `security.yml`（gitleaks 扫所有引用可达的提交 + `pnpm audit` critical 阻断 + PR 依赖/
   许可证审查；**"全历史"这句话 2026-09-02 之前不成立**，见下）、
   `codeql.yml`（TS+Python，暂不设 required）、`release.yml`（`v*` 标签 → 重跑 verify +
   标签↔CHANGELOG 对齐 → Parser 镜像进 GHCR 带 provenance/SBOM → GitHub Release）。
