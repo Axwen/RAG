@@ -101,13 +101,21 @@ if [[ "$(git rev-parse --is-shallow-repository)" == 'true' ]]; then
   exit 1
 fi
 
-commits="$(git rev-list --count HEAD)"
-echo "▶ gitleaks v${GITLEAKS_VERSION}：HEAD 全部祖先提交（${commits} 条）"
+# 与 gitleaks 的遍历范围对齐：它不传 --log-opts 时用的是 `--all`，即**所有引用**可达的
+# 提交，不只是 HEAD 的祖先。所以这里也用 --all 计数，免得打印的数字比它实际扫的还小
+# （CI 上就出现过：脚本报 47，gitleaks 报 49——差在 checkout 顺带取下来的其他远端分支）。
+commits="$(git rev-list --count --all)"
+echo "▶ gitleaks v${GITLEAKS_VERSION}：所有引用可达的提交（${commits} 条）"
 
 # 用 `git` 子命令而不是 `detect`：后者自 v8.19.0 起已废弃（仍能跑，但从 --help 里隐掉了），
 # 支持的三种模式是 git / dir / stdin。路径是位置参数，不是 --source。
-# 不传 --log-opts，所以遍历 HEAD 的全部祖先提交，与触发事件无关——这才是这个 job 名字
-# 承诺的东西。（CI 侧的前提是 checkout 带 fetch-depth: 0，否则历史根本不在本地。）
+#
+# **不传 --log-opts 是这条门禁的全部关键。** gitleaks 源码 sources/git.go 里两条分支：
+#   默认      git log -p -U0 --full-history --all --diff-filter=tuxdb
+#   给了 --log-opts   git log -p -U0 <用户参数>   ← 三个默认遍历参数被整个丢掉
+# gitleaks-action 就是走第二条，塞进 `--no-merges --first-parent <before>^..<sha>`，
+# 于是 --all 消失、范围收窄成"这次推送的那几条"。三种触发事件下这里跑的都是同一条命令。
+# （CI 侧的前提是 checkout 带 fetch-depth: 0，否则历史根本不在本地。）
 # --redact 是 uint，裸给等于 100：命中时只报规则名与位置，不把凭证写进公开日志。
 # --exit-code 2 把"有命中"和"工具自身出错"分开：默认是 1，那样两者不可区分。
 set +e
@@ -116,7 +124,7 @@ code=$?
 set -e
 
 case "${code}" in
-  0) echo "✅ 全历史（${commits} 条提交）未检出凭证" ;;
+  0) echo "✅ 全历史（${commits} 条提交，--all）未检出凭证" ;;
   2)
     echo "❌ 全历史里检出凭证。凭证一旦进过历史就必须当作已泄漏：先在源端吊销/轮换，" >&2
     echo "   再决定是否改写历史。确认是刻意无效的占位符或测试夹具，才加进 .gitleaks.toml。" >&2
