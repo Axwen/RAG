@@ -31,6 +31,7 @@
 | Lint | `pnpm run lint` | 是 | ESLint，含 `no-console`（业务代码零 `console.*`） |
 | Shell | `pnpm run check:shell` | 是 | shellcheck，阈值 `warning`。CI 用 `--strict`：未安装即失败，不许静默跳过 |
 | 工作流 YAML | `pnpm run check:workflows` | 是 | 两层：基线（YAML 可解析 / `needs` 与 `steps.<id>` 引用 / `uses` 必须钉 40 位 SHA，只用 PyYAML，永远跑）+ actionlint（表达式、上下文、`run:` 块交 shellcheck；本地缺则警告，CI 用 `--strict` 下载钉死版本并校验 sha256） |
+| 密钥 | `pnpm run check:secrets` | 是 | gitleaks 扫 HEAD 的全部祖先提交。本地缺 gitleaks 只警告，CI 用 `--strict` 下载钉死版本（v8.30.1）并校验 sha256。详见 §2.3 |
 | Markdown 链接 | `pnpm run check:links` | 是 | 相对链接与 `#锚点` 是否存在。文档是本项目的事实源，断链等于事实源失效 |
 | 提交信息 | `pnpm run check:commits` | 是 | Conventional Commits + 主题行显示宽度 ≤72（中文按双宽算）。CI 在 push 上显式传 `${{ github.event.before }}..${{ github.sha }}`——不传就是空区间（§6.4） |
 | 类型 | `pnpm run typecheck` | 是 | 含 `prisma/seed.ts`（它曾长期落在所有 tsconfig 之外） |
@@ -74,10 +75,16 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 
 | 检查 | 阻断阈值 | 为什么这样定 |
 |---|---|---|
-| gitleaks（全历史） | 任何命中 | `.env` 被 gitignore 与"从没被提交过"是两件事，只有扫全历史能确认 |
+| gitleaks（HEAD 全部祖先提交） | 任何命中 | `.env` 被 gitignore 与"从没被提交过"是两件事，只有扫全历史能确认。**2026-09-02 起才真的在扫全历史**——此前用的 `gitleaks/gitleaks-action` 按事件名自行收窄范围，见 §6.5 |
 | `pnpm audit` | critical 阻断，high 只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过 |
 | dependency-review（仅 PR） | high；拒绝 AGPL / SSPL | 供应链的入口在引入那一刻，不在事后。**当前 skip**：private repo 上这个 action 同样要 Code Security，见 §3.3 |
 | CodeQL | 不阻断，进 Security 页签 | 先看全（`security-and-quality`），要当门禁再加进 required checks。**private repo 需先有 Code Security 才能开 code scanning**，否则上传 SARIF 必然失败，见 §3.3 |
+
+密钥扫描的命令收在 [`scripts/check-secrets.sh`](../../scripts/check-secrets.sh)，本地与 CI
+同一条（`pnpm run check:secrets`，CI 加 `--strict`）。它明确**不**扫工作区（不加
+`--no-git`）：那样会扫到被 gitignore 的真 `.env`，而本机有一份带真口令的 `.env` 是正常
+状态、不是缺陷，让 `verify` 因此变红只会训练人忽略这条门禁。git 忽略的文件进不了仓库，
+本就不在这条门禁的射程内；"提交之前拦一次"属于 pre-commit 钩子的职责。
 
 放行清单在 [`.gitleaks.toml`](../../.gitleaks.toml)，判据只有一条：值本身是刻意无效的
 占位符或测试夹具，泄漏它没有后果。
@@ -114,7 +121,9 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 3. **Code scanning 与 dependency review**（Settings → Code security）
    - 打开 Dependabot alerts 与 Dependabot security updates
    - Secret scanning 与 push protection：公开仓库免费；private repo 属于付费的
-     Secret Protection，开不了就靠 `security.yml` 里的 gitleaks 兜底（它已扫全历史）
+     Secret Protection，开不了就靠 `security.yml` 里的 gitleaks 兜底——注意这句话在
+     2026-09-02 之前是**不成立**的：当时那个 job 只扫本次推送的提交（§6.5）。现在它扫
+     HEAD 的全部祖先提交，兜底才真的成立
    - **`analyze`（CodeQL）与 `dependency-review` 当前都是 skip。** 两者卡在同一件事上：
      private repo 上它们都要求 Code Security / Advanced Security。没有时的实测报错分别是
 
@@ -151,11 +160,12 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 ## 4. 本地怎么跑同一批检查
 
 ```bash
-pnpm run verify              # format + lint + shell + 工作流 + links + typecheck + test + build + prisma + python + compose
+pnpm run verify              # format + lint + shell + 工作流 + 密钥 + links + typecheck + test + build + prisma + python + compose
 pnpm run test:coverage       # 全局覆盖率与阈值
 pnpm run check:diff-coverage # 增量覆盖率（要先跑过 test:coverage，它读 coverage/lcov.info）
 pnpm run check:commits       # 提交信息（默认 origin/main..HEAD，可显式传区间）
 pnpm run check:workflows     # 工作流基线；加 --strict 才下载 actionlint
+pnpm run check:secrets       # 密钥扫描；加 --strict 才下载 gitleaks
 pnpm run infra:up && pnpm run bootstrap && pnpm run build
 pnpm run smoke:api           # HTTP 契约 + 日志结构 + 日志泄漏（需中间件已起）
 docker build -t rag-parser:ci services/parser && pnpm run check:parser-image rag-parser:ci
@@ -176,9 +186,17 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
 
 ## 5. 已知的运维注意点
 
-- **gitleaks-action 的许可证**：个人账号仓库免费。一旦仓库迁到 organization 下，
-  该 action 会要求 `GITLEAKS_LICENSE`。届时改为直接下载 gitleaks 二进制运行
-  （`gitleaks detect --config .gitleaks.toml --redact`），不引入付费依赖。
+- **gitleaks 已不再依赖 `gitleaks-action`**（2026-09-02，§6.5）。原因不是许可证——它的日志
+  明确写 `[Axwen] is an individual user. No license key is required.`，个人账号确实免费——
+  而是那个 action 按事件名自行决定扫描范围。现在走
+  [`scripts/check-secrets.sh`](../../scripts/check-secrets.sh)，版本（v8.30.1）与三个平台的
+  sha256 写死在脚本顶部，升级时同改；顺带也就不会在迁到 organization 时被
+  `GITLEAKS_LICENSE` 卡住。子命令用 `git` 而不是 `detect`：后者自 v8.19.0 起已废弃
+  （仍能跑，但从 `--help` 里隐掉了）。
+- **actionlint 的版本与校验和写死在脚本里**（`scripts/check-workflows.sh` 顶部），
+  gitleaks 同理（`scripts/check-secrets.sh`）。升级时同改版本号与三个平台的 sha256；
+  校验和不从同一个来源运行时拉取，这样上游资产被替换会当场失败而不是静默通过。
+  这条纪律对检查工具自己和对 action 一视同仁。
 - **Dependabot 的 uv 生态已验证可用**（2026-09-02，PR #2 同时改了 `pyproject.toml`
   与 `uv.lock`），无需回退到 `pip`。
 - **基础镜像的 Python 小版本必须人工升**：`pyproject.toml` 与 `uv.lock` 都写死
@@ -195,11 +213,8 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
   允许"自动区间为空"当作通过。顺带确认过 Dependabot 不会被 72 列宽度规则卡住：它的
   **PR 标题**很长，但**提交主题**是缩写过的（如
   `chore(deps): bump python in /services/parser`，44 列）。
-- **actionlint 的版本与校验和写死在脚本里**（`scripts/check-workflows.sh` 顶部）。升级时
-  同改版本号与三个平台的 sha256；校验和不从同一个来源运行时拉取，这样上游资产被替换
-  会当场失败而不是静默通过。这条纪律对检查工具自己和对 action 一视同仁。
 
-## 6. 真跑记录（2026-09-02）：三轮修到全绿，第四轮主动审计
+## 6. 真跑记录（2026-09-02）：三轮修到全绿，两轮主动审计
 
 ### 6.1 第一轮：五条工作流全红
 
@@ -215,7 +230,8 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
 | `smoke` | `bootstrap` 死在 seed：`Cannot find module '.../@rag/contracts/dist/index.js'` | **README 黄金路径在全新克隆上是坏的**。`seed.ts` import 工作区包的编译产物，而 `pnpm install` 的 postinstall 只跑 `prisma generate`、不构建；本地一直不复现只因为 `dist` 是历次 build 的残留 | `init-database.sh` 在 seed 前 `pnpm --filter "...@rag/database" run build`。让 bootstrap 自给自足，而不是往 README 里加一步——它对外的承诺就是"一条命令、可重复执行" |
 | `analyze`（×2） | `Code scanning is not enabled for this repository` | private repo 的 code scanning 需要付费的 Code Security；个人账号 free plan 开不了 | job 加 `if: vars.ADVANCED_SECURITY_ENABLED == 'true'`（当时叫 `CODE_SCANNING_ENABLED`，§6.3 改名），skip 是灰色而不是红色（见 §3.3） |
 
-`gitleaks（全历史密钥扫描）`、`node`、`compose` 三个 job 首跑即绿。
+`gitleaks（全历史密钥扫描）`、`node`、`compose` 三个 job 首跑即绿。其中 gitleaks 那个绿
+在第五轮被证明是**廉价的绿**：它当时只扫了本次推送的提交，见 §6.5。
 
 ### 6.2 第二轮：quality 仍红——单测依赖未构建的工作区包
 
@@ -347,6 +363,92 @@ actionlint 那一层在 CI 用 `--strict`：自行下载钉死版本（v1.7.12�
 `v0.0.1-rc.1` 预发布（`release-notes.sh` 要求 CHANGELOG 里有对应的 `## [版本]` 小节，
 目前只有 `## [Unreleased]`），并且它会对外产出——GHCR 上的包和一个 GitHub Release。
 这是需要单独决定的动作，不在本轮里顺手做。
+
+### 6.5 第五轮（2026-09-02）：`gitleaks` 这个 required check 一直只扫两条提交
+
+第四轮修完推上去，四条工作流全绿。接着去清理 GitHub 上那三个 Dependabot PR，顺手翻了
+一眼它们为什么全红——**在这里撞到了本轮最严重的一个缺陷，而它不在任何计划里。**
+
+`gitleaks（全历史密钥扫描）` 这个 job 在每个 PR 上都是红的，日志不是命中凭证，而是
+
+```text
+RequestError [HttpError]: Resource not accessible by integration
+    at async Object.ScanPullRequest (.../gitleaks-action/v2/dist/index.js:129568:17)
+```
+
+`gitleaks/gitleaks-action` 在 `pull_request` 事件下改走 `ScanPullRequest`，要通过 API 读
+PR 的提交列表；而工作流按最小权限只声明了 `contents: read`，默认 token 没有
+`pull-requests` 权限，于是这一步直接抛异常。**它是 required check**——也就是说每个 PR
+上都挂着一个不可能变绿的必需门禁，这已经是这套流水线里第三个"永远红"（前两个是 CodeQL
+与 dependency-review，§3.3）。
+
+顺着去看它在 main 上为什么反而是绿的，问题比 PR 那个更严重。同一天最后一次成功运行的
+日志里，这个 action 自己拼出来的命令是：
+
+```text
+gitleaks cmd: gitleaks detect --redact -v --exit-code=2 --report-format=sarif
+  --report-path=results.sarif --log-level=debug
+  --log-opts=--no-merges --first-parent d16d56c^..bf2057f
+INF 2 commits scanned.
+```
+
+**`2 commits scanned.`** 一个名字叫「全历史密钥扫描」的 job，实际只扫了本次推送里的
+两条提交。checkout 那步的 `fetch-depth: 0` 确实把整个历史拉了下来（注释还写着"只扫当前
+树等于假设'以前没提交过凭证'"），范围却被 action 自己的 `--log-opts` 收窄回去了。
+也就是说：**从建立这条流水线到今天，仓库的全历史一次都没有被扫过**——而这个 job 存在的
+全部理由，§2.3 里写得很清楚：「`.env` 被 gitignore」与「从没被提交过」是两件事，只有扫
+全历史能确认。§3.3 里那句"private repo 开不了 Secret Protection，就靠 gitleaks 兜底
+（它已扫全历史）"在当时是假的。
+
+这和 §6.4 的 P0-1（`check:commits` 空转）是同一类缺陷，而且更隐蔽：那条至少在日志里
+写明了"范围内无非 merge 提交"，这条在日志里写的是 `no leaks found`——一句完全正常的话。
+**门禁的名字和它的实际行为之间没有任何东西在做校验。** 这一类只能靠读日志抓，抓不到的
+唯一代价是"以为扫过了"。
+
+修法是把 action 换成直接调二进制（[`scripts/check-secrets.sh`](../../scripts/check-secrets.sh)）：
+
+- **不传 `--log-opts`**，遍历 HEAD 的全部祖先提交，三种触发事件下跑的是同一条命令；
+- 用 `gitleaks git .` 而不是 `gitleaks detect`——后者自 v8.19.0 起废弃（仍能跑，但已从
+  `--help` 隐掉），支持的三种模式是 `git` / `dir` / `stdin`；
+- 版本（v8.30.1）与三个平台的 sha256 钉在脚本顶部，`--strict` 下才下载，与
+  `check-workflows.sh` 对 actionlint 的处理完全一致；
+- 不需要任何 token，所以 PR 上那个权限问题从根上消失，`permissions: contents: read`
+  不用放宽；
+- 顺带脱离了这个 action 的许可证策略。它的日志明确写
+  `[Axwen] is an individual user. No license key is required.`——个人账号免费是真的，
+  但迁到 organization 下就要 `GITLEAKS_LICENSE`，§5 里原先记的"届时再改"现在已经不需要了。
+
+**明确不做工作区扫描**（不加 `--no-git`）。那样会扫到被 gitignore 的真 `.env`，而本机
+有一份带真口令的 `.env` 是正常状态、不是缺陷；让 `verify` 因此变红，就是又造一个"永远红
+所以被忽略"的门禁。git 忽略的文件进不了仓库，本就不在这条门禁的射程内。
+
+**换之前先用 git 自己确认了一遍历史是干净的**，免得把一个从没扫过的历史直接交给 CI 去
+判：46 条提交里出现过的 `.env` 类文件只有 `.env.example`；七个口令/密钥变量名的每一次
+出现都在 `.env.example`、`compose.yml`、探针脚本或文档里（是变量名，不是值）；
+`sk-or-v1-` / `sk-ant-` / `ghp_` / `github_pat_` / `AKIA` / `BEGIN * PRIVATE KEY` /
+`xoxb-` / `AIza` 八类前缀在全历史里零命中。这只是抽样，不能替代 gitleaks 的 170 多条
+规则——所以这一轮走 PR 而不是直推 main：让第一次真正的全历史扫描在 PR 上出结果，
+main 的绿不受影响，同时正好验证了 PR 这条路径（那恰恰是原先必红的地方）。
+
+**修的过程中又踩到第三个同类缺陷：新脚本被 `.gitignore` 静默吞了。** `.gitignore` 的机密
+段里有一条刻意宽的 `*secret*`（连同 `credentials*`、`*.key`、`*.pem`），它把
+`scripts/check-secrets.sh` 一起忽略掉了。两个后果，都不会在本地报错：
+
+- `git add` 静默无效，推上去 CI 红在 `bash: scripts/check-secrets.sh: No such file or directory`；
+- 更隐蔽的是 `check-shell.sh` 用 `git ls-files -- '*.sh'` 枚举脚本——**被忽略的文件它看不见**。
+  加例外之前 `git ls-files -- '*.sh' | wc -l` 是 26，加之后是 27。也就是说本轮之前所有
+  "shellcheck 通过（26 个脚本）"的绿，都不包含这个新脚本；shellcheck 从没读过它。
+
+已在 `*secret*` 之后加 `!scripts/check-secrets.sh`（gitignore 里后写的规则胜出）并注明理由。
+这条与前两条是同一个形状：**枚举式的门禁只对它枚举到的东西负责，而"枚举到了什么"从不打印
+在日志里。** 27 和 26 的差别，日志里两次都只写"通过"。
+
+一条要带走的经验，和 §6.3 那三条并列：
+
+- **绿也要看是怎么绿的。** 一个门禁报绿有两种可能——它检查了并且通过，或者它其实没检查。
+  这两者在日志里长得一模一样，区别只在那些没人读的细节行里（`2 commits scanned.`、
+  `范围 origin/main..HEAD 内无非 merge 提交`）。两轮审计里最严重的三个问题全属于这一类，
+  没有一个是靠"看红叉"发现的。
 
 
 

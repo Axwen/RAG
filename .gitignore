@@ -26,6 +26,10 @@
 *.key
 *.pem
 *secret*
+# 例外:密钥扫描门禁**自己**(scripts/check-secrets.sh)不是凭证文件。
+# `*secret*` 是刻意宽的模式,它连门禁脚本一起忽略了——第一次 git add 时被静默漏掉,
+# 而 CI 会红在 `No such file or directory`。gitignore 里后写的规则胜出,所以放在这行之后。
+!scripts/check-secrets.sh
 credentials*
 id_rsa
 id_rsa.pub

@@ -14,7 +14,8 @@
   - `integration.yml`（新）：真起六个 core 容器 → `bootstrap` **跑两遍**验证幂等 →
     `build` → `smoke:api`；失败时按 `::group::` 打包 `.smoke/api.log`、`compose ps`
     与容器日志尾部，`infra:down` 在 `always()`。
-  - `security.yml`（新）：gitleaks 全历史密钥扫描（配置 `.gitleaks.toml`）、
+  - `security.yml`（新）：gitleaks 密钥扫描（配置 `.gitleaks.toml`；**2026-09-02 起**
+    才真的扫全历史，见下方 Fixed）、
     `pnpm audit`（critical 阻断 / high 只报告，避免无修复版本的传递告警堵死所有 PR）、
     PR 依赖变更审查（high 阻断，拒绝 AGPL/SSPL）。
   - `codeql.yml`（新）：TS + Python 双语言 `security-and-quality`，每周定时；
@@ -52,6 +53,12 @@
     `docker run` 一次——等 HEALTHCHECK 变 healthy（预算 90s），再从宿主机打
     `/health/live`；容器提前退出立刻报 exit code 并 dump 日志与 `State`。
     `ci.yml` 对本地镜像跑，`release.yml` 对推送后的摘要跑。
+- **`pnpm run check:secrets`**（`scripts/check-secrets.sh`，第五轮审计产出，见 ci-cd.md
+  §6.5）：gitleaks 扫 HEAD 的全部祖先提交，本地与 CI 同一条命令。取代
+  `gitleaks/gitleaks-action`——后者按事件名自行收窄范围。用 `gitleaks git`（`detect` 自
+  v8.19.0 起废弃），版本 v8.30.1 与三个平台 sha256 钉在脚本顶部，本地缺则警告、
+  CI 用 `--strict` 下载并校验。明确**不**扫工作区：那样会命中被 gitignore 的真 `.env`，
+  而本机有一份带真口令的 `.env` 是正常状态。
 - **`integration.yml` 每周一 03:41 UTC 定时全量**：它是全套里最 flaky 的一条（六个镜像、
   健康检查、内核参数），此前是唯一没有周扫、完全靠"恰好有人提交"的工作流。
 
@@ -85,6 +92,27 @@
   [报告](docs/engineering/plan-devex-review-20260901-boomerang.md)，DX 6/10 → 8/10。
 
 ### Fixed
+
+- **第五轮审计（2026-09-02）：`gitleaks（全历史密钥扫描）` 从建立起就只扫两条提交**
+  （完整记录见 [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6.5）。这条 required
+  check 有两个独立缺陷，起因都是 `gitleaks/gitleaks-action` **按事件名自行决定扫描范围**：
+  - **push 上名不副实**：它拼出 `--log-opts=--no-merges --first-parent <before>^..<sha>`，
+    日志原文 `INF 2 commits scanned.`——`checkout` 的 `fetch-depth: 0` 把历史拉全了，范围
+    又被收窄回去。于是 ci-cd.md §3.3 里"Secret Protection 开不了就靠 gitleaks 兜底"这句话
+    在此之前**并不成立**：全历史一次都没被扫过，`.env` 有没有进过历史无从确认。
+  - **PR 上永远红**：同一个 action 在 `pull_request` 改走 `ScanPullRequest`，要读 PR 的提交
+    列表，而工作流只给 `contents: read`，直接
+    `RequestError [HttpError]: Resource not accessible by integration`。三个 Dependabot PR
+    上的红叉即此——继 CodeQL、dependency-review 之后第三个"永远红"的门禁。
+  改为 `scripts/check-secrets.sh` 直接调二进制：不传 `--log-opts`，三种事件下跑同一条命令，
+  遍历 HEAD 的全部祖先提交；浅克隆显式报错（`git rev-parse --is-shallow-repository`）；
+  `--exit-code 2` 把"检出凭证"与"工具自身失败"分开；`--redact` 保证命中值不进公开日志。
+  同时修掉 `security.yml` 里那个"全历史 + 工作区"的步骤名——工作区扫描是刻意不做的。
+  - **附带修掉第三个同类缺陷**：`.gitignore` 里刻意宽的 `*secret*` 把新脚本
+    `scripts/check-secrets.sh` 一起忽略了。除了 CI 会红在 `No such file or directory`，
+    更隐蔽的是 `check-shell.sh` 用 `git ls-files -- '*.sh'` 枚举脚本，**被忽略的文件它
+    看不见**——加例外前是 26 个，加后 27 个，此前所有"shellcheck 通过"的绿都不含这个脚本。
+    已加 `!scripts/check-secrets.sh` 例外。
 
 - **CI 全绿之后的第四轮主动审计（2026-09-02）：两个"还没机会红"的 P0**（完整记录见
   [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6.4）：
