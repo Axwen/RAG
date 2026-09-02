@@ -2,7 +2,7 @@
 #
 # 探针阶段的 Dockerfile 仍保留为可丢弃证据，不充当此镜像。
 # 依赖用 uv 冻结安装；DeepDOC 与其原生依赖在 T4 加入，届时再引入系统级构建依赖。
-FROM python:3.12.3-slim-bookworm AS base
+FROM python:3.14.7-slim-bookworm AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
