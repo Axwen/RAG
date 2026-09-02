@@ -130,9 +130,13 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
 - **gitleaks-action 的许可证**：个人账号仓库免费。一旦仓库迁到 organization 下，
   该 action 会要求 `GITLEAKS_LICENSE`。届时改为直接下载 gitleaks 二进制运行
   （`gitleaks detect --config .gitleaks.toml --redact`），不引入付费依赖。
-- **Dependabot 的 uv 生态**：若 Dependabot 报 unknown ecosystem，把
-  [`.github/dependabot.yml`](../../.github/dependabot.yml) 里 `package-ecosystem: uv`
-  改成 `pip`（只跟 `pyproject.toml`，不跟 `uv.lock`）。
+- **Dependabot 的 uv 生态已验证可用**（2026-09-02，PR #2 同时改了 `pyproject.toml`
+  与 `uv.lock`），无需回退到 `pip`。
+- **基础镜像的 Python 小版本必须人工升**：`pyproject.toml` 与 `uv.lock` 都写死
+  `requires-python = "==3.12.*"`，镜像跳到 3.13/3.14 会让容器内 `uv sync --frozen`
+  直接拒绝解析；PROBE-002 的 DeepDOC 依赖链也是按 3.12 实测的。`dependabot.yml` 已
+  忽略 python 镜像的 major/minor（首个此类 PR 正是 3.12.3 → 3.14.7），补丁位仍自动跟。
+  真要升：改 `requires-python` → 重跑 `uv lock` → 复测 PROBE-002。
 - **`integration.yml` 的资源**：runner 16 GiB，工作流把 `OPENSEARCH_JAVA_OPTS` 降到
   `-Xms1g -Xmx1g`。这条冒烟不做规模检索，够用；真实性能基线永远在本机 23.47 GiB
   profile 上测，不看 CI 数字。

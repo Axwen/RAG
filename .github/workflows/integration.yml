@@ -51,6 +51,12 @@ jobs:
       - name: 冻结安装
         run: pnpm install --frozen-lockfile
 
+      # runner 默认 vm.max_map_count=65530，低于 OpenSearch 要求的 262144。
+      # single-node 模式下它大概会跳过这项 bootstrap check，但"大概"不值得用一次
+      # 30 分钟的 job 去赌；本机 WSL2 是 1048576，所以本地跑通并不能证明 runner 跑得通。
+      - name: 抬高 vm.max_map_count（OpenSearch 前置）
+        run: sudo sysctl -w vm.max_map_count=262144
+
       - name: 起 core 中间件（含 preflight，--wait 等健康检查）
         run: pnpm run infra:up
 

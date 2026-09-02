@@ -79,3 +79,15 @@ updates:
       prefix: chore
       include: scope
     labels: [dependencies, docker]
+    ignore:
+      # Python 小版本不能由自动 PR 决定：pyproject.toml 与 uv.lock 都写死
+      # requires-python = "==3.12.*"，基础镜像跳到 3.13/3.14 会让容器内的
+      # `uv sync --frozen` 直接拒绝解析（首个此类 PR 就是 3.12.3 → 3.14.7）。
+      # 更要紧的是 T4 要接入的 DeepDOC 依赖链（infinity-sdk 0.7.3、xgboost<3.1、
+      # onnxruntime）在 PROBE-002 里是按 3.12 实测的，换小版本等于让探针结论失效。
+      # 升级路径是人工的：先改 requires-python + 重跑 uv lock + 复测 PROBE-002。
+      # 补丁位（3.12.x）仍然自动跟——那是安全修复，正是要它跟的。
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
