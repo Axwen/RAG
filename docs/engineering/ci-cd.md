@@ -85,9 +85,23 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 gitleaks 源码 `sources/git.go` 里默认跑
 `git log -p -U0 --full-history --all --diff-filter=tuxdb`，一旦传了 `--log-opts`，这三个
 默认遍历参数会被整个丢掉、只剩用户给的范围——`gitleaks-action` 正是这么把范围收窄成两条
-提交的（§6.5）。因为默认带 `--all`，实际扫的是**所有引用**可达的提交而不只是 HEAD 的祖先：
-CI 上脚本报 47 条、gitleaks 报 `49 commits scanned.`，差在 `fetch-depth: 0` 顺带取下来的
-其他远端分支——多扫不是问题，脚本的计数已改成 `git rev-list --count --all` 与它对齐。它明确**不**扫工作区（不加
+提交的（§6.5）。因为默认带 `--all`（还含 HEAD），实际扫的是**所有引用**可达的提交，不只是
+HEAD 的祖先。
+
+脚本自己打印的那个条数与 gitleaks 的 `N commits scanned.` 对齐过两轮，方向相反，两次都值得
+记下来——因为"日志里的数字不等于实际扫的范围"正是这条门禁最初的病根：
+
+| 脚本 | gitleaks | 差在哪 |
+| --- | --- | --- |
+| 47 | 49 | 脚本漏了 `--all`，少算 `fetch-depth: 0` 顺带取下来的其他远端分支 |
+| 54 | 53 | 补上 `--all` 后反而多算 1——`pull_request` 事件下 checkout 检出的是 GitHub 现造的 `refs/pull/<n>/merge`（PR #6 是 `676b2e7`，两个父提交），而 `git log -p` 对合并提交不输出补丁，gitleaks 不计它 |
+
+现在脚本用 gitleaks 那组默认参数自己数（`--name-only` 代替 `-p`，便宜且同样触发 diff），
+两边一致。**顺带一个上游限制要写明：合并提交没有补丁，所以只在冲突解决里引入的凭证
+（两个父提交都没有的那一行）gitleaks 扫不到**，加 `--log-opts -m` 又会把 `--all` 连带丢掉。
+main 走 rebase 保持线性、没有人工解决的合并提交，所以实际风险很小，但这是这条门禁的已知盲点。
+
+它明确**不**扫工作区（不加
 `--no-git`）：那样会扫到被 gitignore 的真 `.env`，而本机有一份带真口令的 `.env` 是正常
 状态、不是缺陷，让 `verify` 因此变红只会训练人忽略这条门禁。git 忽略的文件进不了仓库，
 本就不在这条门禁的射程内；"提交之前拦一次"属于 pre-commit 钩子的职责。
