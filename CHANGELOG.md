@@ -60,7 +60,12 @@
   `gitleaks/gitleaks-action`——后者按事件名自行收窄范围。用 `gitleaks git`（`detect` 自
   v8.19.0 起废弃），版本 v8.30.1 与三个平台 sha256 钉在脚本顶部，本地缺则警告、
   CI 用 `--strict` 下载并校验。明确**不**扫工作区：那样会命中被 gitignore 的真 `.env`，
-  而本机有一份带真口令的 `.env` 是正常状态。
+  而本机有一份带真口令的 `.env` 是正常状态。脚本打印的条数用 gitleaks 自己那组默认参数数
+  （`--name-only` 代替 `-p`），与它的 `N commits scanned.` 严格一致——中间打错过两次，
+  先少算（漏 `--all`：47 vs 49）后多算（`pull_request` 的 `refs/pull/<n>/merge` 是合并提交，
+  `git log -p` 不给补丁所以 gitleaks 不计：54 vs 53）。已知盲点也一并记在 ci-cd.md §2.3：
+  **只在冲突解决里引入的凭证扫不到**（合并提交无补丁，而加 `--log-opts -m` 会把 `--all`
+  连带丢掉）；main 走 rebase 保持线性，实际风险很小。
 - **`integration.yml` 每周一 03:41 UTC 定时全量**：它是全套里最 flaky 的一条（六个镜像、
   健康检查、内核参数），此前是唯一没有周扫、完全靠"恰好有人提交"的工作流。
 

@@ -101,11 +101,25 @@ if [[ "$(git rev-parse --is-shallow-repository)" == 'true' ]]; then
   exit 1
 fi
 
-# 与 gitleaks 的遍历范围对齐：它不传 --log-opts 时用的是 `--all`，即**所有引用**可达的
-# 提交，不只是 HEAD 的祖先。所以这里也用 --all 计数，免得打印的数字比它实际扫的还小
-# （CI 上就出现过：脚本报 47，gitleaks 报 49——差在 checkout 顺带取下来的其他远端分支）。
-commits="$(git rev-list --count --all)"
-echo "▶ gitleaks v${GITLEAKS_VERSION}：所有引用可达的提交（${commits} 条）"
+# 与 gitleaks 的遍历范围对齐：用它自己那组默认参数计数，只把 -p 换成 --name-only（便宜，
+# 又照样触发 diff 机器——只给 --diff-filter 而不产生 diff 的话 git 一条都不输出）。
+# --all 除了所有 refs 还含 HEAD，所以 pull_request 那种游离 HEAD 也算得到。
+#
+# 为什么不是一句 `git rev-list --count --all`：gitleaks 是**按补丁流**计数的，没有补丁的
+# 提交它不计。这个数打错过两次，方向还相反：
+#   47 vs 49  漏了 --all，少算 checkout 顺带取下来的其他远端分支；
+#   54 vs 53  补上 --all 后反而多算 1——pull_request 事件下 checkout 检出的是 GitHub 现造的
+#             refs/pull/<n>/merge（PR #6 是 676b2e7，两个父提交），而 `git log -p` 对合并
+#             提交不输出补丁，gitleaks 于是不计它。
+# 数字自己不构成门禁，但"日志里的数字和实际扫的不是一回事"正是这条门禁最初的病根，
+# 所以这里对齐到一条。gitleaks 自己那行 `N commits scanned.` 始终是权威值。
+#
+# 顺带一个必须写明的**上游限制**：合并提交没有补丁，所以只在冲突解决里引入的凭证
+# （两个父提交都没有的那一行）gitleaks 扫不到。这里修不了——加 --log-opts -m 会把 --all
+# 连带丢掉（见下）。实际风险很小：main 走 rebase 保持线性，没有人工解决的合并提交。
+commits="$(git log --full-history --all --diff-filter=tuxdb --name-only --format='%x01%H' |
+  grep -c $'^\x01' || true)"
+echo "▶ gitleaks v${GITLEAKS_VERSION}：所有引用可达且有补丁的提交（${commits} 条）"
 
 # 用 `git` 子命令而不是 `detect`：后者自 v8.19.0 起已废弃（仍能跑，但从 --help 里隐掉了），
 # 支持的三种模式是 git / dir / stdin。路径是位置参数，不是 --source。
@@ -124,7 +138,7 @@ code=$?
 set -e
 
 case "${code}" in
-  0) echo "✅ 全历史（${commits} 条提交，--all）未检出凭证" ;;
+  0) echo "✅ 全历史（${commits} 条有补丁的提交，--all）未检出凭证" ;;
   2)
     echo "❌ 全历史里检出凭证。凭证一旦进过历史就必须当作已泄漏：先在源端吊销/轮换，" >&2
     echo "   再决定是否改写历史。确认是刻意无效的占位符或测试夹具，才加进 .gitleaks.toml。" >&2
