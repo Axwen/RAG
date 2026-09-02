@@ -61,10 +61,20 @@ updates:
       day: monday
       time: '06:30'
       timezone: Asia/Shanghai
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 5
     groups:
       actions:
         patterns: ['*']
+        # 只把 minor/patch 合到一个 PR 里；major 刻意留在组外，各自单独开 PR。
+        # 不加这一行的代价实测过：PR #5 一次带了 8 个 major（upload-artifact v4→v7、
+        # download-artifact v4→v8、docker/* 三个各跳一个大版本、action-gh-release v2→v3
+        # 等），八个破坏性变更挤在一个 commit 里，红了也没法二分。npm 那边的 `others`
+        # 组从一开始就写了 `update-types: [minor, patch]`，这里漏了——同一份配置里的
+        # 两套标准。
+        update-types: [minor, patch]
+    # major 拆成单个 PR 之后条数会变多（当下就积了 8 个），limit 从 3 提到 5，与 npm 一致。
+    # 这与顶部"分组是刻意的"不矛盾：分组要避免的是**没人看**的 PR，而 major 恰恰是必须
+    # 一个一个看的那种。
     commit-message:
       prefix: ci
       include: scope
