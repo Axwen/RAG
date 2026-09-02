@@ -88,7 +88,7 @@ jobs:
 
       - name: 上传冒烟日志
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-logs-${{ github.run_id }}
           path: .smoke/
