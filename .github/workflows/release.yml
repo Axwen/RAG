@@ -35,14 +35,31 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # 必须显式指定：workflow_dispatch 时 github.ref 是默认分支而不是要发布的标签。
+          # 不写这一行，guard 验的是 main、镜像从 main 构建、notes 从 main 的 CHANGELOG 抽，
+          # 而 Release 挂在标签上——发出去的产物和标签指向的代码不是一回事，
+          # 比直接失败更糟。标签推送时这个表达式就是 refs/tags/vX，行为不变。
+          ref: ${{ inputs.tag || github.ref }}
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
+
+      # verify 链里第 9、10 环是 py:sync / py:test，两者都要 uv，而 ubuntu-24.04 镜像
+      # 不预装它（Package Management 段只有 cpan/Miniconda/Pip/Pipx/Yarn）。少了这一步，
+      # 第一次推 v* 标签就会死在 `uv: command not found`——而 Release 从没跑过，
+      # 这条到 2026-09-02 才被审出来。版本与 ci.yml 的 python job 保持一致。
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.12.5'
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: services/parser/uv.lock
 
       - name: 准备占位环境变量
         run: cp .env.example .env
@@ -67,12 +84,14 @@ jobs:
       packages: write # 推 GHCR
       id-token: write # 构建来源证明（provenance）
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }} # 同 guard：手动派发时别检出默认分支
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: 登录 GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -80,7 +99,7 @@ jobs:
 
       - name: 镜像元数据
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository }}/parser
           tags: |
@@ -91,7 +110,7 @@ jobs:
 
       - name: 构建并推送
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: services/parser
           push: true
@@ -102,8 +121,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: 镜像启动验证（拉起推送后的摘要）
+        # 构建成功不等于起得来。这一步失败会让 github-release 因 needs 不执行——
+        # 镜像已经在 GHCR 上了，但不会有一个指向它的 Release。
+        run: bash scripts/check-parser-image.sh "ghcr.io/${{ github.repository }}/parser@${{ steps.build.outputs.digest }}"
+
       - name: 生成 SBOM（SPDX）
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           image: ghcr.io/${{ github.repository }}/parser@${{ steps.build.outputs.digest }}
           format: spdx-json
@@ -111,7 +135,7 @@ jobs:
           output-file: parser-sbom.spdx.json
 
       - name: 上传 SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: parser-sbom
           path: parser-sbom.spdx.json
@@ -125,10 +149,12 @@ jobs:
     permissions:
       contents: write # 建 Release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }} # notes 要从标签指向的 CHANGELOG 抽，不是 main 的
 
       - name: 取 SBOM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: parser-sbom
 
@@ -136,7 +162,7 @@ jobs:
         run: bash scripts/release-notes.sh "${{ inputs.tag || github.ref_name }}" > RELEASE_NOTES.md
 
       - name: 建 Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           body_path: RELEASE_NOTES.md

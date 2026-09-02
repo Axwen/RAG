@@ -20,7 +20,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: codeql-${{ github.ref }}
+  # 带上事件名：周一的定时全量扫不该被同时段的 push 取消（新规则要靠它发现旧代码里的老问题）
+  group: codeql-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -47,10 +48,10 @@ jobs:
       matrix:
         language: [javascript-typescript, python]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: 初始化 CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           languages: ${{ matrix.language }}
           # security-and-quality 比默认的 security-extended 还多一档质量规则；
@@ -65,9 +66,9 @@ jobs:
 
       # 两种语言都是解释型，autobuild 实际只是扫源码；不需要 pnpm install
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+        uses: github/codeql-action/autobuild@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
 
       - name: 分析
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           category: /language:${{ matrix.language }}

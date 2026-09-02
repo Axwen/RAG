@@ -40,12 +40,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         # 版本来自 package.json 的 packageManager 字段，不在此处重复声明
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -80,18 +80,18 @@ jobs:
         run: git diff --exit-code
 
   quality:
-    name: quality（shell / 链接 / 提交信息 / 覆盖率）
+    name: quality（shell / YAML / 链接 / 提交信息 / 覆盖率）
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # 提交信息检查要比较 origin/main..HEAD，需要完整历史
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -109,8 +109,29 @@ jobs:
       - name: Markdown 相对链接与锚点
         run: pnpm run check:links
 
+      # 名字里不能出现裸的 "run: "——冒号加空格会让 YAML 把它当成映射键，整个文件解析失败
+      # （本地结构校验就是这样抓到的：mapping values are not allowed here, line 112）
+      - name: '工作流 YAML 静态检查（actionlint + run: 块的 shellcheck）'
+        # 740 行工作流此前是仓库里唯一没有静态检查的代码，而 run: 块里的 shell 也从不
+        # 经过 check-shell.sh。--strict 会下载钉死版本并校验 sha256（见脚本内注释）。
+        run: bash scripts/check-workflows.sh --strict
+
       - name: 提交信息规范（Conventional Commits）
-        run: pnpm run check:commits
+        # 必须显式传区间：push 到 main 时 checkout 把本地 main 指到 origin/main，
+        # 脚本默认的 origin/main..HEAD 恒为空——前 10 次运行就是这样"通过"的，
+        # 日志原文「范围 origin/main..HEAD 内无非 merge 提交」，零条提交被检查。
+        # github.event.before 是本次推送前的 main 顶点，区间正好是这次推的那几条。
+        # PR 上留空走脚本默认（那时 origin/main..HEAD 就是 PR 的提交集）。
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [[ "${EVENT_NAME}" == 'push' && "${BEFORE}" != '0000000000000000000000000000000000000000' ]]; then
+            bash scripts/check-commits.sh "${BEFORE}..${SHA}"
+          else
+            bash scripts/check-commits.sh
+          fi
 
       - name: 构建工作区包（覆盖率前置）
         # 跨包 import 解析到 package.json 的 main（dist/index.js），不是源码——不先构建，
@@ -123,9 +144,23 @@ jobs:
       - name: 覆盖率（阈值见 vitest.config.ts）
         run: pnpm run test:coverage
 
+      - name: 增量覆盖率（本次改动的新增行 ≥ 80%）
+        # 全局阈值拦的是整体退化，拦不住"这次新增的没测"：仓库越大，一个全新的未测文件
+        # 对整体的拉低越小。这条只看本次改动涉及的、被插桩的行。
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [[ "${EVENT_NAME}" == 'push' && "${BEFORE}" != '0000000000000000000000000000000000000000' ]]; then
+            bash scripts/check-diff-coverage.sh "${BEFORE}..${SHA}"
+          else
+            bash scripts/check-diff-coverage.sh
+          fi
+
       - name: 上传覆盖率报告
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-${{ github.run_id }}
           path: coverage/
@@ -140,13 +175,13 @@ jobs:
       run:
         working-directory: services/parser
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # 钉精确版本：astral-sh/setup-uv 自 v8 起不再发布浮动大版本标签，@v10 是 404
       # （tags 里只有 v10.0.1 / v10.0.0；v7 及更早才有 v7、v7.6 这种浮动 ref）。
       # 首跑就是这样红的——"Unable to resolve action ... unable to find version v10"，
       # 连 Set up job 都没过。补丁位由 Dependabot 的 github-actions 生态跟。
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.5'
           # 与 pyproject 的 requires-python = "==3.12.*" 同口径，不钉补丁位：
@@ -166,11 +201,11 @@ jobs:
         run: uv run pytest -q
 
   compose:
-    name: compose（配置解析 / parser 镜像构建）
+    name: compose（配置解析 / parser 镜像构建与启动）
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: 准备占位环境变量
         run: cp .env.example .env
@@ -187,5 +222,10 @@ jobs:
         run: python3 -c "import json,sys; json.load(open('infra/compose/keycloak/realm-rag-local.json'))"
 
       - name: 构建 Parser 镜像
-        # 只验证 Dockerfile 可构建，不推送任何镜像
+        # 不推送任何镜像；构建产物交给下一步真起一次
         run: docker build -t rag-parser:ci services/parser
+
+      - name: Parser 镜像启动验证
+        # 构建成功只证明依赖装得上。缺模块入口、非 root 用户读不到 /opt/venv、
+        # 端口没人监听——这些都能构建通过然后在第一次 docker run 时失败。
+        run: bash scripts/check-parser-image.sh rag-parser:ci

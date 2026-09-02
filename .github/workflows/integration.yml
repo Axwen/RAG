@@ -15,10 +15,18 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # 每周一 03:41 UTC：这条是全套里最容易 flaky 的一条——六个镜像、健康检查、
+    # 端口与内核参数，任何一样在上游变了都会让它挂，而代码不动就永远不重跑。
+    # Security（05:23）与 CodeQL（04:17）都有周扫，只有它没有，等于把最脆的一条
+    # 完全交给"恰好有人提交"。错开时刻是为了不和另两条抢 runner。
+    - cron: '41 3 * * 1'
   workflow_dispatch:
 
 concurrency:
-  group: integration-${{ github.ref }}
+  # 带上事件名：不然周一的定时扫和同时段推到 main 会落进同一组，
+  # cancel-in-progress 让后者把前者取消掉——定时扫的意义正是"没人提交也要跑"。
+  group: integration-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -36,11 +44,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -88,7 +96,7 @@ jobs:
 
       - name: 上传冒烟日志
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: smoke-logs-${{ github.run_id }}
           path: .smoke/
