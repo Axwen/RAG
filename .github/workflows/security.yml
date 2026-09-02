@@ -59,8 +59,13 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      - name: 冻结安装
-        run: pnpm install --frozen-lockfile
+      - name: 冻结安装（不跑生命周期脚本）
+        # --ignore-scripts 是必须的：根 postinstall 会跑 prisma generate，而 Prisma 的
+        # config 解析要求 DATABASE_URL 存在（首跑就是这样红的：PrismaConfigEnvError:
+        # Cannot resolve environment variable: DATABASE_URL）。ci.yml 的 job 靠前置
+        # `cp .env.example .env` 绕开，但这个 job 只需要依赖图——pnpm audit 读的是
+        # lockfile，不需要生成出来的 Prisma Client。少造一份占位 .env，也少一次生成。
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: critical 漏洞（阻断）
         # 显式指定官方 registry：本地开发常配 npmmirror，其 audit 端点不存在

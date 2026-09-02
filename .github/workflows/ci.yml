@@ -134,10 +134,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # 钉精确版本：astral-sh/setup-uv 自 v8 起不再发布浮动大版本标签，@v10 是 404
+      # （tags 里只有 v10.0.1 / v10.0.0；v7 及更早才有 v7、v7.6 这种浮动 ref）。
+      # 首跑就是这样红的——"Unable to resolve action ... unable to find version v10"，
+      # 连 Set up job 都没过。补丁位由 Dependabot 的 github-actions 生态跟。
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: '0.12.5'
-          python-version: '3.12.3'
+          # 与 pyproject 的 requires-python = "==3.12.*" 同口径，不钉补丁位：
+          # 精确补丁位是 Dockerfile 的事（那里要可复现的镜像），CI 只需要 3.12.x，
+          # 钉死反而会在某个 python-build-standalone 构建下线时凭空红一次。
+          python-version: '3.12'
           enable-cache: true
           cache-dependency-glob: services/parser/uv.lock
 
