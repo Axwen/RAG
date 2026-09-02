@@ -26,17 +26,16 @@ concurrency:
 jobs:
   analyze:
     name: analyze（${{ matrix.language }}）
-    # 私有库要用 code scanning 得先有 GitHub Advanced Security / Code Security（付费）；
-    # 本仓库是个人账号下的 private repo，未开启。未开启时 analyze 上传 SARIF 必然失败：
+    # private repo 要用 code scanning 得先有 Code Security / Advanced Security；本仓库是
+    # 个人账号下的 private repo，没有。没有时 analyze 上传 SARIF 必然失败：
     #   "Code scanning is not enabled for this repository"
-    # 那会让每次 push 都挂一个永远红的检查——跟自动 PR 一样，永远红的门禁只会训练人
-    # 忽略红叉，比没有更糟。所以这里用仓库变量当开关，skip 掉是灰色而不是红色。
+    # 那会让每次 push 都挂一个永远红的检查——跟没人看的自动 PR 一样，永远红的门禁只会
+    # 训练人忽略红叉，比没有更糟。所以用仓库变量当开关，skip 是灰色而不是红色。
     #
-    # 要真正启用，二选一，然后在 Settings → Secrets and variables → Actions → Variables
-    # 里加 CODE_SCANNING_ENABLED=true（本文件不用改）：
-    #   a) 仓库设为 public——公开库的 CodeQL 与 code scanning 免费；
-    #   b) 买 Code Security（原 GHAS），private repo 才能开 code scanning。
-    if: vars.CODE_SCANNING_ENABLED == 'true'
+    # 同一个变量也管着 security.yml 的 dependency-review——两者卡在同一件事上（详见
+    # docs/engineering/ci-cd.md §3.3），所以按"根因"命名而不是按功能各起一个开关。
+    # 启用路径与变量设法见 §3.3；工作流文件不需要改。
+    if: vars.ADVANCED_SECURITY_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

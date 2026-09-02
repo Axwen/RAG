@@ -77,8 +77,13 @@ jobs:
 
   dependency-review:
     name: dependency-review（PR 新增依赖与许可证）
-    # 这个 action 只在 PR 上有意义：它比较 base 与 head 的依赖差异
-    if: github.event_name == 'pull_request'
+    # 两个条件都是必要的：
+    #   1. 这个 action 只在 PR 上有意义——它比较 base 与 head 的依赖差异；
+    #   2. private repo 上它要求 Code Security / Advanced Security，否则直接报
+    #      "Dependency review is not supported on this repository"。首批 Dependabot PR
+    #      上三条全是这样红的，而 PR 恰恰是人真会去看红叉的地方——一个永远红的检查放在
+    #      那里，代价比 push 上的更大。变量与 codeql.yml 共用（见 ci-cd.md §3.3）。
+    if: github.event_name == 'pull_request' && vars.ADVANCED_SECURITY_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
