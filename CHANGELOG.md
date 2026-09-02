@@ -130,6 +130,15 @@
     `check:commits` / `pnpm run verify`，它的每个 `actions/checkout` 都必须显式写
     `fetch-depth: 0`**（`scripts/lib/lint-workflows.py` 第 5 条规则，加完当场报出这处
     并用负例验证过会红）。
+  - **`dependabot.yml` 的 npm 那一段从来没产出过一个 PR**：`engines.node` 是精确值
+    `"22.23.1"`，而 Dependabot 的 npm updater 镜像只带 `v24.20.0`，于是每个候选依赖都
+    `tool_version_not_supported` 并 `Skipping … : No dependency change was created`
+    （zod / tsx / typescript / vite / @types/node 五个全跳）。uv、docker、github-actions
+    三个生态各开出过 PR，所以"Dependabot 在工作"的印象成立，只有依赖最多的 npm 是空的。
+    难发现是因为 `Dependabot Updates` 这类运行只在 Insights → Dependabot 页显示、
+    **不在 Actions 列表里**（`gh run list` 里是 `event: dynamic`）。已把 `engines.node`
+    改成 `">=22.23.1"`——`.nvmrc` 与 CI 的 `setup-node` 仍钉 22.23.1，那才是开发与构建用的
+    版本；`engines` 是"能跑在哪些 Node 上"的声明，精确值等于对所有用别的 Node 的工具关门。
   - **文档里的第一条手工配置根本做不到**：ci-cd.md §3 第 1 条一直写着"设分支保护 +
     把六个 job 设为 required check"，实测
     `gh api repos/Axwen/myRAG/branches/main/protection` 返回

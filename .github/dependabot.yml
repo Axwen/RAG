@@ -8,6 +8,18 @@
 version: 2
 
 updates:
+  # npm 这一段从 2026-09-02 02:04 建立起到当天 12:xx 一个 PR 都没产出过，而且是"成功地"
+  # 什么都没产出：Dependabot Updates 那条 run 是 failure，但它只出现在 Insights →
+  # Dependabot 页，不在平时看的 Actions 列表里。日志里每个依赖一条：
+  #   Handled error whilst updating zod: tool_version_not_supported
+  #     {"tool-name": "Node", "detected-version": "22.23.1", "supported-versions": "v24.20.0"}
+  #   Skipping zod in group others: No dependency change was created
+  # 根因是 package.json 的 `engines.node` 写成精确值 "22.23.1"，而 Dependabot 的 npm
+  # updater 镜像只带 v24.20.0——它照 engines 选 Node，选不到就整个 job 放弃。zod、tsx、
+  # typescript、vite、@types/node 五个候选全被跳过。
+  # 已把 engines.node 改成 ">=22.23.1"（.nvmrc 与 CI 的 setup-node 仍钉 22.23.1，那才是
+  # 开发/构建用的版本）。**不要把它改回精确值**：engines 是"能跑在哪些 Node 上"的声明，
+  # 精确值等于对所有用别的 Node 的工具关门，Dependabot 只是第一个撞上的。
   - package-ecosystem: npm
     directory: /
     schedule:

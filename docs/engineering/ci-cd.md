@@ -514,7 +514,30 @@ Pro——注意这与 §3.3 不同，那边的 Advanced Security 只卖给 organ
 掏钱也买不到，而 Pro 是个人订阅，确实买得到）。在能开之前只能靠"日常走分支 + PR、merge
 前自己把 Checks 看全绿"的纪律代替，而纪律拦不住手误直推，也不留任何机械痕迹。
 
-两条要带走的经验，和 §6.3 那三条并列：
+**第六个，也是这一串里最安静的一个：`dependabot.yml` 的 npm 那一段从来没产出过任何 PR。**
+清理 Action 运行记录时逐条看了那些 `failure`，其中两条 `Dependabot Updates`（02:04 与 02:12）
+是 npm 生态的更新作业，都失败了。日志里每个依赖一条：
+
+```text
+Handled error whilst updating zod: tool_version_not_supported
+  {"tool-name": "Node", "detected-version": "22.23.1", "supported-versions": "v24.20.0"}
+Skipping zod in group others: No dependency change was created
+```
+
+`package.json` 的 `engines.node` 写的是精确值 `"22.23.1"`，而 Dependabot 的 npm updater
+镜像只带 `v24.20.0`——它按 `engines` 选 Node，选不到就放弃整个作业。`zod`、`tsx`、
+`typescript`、`vite`、`@types/node` 五个候选全被跳过。仓库里已经开了三个 Dependabot PR
+（uv、docker、github-actions 各一），所以"Dependabot 在工作"这个印象是成立的；**只有 npm
+这一段是空的**，而 npm 恰好是这个 monorepo 依赖最多的生态。
+
+它比前五项更难被发现，因为 `Dependabot Updates` 这类运行只出现在 Insights → Dependabot 页，
+**不在平时看的 Actions 列表里**——`gh run list` 能看到（`event: dynamic`），网页上要专门点过去。
+修法是把 `engines.node` 改成 `">=22.23.1"`；`.nvmrc` 与 CI 的 `setup-node`
+（`node-version-file: .nvmrc`）仍然钉死 22.23.1，那才是开发与构建实际用的版本。`engines`
+是"能跑在哪些 Node 上"的声明，写成精确值等于对所有用别的 Node 的工具关门——Dependabot 只是
+第一个撞上的。理由记在 `dependabot.yml` 的 npm 段注释里（package.json 放不下注释）。
+
+三条要带走的经验，和 §6.3 那三条并列：
 
 - **绿也要看是怎么绿的。** 一个门禁报绿有两种可能——它检查了并且通过，或者它其实没检查。
   这两者在日志里长得一模一样，区别只在那些没人读的细节行里（`2 commits scanned.`、
@@ -523,6 +546,9 @@ Pro——注意这与 §3.3 不同，那边的 Advanced Security 只卖给 organ
 - **写下来的门禁和生效的门禁是两件事。** §3 那份手工配置清单看着像"照着点一遍就有保护"，
   实际第一条就点不动；文档本身不会因为写错而变红。审计流水线时不能只审工作流文件，
   还要拿 API 去问一遍仓库的真实状态。
+- **不在 Actions 列表里的运行也会红。** npm 的依赖更新失败了近十个小时没人知道，因为
+  `Dependabot Updates` 只在 Insights → Dependabot 页显示。审计范围不能等于"网页默认给我看
+  的那一屏"——`gh run list` 里 `event: dynamic` 的那几条同样要逐条看结论。
 
 
 
