@@ -71,6 +71,33 @@
 
 ### Fixed
 
+- **CI 首跑（2026-09-02）抓到的四个真缺陷**（完整记录见
+  [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6）：
+  - **README 黄金路径在全新克隆上是坏的**：`bootstrap` 的 seed 步骤跑 `tsx prisma/seed.ts`，
+    而 `seed.ts` import 的是 `@rag/contracts` 的**编译产物**；`pnpm install` 的 postinstall
+    只跑 `prisma generate`、不构建，于是干净 checkout 上必然 `Cannot find module
+    '.../@rag/contracts/dist/index.js'`。本地一直不复现只因为 `packages/*/dist` 是历次
+    build 的残留。`init-database.sh` 现在在 seed 前跑
+    `pnpm --filter "...@rag/database" run build`（前置 `...` 选中该包及其工作区依赖，
+    三个包，不碰 `apps/web`；`tsc -b` 增量，二次执行 6s）。修的是 bootstrap 而不是 README：
+    它对外的承诺就是"一条命令、可重复执行"，把前置条件推给读者等于把坑留给下一个新人。
+  - **`PROJECT_STATE.md` 的参考仓库链接是死链**：指向 `references/ragent/`、
+    `references/ragflow/`，而 `/references/` 是 gitignore 的本地工作副本——本地能点开，
+    克隆下来打不开。改为上游 URL 并写明只在本地存在。`check:links` 首跑即命中。
+  - **`security.yml` 的 audit job 装不上依赖**：根 `postinstall` 的 `prisma generate` 要求
+    `DATABASE_URL`（`PrismaConfigEnvError`），而该 job 没有 `ci.yml` 里那步
+    `cp .env.example .env`。改用 `--frozen-lockfile --ignore-scripts`——审计读 lockfile，
+    不需要生成出来的 Prisma Client。
+  - **`astral-sh/setup-uv@v10` 不存在**：这个 action 自 v8 起不再发布浮动大版本标签
+    （只有 `v10.0.1` / `v10.0.0`），`python` job 连 Set up job 都没过。已钉
+    `@v10.0.1`；`python-version` 从 `3.12.3` 放宽到 `3.12`，与
+    `requires-python = "==3.12.*"` 同口径，不再和 Dockerfile 的补丁位互相牵制。
+- **CodeQL 在 private repo 上必然红**：code scanning 需要付费的 Code Security，个人账号
+  free plan 开不了，`analyze` 上传 SARIF 直接失败（`Code scanning is not enabled for
+  this repository`）。每次 push 挂一个永远红的检查只会训练人忽略红叉，因此 job 改为
+  `if: vars.CODE_SCANNING_ENABLED == 'true'`——未开启时 skip（灰色）而不是失败。启用
+  路径（设为 public，或买 Code Security）见 ci-cd.md §3.3。
+
 - **`pnpm --filter @rag/api dev` 下 NestJS 依赖注入失效**（T0 遗留，本批次实测发现）：
   开发入口原用 `tsx`（esbuild）转译，不产出 `emitDecoratorMetadata` 的
   `design:paramtypes`，进程照常启动、路由照常注册，但注入进来的依赖是 `undefined`，

@@ -156,12 +156,16 @@
 - fluxionai 承载模型映射、OpenRouter/fluxionai 数据留存与合规评估尚未完成；在关闭前只允许合成或严格脱敏数据进入云路径。
 - 每日 16 元、用户级配额和 24 至 36 周窗口仍需在真实链路下校准；票据级工作量估算已补齐，但周期换算系数尚未用真实交付速率验证。完整 24 GiB Parser 余量也尚未验证。
 - 探针收尾改动已于 2026-08-27 在 `chore/probe-closeout` 分支按主题切分提交（gitignore、探针脚本、探针结果与归档、ADR、决策门与探针票据、实施票据、评审记录、顶层状态、归档脱敏补齐、票据工作量估算），工作区干净，T0 的收尾提交前置条件已满足。该分支已于 2026-08-27 以 fast-forward 合并回 `main`（`main` 为 `a626cf9`），仓库仍无远程。
-- **CI 从未真实运行，推送卡在 GitHub 鉴权**：远端 `https://github.com/Axwen/myRAG.git`
-  已配置，五条工作流与文档已就位，但本机没有 github.com 凭证（无 SSH key、`gh` 未安装、
-  `credential.store` 里只有自建主机），`git ls-remote origin` 报
-  `could not read Username`。需用户加 SSH key 后把 remote 换成 SSH，或亲手 push 一次让
-  credential helper 缓存 PAT。在首次真跑之前，覆盖率阈值、依赖审计、CodeQL 与 gitleaks
-  的结论都还是"配置成立"，不是"已验证"。
+- **CI 已首跑（2026-09-02）**：远端换成 SSH（`git@github.com:Axwen/myRAG.git`）后推送成功，
+  `gh` 已装并登录。首轮四条工作流全红，其中只有一个是流水线自己的配置错
+  （`astral-sh/setup-uv@v10` 这个浮动大版本标签不存在），另外三个是仓库里真实存在、
+  本地永远不复现的缺陷：全新克隆上 `bootstrap` 的 seed 必失败（`packages/*/dist` 未构建）、
+  `PROJECT_STATE.md` 指向 gitignore 目录的死链、`security.yml` 的 audit job 缺 `.env` 导致
+  `prisma generate` 报 `PrismaConfigEnvError`。已全部修复，记录见
+  [CI/CD 文档](docs/engineering/ci-cd.md) §6。
+  已验证为绿：`node`、`compose`、`gitleaks（全历史密钥扫描）`。仍未验证：`quality` 的
+  覆盖率阈值与 `python`、`smoke` 三个 job（首轮死在更早的步骤，修复后待复跑）；CodeQL
+  在 private repo 上无法启用，已改为按仓库变量 `CODE_SCANNING_ENABLED` 开关，默认 skip。
 - `~/.gstack` 评审日志持久化曾因审批服务 503 失败；项目内文档和 JSONL 是当前可靠副本。
 
 ## 当前阶段：T0 已收口，进入第一批业务票据
@@ -191,7 +195,7 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 3. **已完成（2026-08-28）**：DX Review 与实现准备增量复审已执行——真实工具链与依赖图确认，T0 估算（CC ~1d）与实际吻合。十八张票估算当时维持冻结；该冻结已于 2026-08-31 因 ADR-0039 扩大 T14 范围而结束（T14 ~6d → ~8d，合计 86.5d / 21.1d），后续范围变更同样按“改范围就改估算”处理。
 4. **进行中**：按[阶段 1 实施 Tickets](docs/engineering/stage1-implementation-tickets.md)推进 T1a + T14 + T11(同步审计) + T12(Ledger 骨架)。**T1a 切片与并入的 devex P1 三项（DX-T1/DX-T2/DX-T3）已提交为 `bc99b0a` + `1b2a2ed`，并于 2026-09-01 获用户 `ACCEPTED_WITH_ACTIONS`**（[验收记录 §6](docs/engineering/acceptance/hg-01-t1a-manifest-core.md#6-用户验收结论)：租户谓词与请求体 `tenantId` 退场归 [T14 DoD](docs/engineering/tickets/T14-identity-authorization.md#dod)，幂等重放 201→200 归 T2）。该结论只覆盖 T1a 切片，**不等于 HG-01 门禁通过**，也不授权 commit/push/PR/merge/部署。
    同批次剩余按依赖顺序推进：**T12 Ledger/配置骨架 → T11 同步审计骨架 → T14a（Keycloak auth + 7 张身份表与迁移）→ T14b（统一授权入口、能力权限、资源策略、`acl_scope_key` 编译、fail closed）**；T11 必须先于 T14b，因为 T14 DoD 要求授权决策写同步领域审计。T14 按 [ADR-0039](docs/adr/0039-business-identity-and-unified-authorization.md) 实现，票据要求身份迁移与授权代码分开提交、分开评审，故 T14a 结束时增设一个临时人工门禁（[门禁文档](docs/engineering/manual-acceptance-gate.md)允许对过大批次或安全边界决策加设临时门禁）。四项全部完成后才是完整 HG-01 核验，通过后方可启动 T2/T10/T3/T1b。
-   **前置待用户动作**：远端已配为 `https://github.com/Axwen/myRAG.git`，五条工作流与 [CI/CD 文档](docs/engineering/ci-cd.md) 已就位，但本机无 github.com 凭证，推送与首次 CI 真跑仍卡住——需用户加 SSH key（并把 remote 换成 SSH）或亲手 push 一次以缓存 PAT，随后按 CI/CD 文档第 3 节在网页上设分支保护与 required checks。在此之前后续 17 张票的回归证据只有本地 `verify` + `smoke:api`。/plan-devex-review boomerang 已于 2026-09-01 跑完（dx-baseline 脚本已落，两个目标达成，见 [复测报告](docs/engineering/plan-devex-review-20260901-boomerang.md)）；verify 门禁阈值暂不设定，待 CI 有真实分布后再定；devex T5/T7 仍未做，低优先级自由安排。后续每个实施批次都按 HG-02 至 HG-07 停顿并等待人工结论。
+   **前置待用户动作**：远端已换成 SSH（`git@github.com:Axwen/myRAG.git`）并推送成功，CI 已于 2026-09-02 真跑首轮——四条工作流全红，抓到四个本地永不复现的真缺陷（全新克隆上 `bootstrap` 必失败、文档死链、audit job 缺 `.env`、`setup-uv@v10` 不存在），已全部修复并留档于 [CI/CD 文档](docs/engineering/ci-cd.md) §6；CodeQL 因 private repo 无 code scanning 权限改为按仓库变量 `CODE_SCANNING_ENABLED` 开关，默认 skip。**剩余待用户动作**：按 CI/CD 文档 §3 在网页上设分支保护与 required checks（要等各 job 至少绿一次，名字才会出现在列表里），并决定 CodeQL 走哪条启用路径（设为 public / 买 Code Security / 就这样放着）。/plan-devex-review boomerang 已于 2026-09-01 跑完（dx-baseline 脚本已落，两个目标达成，见 [复测报告](docs/engineering/plan-devex-review-20260901-boomerang.md)）；verify 门禁阈值暂不设定，待 CI 有真实分布后再定；devex T5/T7 仍未做，低优先级自由安排。后续每个实施批次都按 HG-02 至 HG-07 停顿并等待人工结论。
 5. 各模块按 [Probe Decision Gate](docs/engineering/probe-decision-gate.md) 关闭实现与生产治理门槛；集成项全部关闭后，再进行完整增量工程复审和 24 至 36 周窗口重估。
 
 ## 详细文档入口
@@ -211,7 +215,10 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 - 历史评审任务快照：[docs/engineering/tasks-eng-review-20260824.jsonl](docs/engineering/tasks-eng-review-20260824.jsonl)
 - TS 技术设计方案：[技术设计方案-TS企业级多模态RAG.md](技术设计方案-TS企业级多模态RAG.md)
 - ADR 目录：[docs/adr/](docs/adr/)
-- 参考仓库：[references/ragent/](references/ragent/)、[references/ragflow/](references/ragflow/)
+- 参考仓库：[nageoffer/ragent](https://github.com/nageoffer/ragent)、[infiniflow/ragflow](https://github.com/infiniflow/ragflow)
+  （只在本地留工作副本，`/references/` 已 gitignore、不随仓库分发；原先这里写的是
+  `references/ragent/` 相对链接，本地能点开、克隆下来是死链，`check:links` 在 CI 首跑
+  就抓到了）
 
 ## 新会话恢复规则
 

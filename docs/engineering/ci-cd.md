@@ -14,7 +14,7 @@
 | [`ci.yml`](../../.github/workflows/ci.yml) | push main / PR / 手动 | 分钟级 | 静态检查、单测、覆盖率、构建、Compose 配置解析 |
 | [`integration.yml`](../../.github/workflows/integration.yml) | push main / PR / 手动 | 十分钟级 | 真起六个 core 容器 → bootstrap → 编译产物起进程 → HTTP 契约与日志断言 |
 | [`security.yml`](../../.github/workflows/security.yml) | push main / PR / 每周一 / 手动 | 分钟级 | 全历史密钥扫描、依赖漏洞、PR 依赖变更与许可证 |
-| [`codeql.yml`](../../.github/workflows/codeql.yml) | push main / PR / 每周一 / 手动 | 十分钟级 | 跨函数数据流的静态安全分析（TS + Python） |
+| [`codeql.yml`](../../.github/workflows/codeql.yml) | push main / PR / 每周一 / 手动 | 十分钟级 | 跨函数数据流的静态安全分析（TS + Python）。**当前整条 skip**，需仓库变量 `CODE_SCANNING_ENABLED=true`（见 §3.3） |
 | [`release.yml`](../../.github/workflows/release.yml) | 推 `v*` 标签 / 手动 | 十分钟级 | 发布前重跑 verify、Parser 镜像进 GHCR、SBOM、GitHub Release |
 
 为什么分成五条而不是一条：失败信号要能直接指向原因。"编译不过"和"跑起来不对"是两
@@ -74,7 +74,7 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 | gitleaks（全历史） | 任何命中 | `.env` 被 gitignore 与"从没被提交过"是两件事，只有扫全历史能确认 |
 | `pnpm audit` | critical 阻断，high 只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过 |
 | dependency-review（仅 PR） | high；拒绝 AGPL / SSPL | 供应链的入口在引入那一刻，不在事后 |
-| CodeQL | 不阻断，进 Security 页签 | 先看全（`security-and-quality`），要当门禁再加进 required checks |
+| CodeQL | 不阻断，进 Security 页签 | 先看全（`security-and-quality`），要当门禁再加进 required checks。**private repo 需先有 Code Security（付费）才能开 code scanning**，否则上传 SARIF 必然 403 |
 
 放行清单在 [`.gitleaks.toml`](../../.gitleaks.toml)，判据只有一条：值本身是刻意无效的
 占位符或测试夹具，泄漏它没有后果。
@@ -107,7 +107,21 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
    - 勾 Allow GitHub Actions to create and approve pull requests：**不要勾**
 3. **Code scanning**（Settings → Code security）
    - 打开 Dependabot alerts 与 Dependabot security updates
-   - Secret scanning 与 push protection 打开（公开仓库免费）
+   - Secret scanning 与 push protection：公开仓库免费；private repo 属于付费的
+     Secret Protection，开不了就靠 `security.yml` 里的 gitleaks 兜底（它已扫全历史）
+   - **CodeQL 在当前配置下整条 skip**。private repo 要用 code scanning 必须先有
+     GitHub Code Security（原 GHAS，付费）；没有时 `analyze` 上传 SARIF 会以
+     `Code scanning is not enabled for this repository` 失败——那会让每次 push 都挂一个
+     永远红的检查，比没有更糟。因此 `codeql.yml` 的 job 加了开关：
+
+     ```yaml
+     if: vars.CODE_SCANNING_ENABLED == 'true'
+     ```
+
+     启用路径二选一，之后在 Settings → Secrets and variables → Actions → Variables
+     加 `CODE_SCANNING_ENABLED=true`（工作流文件不用改）：
+     - 仓库设为 **public**——公开库的 CodeQL 与 code scanning 免费；
+     - 买 **Code Security**，private repo 才能开 code scanning。
 4. **Actions secrets**：**当前一个都不需要**。所有工作流只用 `.env.example` 的占位值和
    自动注入的 `GITHUB_TOKEN`。哪天要加，先回答"CI 为什么需要真实凭证"。
 
@@ -140,11 +154,37 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
 - **`integration.yml` 的资源**：runner 16 GiB，工作流把 `OPENSEARCH_JAVA_OPTS` 降到
   `-Xms1g -Xmx1g`。这条冒烟不做规模检索，够用；真实性能基线永远在本机 23.47 GiB
   profile 上测，不看 CI 数字。
-- **首次运行**：`ci.yml` 的 `quality` job 需要完整历史（`fetch-depth: 0`）才能比较
-  `origin/main..HEAD`；仓库首次推送时 `origin/main` 尚不存在，脚本会退化为
-  `HEAD~1..HEAD`。
+- **`check:commits` 实际只在 PR 上生效**：它比较 `origin/main..HEAD`（所以 `quality`
+  job 要 `fetch-depth: 0`），而 push 到 main 时 `origin/main` 就是 `HEAD`，范围为空、
+  直接通过。真正被检查的是 PR 里的提交。顺带确认过 Dependabot 不会被 72 列宽度规则
+  卡住：它的 **PR 标题**很长，但**提交主题**是缩写过的（如
+  `chore(deps): bump python in /services/parser`，44 列）。
 
-## 6. 明确不做的事（阶段 1）
+## 6. 首跑记录（2026-09-02）：五条工作流全红，抓到四个真缺陷
+
+第一次真跑的结论值得原样留下——它是这套流水线是否值得存在的唯一证据。四条工作流
+全部失败，其中**只有一个是流水线自己的配置错**，另外三个是仓库里真实存在、本地永远
+不会复现的缺陷。
+
+| 失败的 job | 直接症状 | 根因 | 修法 |
+|---|---|---|---|
+| `python` | `Unable to resolve action astral-sh/setup-uv@v10`，连 Set up job 都没过 | 这个 action 自 v8 起不再发浮动大版本标签，`v10` 是 404（只有 `v10.0.1` / `v10.0.0`） | 钉 `@v10.0.1`；`python-version` 从 `3.12.3` 放宽到 `3.12`，与 `requires-python = "==3.12.*"` 同口径 |
+| `quality` | `check:links` 报 `PROJECT_STATE.md:214` 两个目标不存在 | 文档用相对链接指向 `references/ragent/`、`references/ragflow/`，而 `/references/` 是 gitignore 的本地工作副本——本地能点开，克隆下来是死链 | 改成上游 URL，并写明它只在本地存在 |
+| `deps-audit` | `pnpm install --frozen-lockfile` 失败：`PrismaConfigEnvError: Cannot resolve environment variable: DATABASE_URL` | 根 `postinstall` 会跑 `prisma generate`，它要求 `DATABASE_URL` 存在；`ci.yml` 的 job 有前置 `cp .env.example .env`，这个 job 没有 | 该 job 改 `--ignore-scripts`：审计只需要依赖图，不需要生成的 Prisma Client |
+| `smoke` | `bootstrap` 死在 seed：`Cannot find module '.../@rag/contracts/dist/index.js'` | **README 黄金路径在全新克隆上是坏的**。`seed.ts` import 工作区包的编译产物，而 `pnpm install` 的 postinstall 只跑 `prisma generate`、不构建；本地一直不复现只因为 `dist` 是历次 build 的残留 | `init-database.sh` 在 seed 前 `pnpm --filter "...@rag/database" run build`。让 bootstrap 自给自足，而不是往 README 里加一步——它对外的承诺就是"一条命令、可重复执行" |
+| `analyze`（×2） | `Code scanning is not enabled for this repository` | private repo 的 code scanning 需要付费的 Code Security；个人账号 free plan 开不了 | job 加 `if: vars.CODE_SCANNING_ENABLED == 'true'`，skip 是灰色而不是红色（见 §3.3） |
+
+`gitleaks（全历史密钥扫描）`、`node`、`compose` 三个 job 首跑即绿。
+
+两条可以带走的经验：
+
+- **本地全绿证明不了新环境能跑起来。** 那三个真缺陷（死链、缺 `.env`、缺 `dist`）的
+  共同点都是"本地有残留状态"。这正是 `integration.yml` 从干净 checkout 起容器的意义，
+  也是为什么它值得那十分钟。
+- **配置错也是收获。** `setup-uv@v10` 这种"看起来一定存在的浮动大版本"只有真跑一次
+  才知道不存在，写文档写得再细也发现不了。
+
+## 7. 明确不做的事（阶段 1）
 
 写在这里是为了避免把"没做"读成"漏了"：
 
