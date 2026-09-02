@@ -45,7 +45,7 @@ jobs:
       - name: gitleaks（所有引用可达的提交）
         # 不用 gitleaks/gitleaks-action：它按事件名自己决定扫描范围。实测它在 push 上
         # 拼出 `--log-opts=--no-merges --first-parent <before>^..<sha>`，日志写着
-        # 「2 commits scanned.」——一个叫「全历史密钥扫描」的 required check，实际只扫
+        # 「2 commits scanned.」——一个叫「全历史密钥扫描」的门禁，实际只扫
         # 这次推送的两条提交；而在 pull_request 上它改走 ScanPullRequest，要读 PR 的提交
         # 列表，默认只读 token 没有 pull-requests 权限，直接
         # 「Resource not accessible by integration」，于是每个 PR 上都挂一个永远红的门禁。

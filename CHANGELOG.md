@@ -96,8 +96,8 @@
 ### Fixed
 
 - **第五轮审计（2026-09-02）：`gitleaks（全历史密钥扫描）` 从建立起就只扫两条提交**
-  （完整记录见 [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6.5）。这条 required
-  check 有两个独立缺陷，起因都是 `gitleaks/gitleaks-action` **按事件名自行决定扫描范围**：
+  （完整记录见 [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6.5）。这条门禁（§3
+  清单里列为 required——实际因分支保护开不了而从未生效，见下）有两个独立缺陷，起因都是 `gitleaks/gitleaks-action` **按事件名自行决定扫描范围**：
   - **push 上名不副实**：它拼出 `--log-opts=--no-merges --first-parent <before>^..<sha>`，
     日志原文 `INF 2 commits scanned.`——`checkout` 的 `fetch-depth: 0` 把历史拉全了，范围
     又被收窄回去。于是 ci-cd.md §3.3 里"Secret Protection 开不了就靠 gitleaks 兜底"这句话
@@ -125,6 +125,15 @@
     `check:commits` / `pnpm run verify`，它的每个 `actions/checkout` 都必须显式写
     `fetch-depth: 0`**（`scripts/lib/lint-workflows.py` 第 5 条规则，加完当场报出这处
     并用负例验证过会红）。
+  - **文档里的第一条手工配置根本做不到**：ci-cd.md §3 第 1 条一直写着"设分支保护 +
+    把六个 job 设为 required check"，实测
+    `gh api repos/Axwen/myRAG/branches/main/protection` 返回
+    `403 Upgrade to GitHub Pro or make this repository public to enable this feature.`
+    ——个人账号的 private repo 开不了分支保护。也就是说 main 上没有任何保护、required
+    checks 一条都没生效，而文档的写法容易让人以为已经配好了。已把那一节明确标成
+    **目标态而非现状**，写清两条真实出路（改公开 / 升级个人 Pro），并说明在此之前只能
+    靠"走分支 + PR"的纪律代替——纪律拦不住手误直推。与本轮其余各项同一个模式：
+    **写下来的门禁和生效的门禁是两件事。**
 
 - **CI 全绿之后的第四轮主动审计（2026-09-02）：两个"还没机会红"的 P0**（完整记录见
   [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6.4）：
