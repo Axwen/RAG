@@ -30,7 +30,7 @@
 | 格式 | `pnpm run format` | 是 | Prettier `--check`，不自动改 |
 | Lint | `pnpm run lint` | 是 | ESLint，含 `no-console`（业务代码零 `console.*`） |
 | Shell | `pnpm run check:shell` | 是 | shellcheck，阈值 `warning`。CI 用 `--strict`：未安装即失败，不许静默跳过 |
-| 工作流 YAML | `pnpm run check:workflows` | 是 | 两层：基线（YAML 可解析 / `needs` 与 `steps.<id>` 引用 / `uses` 必须钉 40 位 SHA，只用 PyYAML，永远跑）+ actionlint（表达式、上下文、`run:` 块交 shellcheck；本地缺则警告，CI 用 `--strict` 下载钉死版本并校验 sha256） |
+| 工作流 YAML | `pnpm run check:workflows` | 是 | 两层：基线（YAML 可解析 / `needs` 与 `steps.<id>` 引用 / `uses` 必须钉 40 位 SHA / 跑 `check:secrets`、`check:commits`、`verify` 的 job 必须写 `fetch-depth: 0`，只用 PyYAML，永远跑）+ actionlint（表达式、上下文、`run:` 块交 shellcheck；本地缺则警告，CI 用 `--strict` 下载钉死版本并校验 sha256） |
 | 密钥 | `pnpm run check:secrets` | 是 | gitleaks 扫 HEAD 的全部祖先提交。本地缺 gitleaks 只警告，CI 用 `--strict` 下载钉死版本（v8.30.1）并校验 sha256。详见 §2.3 |
 | Markdown 链接 | `pnpm run check:links` | 是 | 相对链接与 `#锚点` 是否存在。文档是本项目的事实源，断链等于事实源失效 |
 | 提交信息 | `pnpm run check:commits` | 是 | Conventional Commits + 主题行显示宽度 ≤72（中文按双宽算）。CI 在 push 上显式传 `${{ github.event.before }}..${{ github.sha }}`——不传就是空区间（§6.4） |
@@ -442,6 +442,19 @@ main 的绿不受影响，同时正好验证了 PR 这条路径（那恰恰是�
 已在 `*secret*` 之后加 `!scripts/check-secrets.sh`（gitignore 里后写的规则胜出）并注明理由。
 这条与前两条是同一个形状：**枚举式的门禁只对它枚举到的东西负责，而"枚举到了什么"从不打印
 在日志里。** 27 和 26 的差别，日志里两次都只写"通过"。
+
+**第四个：把 `check:secrets` 串进 `verify`，顺手在 `release.yml` 里埋了一颗新雷。**
+`release.yml` 的 guard 重跑全量 `verify`，而它的 checkout 没写 `fetch-depth`——默认是 1，
+浅克隆。`check-secrets.sh` 第一件事就是判浅克隆并失败，于是**第一次推 `v*` 标签仍然会死在
+guard 上**，只是死因从 §6.4 的 `uv: command not found` 换成了"当前是浅克隆"。同一个 job、
+同一个原因：它从没执行过。
+
+这次没有靠"想起来"：把这条不变量加进了基线层——**任何 job 只要 `run:` 里出现
+`check:secrets` / `check:commits` / `pnpm run verify`，它的每个 `actions/checkout` 就必须
+显式写 `fetch-depth: 0`**（`scripts/lib/lint-workflows.py` 第 5 条规则）。加完当场报出
+`release.yml job guard: 跑了 ['pnpm run verify']（需要全历史），但 checkout 的
+fetch-depth 是 None`，并且临时删掉修复再跑一遍确认它真的会红。这是这一轮里唯一一条
+**在被写成文档之前就先被写成检查**的结论。
 
 一条要带走的经验，和 §6.3 那三条并列：
 
