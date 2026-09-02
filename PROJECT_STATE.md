@@ -127,13 +127,14 @@
 - 已按 [ADR-0039](docs/adr/0039-business-identity-and-unified-authorization.md) 收口 T14 范围（2026-08-31）：外部身份与业务用户分离、能力权限与资源策略分两层、业务主体多租户/多 Workspace/多角色、租户上下文只从已验证身份推导；组织结构、临时直接赋权与非文档型资源域列为已识别扩展点，阶段 1 不建表。T14 估算随之上调为 human ~8d / CC ~2d，2026-08-27 的十八张票据估算冻结到此结束。
 - 已完成 **T1a 代码评审 9 项修复**（2026-08-31，已提交于 `1b2a2ed`）：`ERROR_STATUS` 成为错误码唯一事实源并补 401/403/405/413/415（此前 T14 的 guard 抛 401 会变成 500 `INTERNAL_ERROR`）、`approve` 的状态判定下推为 `UPDATE ... WHERE status='DRAFT'` 消除并发竞态、`checkPipelineToRelease` 从死代码恢复为真判定、`readVectorChannels` 不再无检查断言元素形状、种子 `parseBackend` 显式写入并接入 typecheck、preflight 的 uv 从阻断降为警告、dev 脚本补回跨包 `dist` 热重载。`pnpm run verify` 全绿（15 文件 / 122 测试）。第 10 项（approve/`GET /releases/:id` 缺 `tenantId` 谓词）按裁决归入 [T14 DoD](docs/engineering/tickets/T14-identity-authorization.md#dod)，理由是当前 `tenantId` 只来自请求体、加谓词不构成隔离。
 - 已完成 **/plan-devex-review boomerang 复测**（2026-09-01）：先落 `scripts/dx-baseline.sh`（`pnpm run dx:baseline`，devex T6）把 DX 口径脚本化，再在 `1b2a2ed` 上复测四次——TTHW（`infra:up` + `bootstrap` + `/health/ready` 200）7.3–11.0s、verify 17.0–22.5s，两个退场条件（TTHW <2 min、verify <20 s）达成；总体 DX 6/10 → 8/10，状态 CLEARED WITH MINOR CONCERNS。报告：[boomerang 复测](docs/engineering/plan-devex-review-20260901-boomerang.md)。剩余 concerns：devex T5（CONTRIBUTING）、T7（worker 单命令）未做，CI 从未真实运行（无 git 远端，用户动作），冷启动 TTHW 未测（`--cold` 会删本地开发库，需显式 `--yes-destroy-data`）。verify 在缓存冷时 22.5s 超目标 12%，是否设门禁与如何放宽口径留给用户裁决。
-- 已建立 **CI/CD + 质量检测 + 日志检测流水线**（2026-09-01 建立，2026-09-02 经四轮真跑与
-  审计定型）：五条 GitHub Actions
+- 已建立 **CI/CD + 质量检测 + 日志检测流水线**（2026-09-01 建立，2026-09-02 经三轮真跑
+  与两轮主动审计定型）：五条 GitHub Actions
   工作流——`ci.yml`（node / quality / python / compose 四 job，quality 含 shellcheck
   `--strict`、工作流 YAML 静态检查、Markdown 链接、提交信息规范、覆盖率棘轮 86/81/82/86
   与增量覆盖率 80%；compose 含 Parser 镜像构建并真起一次）、`integration.yml`
   （真起六容器 → `bootstrap` 跑两遍验幂等 → 编译产物起进程 → `smoke:api`）、
-  `security.yml`（gitleaks 全历史 + `pnpm audit` critical 阻断 + PR 依赖/许可证审查）、
+  `security.yml`（gitleaks 扫 HEAD 全部祖先提交 + `pnpm audit` critical 阻断 + PR 依赖/
+  许可证审查；**"全历史"这句话 2026-09-02 之前不成立**，见下）、
   `codeql.yml`（TS+Python，暂不设 required）、`release.yml`（`v*` 标签 → 重跑 verify +
   标签↔CHANGELOG 对齐 → Parser 镜像进 GHCR 带 provenance/SBOM → GitHub Release）。
   配套 `dependabot.yml`（uv 生态显式忽略 `xgboost >=3.1`，理由是 PROBE-002 的二进制模型）、
@@ -147,6 +148,17 @@
   「`INTERNAL_ERROR` 的 `trace_id` 能反查到那条日志」从声明变成被断言的事实。
   `pnpm run verify` 全绿（16 文件 / 129 测试）。流水线全貌、需在 GitHub 页面手工点的
   分支保护设置与明确不做的事：[CI/CD 与质量·日志检测](docs/engineering/ci-cd.md)。
+  **两轮主动审计的共同结论是"绿也要看是怎么绿的"**：第四轮发现 `check:commits` 在十次
+  运行里检查了 0 条提交（`origin/main == HEAD`，区间恒空）、`release.yml` 从未执行过因而
+  一推标签就死在 `uv: command not found`；第五轮发现名为「全历史密钥扫描」的 required
+  check 日志里写着 `INF 2 commits scanned.`——`gitleaks/gitleaks-action` 按事件名自行收窄
+  范围，全历史一次都没扫过，同一个 action 在 PR 上还因缺 `pull-requests` 权限永远红。
+  修的过程中又撞到第三个同形状的：`.gitignore` 里刻意宽的 `*secret*` 把新脚本
+  `scripts/check-secrets.sh` 一起忽略了，而 `check-shell.sh` 用 `git ls-files` 枚举脚本、
+  **看不见被忽略的文件**——加例外前 26 个、加后 27 个，此前所有"shellcheck 通过"都不含它。
+  四项都是"绿着的"或"红在没人看的地方"，没有一个是靠看红叉发现的。gitleaks 现已改为
+  `scripts/check-secrets.sh` 直接调钉死版本的二进制（v8.30.1 + 三平台 sha256），三种事件
+  同一条命令。详见 ci-cd.md §6.4 / §6.5。
 
 ## 尚未完成且不能假装完成
 

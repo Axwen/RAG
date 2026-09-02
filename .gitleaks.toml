@@ -3,8 +3,10 @@
 # 放行的判据只有一条：这个值本身就是刻意无效的占位符或测试夹具，泄漏它没有任何后果。
 # 真实凭证只存在于 .env / .env.*（已 gitignore）与运行期环境变量里，绝不进仓库。
 #
-# 本地复跑：gitleaks detect --config .gitleaks.toml --redact
-# （--redact 让命中的值不打印到终端，排查时也不该把凭证抄进日志）
+# 本地复跑：bash scripts/check-secrets.sh（装了 gitleaks 就直接扫，没装只警告）
+# 等价的手工命令：gitleaks git . --config .gitleaks.toml --redact
+# （--redact 让命中的值不打印到终端，排查时也不该把凭证抄进日志；
+#   `detect` 子命令自 v8.19.0 起已废弃，用 `git`）
 
 [extend]
 useDefault = true
