@@ -43,7 +43,9 @@
 - **三条新增门禁**（第四轮审计产出，见 ci-cd.md §6.4）：
   - **`pnpm run check:workflows`**（`scripts/check-workflows.sh` + `scripts/lib/lint-workflows.py`）：
     工作流 YAML 的静态检查，两层。基线层只用 PyYAML、永远跑——YAML 可解析、`needs` 指向
-    存在的 job、`${{ steps.<id>.… }}` 引用存在的 step、`uses` 必须钉 40 位 SHA；
+    存在的 job、`${{ steps.<id>.… }}` 引用存在的 step、`uses` 必须钉 40 位 SHA、跑
+    `check:secrets` / `check:commits` / `verify` 的 job 必须显式写 `fetch-depth: 0`
+    （第 5 条规则是第五轮补的，见下方 Fixed）；
     actionlint 层本地缺则警告，CI 用 `--strict` 下载钉死版本（v1.7.12）并校验 sha256。
     仓库里 23 个 shell 脚本一直过 shellcheck，而 740 行工作流此前零检查。
   - **`pnpm run check:diff-coverage`**（`scripts/check-diff-coverage.sh`）：增量覆盖率，
@@ -113,6 +115,14 @@
     更隐蔽的是 `check-shell.sh` 用 `git ls-files -- '*.sh'` 枚举脚本，**被忽略的文件它
     看不见**——加例外前是 26 个，加后 27 个，此前所有"shellcheck 通过"的绿都不含这个脚本。
     已加 `!scripts/check-secrets.sh` 例外。
+  - **`release.yml` 的 guard 会死在浅克隆上**：把 `check:secrets` 串进 `verify` 之后，
+    guard 重跑全量 `verify` 而它的 checkout 没写 `fetch-depth`（默认 1），
+    `check-secrets.sh` 判浅克隆即失败——第一次推 `v*` 标签仍然会死在 guard，只是死因从
+    上一轮的 `uv: command not found` 换成"当前是浅克隆"。已补 `fetch-depth: 0`，并把这条
+    不变量加进工作流基线层：**任何 job 只要 `run:` 里出现 `check:secrets` /
+    `check:commits` / `pnpm run verify`，它的每个 `actions/checkout` 都必须显式写
+    `fetch-depth: 0`**（`scripts/lib/lint-workflows.py` 第 5 条规则，加完当场报出这处
+    并用负例验证过会红）。
 
 - **CI 全绿之后的第四轮主动审计（2026-09-02）：两个"还没机会红"的 P0**（完整记录见
   [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6.4）：

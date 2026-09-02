@@ -45,7 +45,7 @@ fi
 # 名字里的 "run: " 是冒号加空格，YAML 会把它当成映射键，整个 ci.yml 直接不可解析
 # （GitHub 上表现为 Invalid workflow file，四个 job 一个都不会跑）。本地跳过 + CI 才
 # 报错，正是这条脚本要消除的那种反馈延迟，所以把"能用标准库做的那部分"前移到这里。
-echo "▶ 基线（${#files[@]} 个工作流：YAML 可解析 / needs 与 step id 引用 / uses 钉 SHA）"
+echo "▶ 基线（${#files[@]} 个工作流：YAML 可解析 / needs 与 step id / uses 钉 SHA / 全历史深度）"
 if ! python3 -c 'import yaml' >/dev/null 2>&1; then
   echo "⚠️  python3 缺 PyYAML，跳过基线检查（--strict 下 actionlint 会覆盖同类问题）"
 elif ! python3 scripts/lib/lint-workflows.py "${files[@]}"; then

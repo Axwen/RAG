@@ -11,6 +11,11 @@
   3. ${{ steps.<id>.… }} 引用了没有 id 的步骤。表达式求值成空字符串，静默错。
   4. uses 没钉 40 位 commit SHA。浮动 tag 是可变引用：同一个 tag 明天可以指向
      别的代码。Dependabot 换 SHA 时会保留 `# vX` 注释，所以这条不妨碍它工作。
+  5. 需要全历史的命令跑在浅克隆上。`actions/checkout` 默认 `fetch-depth: 1`，而
+     `check-secrets.sh`（扫 HEAD 全部祖先提交）与 `check-commits.sh`（比较
+     `origin/main..HEAD`）都要求历史在本地；`pnpm run verify` 把前者串在链里。
+     release.yml 的 guard 就是这样被抓到的：它重跑全量 verify，checkout 却没写
+     fetch-depth——而那条工作流从没执行过，第一次推 v* 标签才会死。
 
 不做的事：表达式语法、上下文可用性、run: 块里的 shell——那些交给 actionlint。
 """
@@ -27,6 +32,15 @@ _LOCAL_OR_DOCKER = re.compile(r"^(\./|docker://)")
 _SHA_PINNED = re.compile(r"@[0-9a-f]{40}$")
 _STEP_REF = re.compile(r"steps\.([A-Za-z0-9_-]+)\.")
 
+# 跑到这些东西的 job 必须有完整历史。verify 在链里串了 check:secrets，所以也算。
+_NEEDS_FULL_HISTORY = (
+    "check-secrets.sh",
+    "check:secrets",
+    "check-commits.sh",
+    "check:commits",
+    "pnpm run verify",
+)
+
 
 def _iter_steps(job: object) -> list[dict]:
     if not isinstance(job, dict):
@@ -39,6 +53,40 @@ def _check_uses(where: str, ref: object, errors: list[str]) -> None:
         return
     if not _SHA_PINNED.search(ref):
         errors.append(f"{where}: uses 未钉 40 位 SHA：{ref}")
+
+
+def _check_full_history(where: str, steps: list[dict], errors: list[str]) -> None:
+    """跑了需要全历史的命令，就必须显式 fetch-depth: 0。
+
+    只看这一个 job 内部：checkout 的深度不跨 job 传递。多个 checkout 时要求每个都写，
+    因为后一个会覆盖前一个的工作区。
+    """
+    hits = sorted(
+        {
+            needle
+            for step in steps
+            if isinstance(step.get("run"), str)
+            for needle in _NEEDS_FULL_HISTORY
+            if needle in step["run"]
+        }
+    )
+    if not hits:
+        return
+
+    checkouts = [
+        s for s in steps if isinstance(s.get("uses"), str) and "actions/checkout@" in s["uses"]
+    ]
+    if not checkouts:
+        errors.append(f"{where}: 跑了 {hits} 却没有 checkout 步骤")
+        return
+    for step in checkouts:
+        with_ = step.get("with")
+        depth = with_.get("fetch-depth") if isinstance(with_, dict) else None
+        if str(depth) != "0":
+            errors.append(
+                f"{where}: 跑了 {hits}（需要全历史），"
+                f"但 checkout 的 fetch-depth 是 {depth!r}——必须显式写 0"
+            )
 
 
 def check(path: str) -> tuple[list[str], int, int]:
@@ -79,6 +127,8 @@ def check(path: str) -> tuple[list[str], int, int]:
         nsteps += len(steps)
         for step in steps:
             _check_uses(f"{path} job {jid}", step.get("uses"), errors)
+
+        _check_full_history(f"{path} job {jid}", steps, errors)
 
         # 只在这个 job 的范围内校验 steps.<id> 引用：step id 的作用域是 job
         ids = {s["id"] for s in steps if isinstance(s.get("id"), str)}

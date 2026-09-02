@@ -42,6 +42,11 @@ jobs:
           # 而 Release 挂在标签上——发出去的产物和标签指向的代码不是一回事，
           # 比直接失败更糟。标签推送时这个表达式就是 refs/tags/vX，行为不变。
           ref: ${{ inputs.tag || github.ref }}
+          # guard 重跑全量 verify，而 verify 链里的 check:secrets 要扫 HEAD 的全部祖先
+          # 提交。checkout 默认 fetch-depth: 1 是浅克隆，那一步会直接判失败——又是一个
+          # 只在"第一次推标签"时才炸的雷（同一个 job 上一轮还漏了 uv）。这条不变量现在
+          # 由 lint-workflows.py 机械检查，不靠记性。
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
