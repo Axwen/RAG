@@ -71,7 +71,7 @@
 
 ### Fixed
 
-- **CI 首跑（2026-09-02）抓到的四个真缺陷**（完整记录见
+- **CI 首跑（2026-09-02）抓到的五个真缺陷**（两轮修完，完整记录见
   [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6）：
   - **README 黄金路径在全新克隆上是坏的**：`bootstrap` 的 seed 步骤跑 `tsx prisma/seed.ts`，
     而 `seed.ts` import 的是 `@rag/contracts` 的**编译产物**；`pnpm install` 的 postinstall
@@ -92,6 +92,15 @@
     （只有 `v10.0.1` / `v10.0.0`），`python` job 连 Set up job 都没过。已钉
     `@v10.0.1`；`python-version` 从 `3.12.3` 放宽到 `3.12`，与
     `requires-python = "==3.12.*"` 同口径，不再和 Dockerfile 的补丁位互相牵制。
+  - **`pnpm test` 在全新克隆上少跑 49 个测试**（第二轮抓到，与 seed 那条同源）：跨包
+    import 由 vite 解析到该包 `main`（`dist/index.js`），只有当前包的源文件才由 vitest
+    现场转译，所以 `packages/*/dist` 不存在时 6 个测试文件直接加载失败——129 个测试静默
+    只剩 80 个，而报错写的是"`package.json` 的 exports 可能不对"。`quality` job 首轮死在
+    `check:links`、没走到覆盖率，`node` job 则一直是绿的：它的 `Typecheck` 步骤跑
+    `tsc -b`（会 emit），把"测试需要先构建"这条依赖悄悄满足了。现在 `quality` job 在
+    覆盖率前加 `pnpm --filter "./packages/*" run build`（冷启约 2s，`apps/*` 的测试
+    import 各自 `src`、不需其 `dist`），并由 `vitest.config.ts` 在加载时校验这些入口
+    存在、缺失即报出"先跑 `pnpm run build`"——本地全新克隆同样受这条保护。
 - **CodeQL 在 private repo 上必然红**：code scanning 需要付费的 Code Security，个人账号
   free plan 开不了，`analyze` 上传 SARIF 直接失败（`Code scanning is not enabled for
   this repository`）。每次 push 挂一个永远红的检查只会训练人忽略红叉，因此 job 改为

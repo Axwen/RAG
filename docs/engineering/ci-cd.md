@@ -136,6 +136,11 @@ pnpm run smoke:api       # HTTP 契约 + 日志结构 + 日志泄漏（需中间
 pnpm run dx:baseline     # DX 耗时基线
 ```
 
+单独跑 `pnpm test` / `pnpm test:coverage` 前要先 `pnpm run build`——跨包 import 解析到
+`dist`，全新克隆里没有它就有 6 个测试文件加载不起来（§6.2）。`verify` 不受影响：它的
+`typecheck` 步骤就是 `tsc -b`，会顺手 emit。真忘了也不会踩坑，`vitest.config.ts` 会先
+报出缺哪些产物。
+
 `pnpm audit` 在本地常因 registry 指向 npmmirror 而报 `AUDIT_ENDPOINT_NOT_EXISTS`；
 CI 里显式带 `--registry https://registry.npmjs.org`。
 
@@ -160,7 +165,9 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
   卡住：它的 **PR 标题**很长，但**提交主题**是缩写过的（如
   `chore(deps): bump python in /services/parser`，44 列）。
 
-## 6. 首跑记录（2026-09-02）：五条工作流全红，抓到四个真缺陷
+## 6. 首跑记录（2026-09-02）：两轮修完，五个真缺陷
+
+### 6.1 第一轮：五条工作流全红
 
 第一次真跑的结论值得原样留下——它是这套流水线是否值得存在的唯一证据。四条工作流
 全部失败，其中**只有一个是流水线自己的配置错**，另外三个是仓库里真实存在、本地永远
@@ -176,13 +183,46 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
 
 `gitleaks（全历史密钥扫描）`、`node`、`compose` 三个 job 首跑即绿。
 
-两条可以带走的经验：
+### 6.2 第二轮：quality 仍红——单测依赖未构建的工作区包
+
+修完上表推第二次，`Integration`、`Security` 转绿，`CodeQL` 如期变灰，`CI` 里 `node` /
+`python` / `compose` 也绿了，只剩 `quality` 红在覆盖率那一步：6 个测试文件加载失败，
+
+```
+Failed to resolve entry for package "@rag/config".
+The package may have incorrect main/module/exports specified in its package.json.
+```
+
+报错把人指向 `package.json` 的 `exports` 字段，真正缺的却只是一次构建。跨包 import 由
+vite 按 Node 规则解析到该包 `main`（`dist/index.js`），只有**当前**包的源文件才由 vitest
+现场转译；`packages/*/dist` 不存在时这些 import 就断了。危险的地方在于它是**静默变少**
+而不是明确报错的那 6 个文件：129 个测试只剩 80 个跑过。
+
+为什么第一轮没看到：`quality` job 在 `check:links` 就退出了，根本没走到覆盖率。而
+`node` job 一直是绿的——它的 `Typecheck` 步骤跑的是 `pnpm run typecheck`，而每个包的
+`typecheck` **就是 `tsc -b`**（会 emit），顺手把 `dist` 造了出来。也就是说"测试需要先
+构建"这条依赖被一个名字叫 typecheck 的步骤悄悄满足了。
+
+两处一起修：
+
+- `quality` job 在覆盖率前加一步 `pnpm --filter "./packages/*" run build`（冷启约 2s）。
+  只构建 `packages/*`——`apps/*` 的测试 import 的是各自 `src`，不需要其 `dist`，也不必在
+  这个 job 里跑 `next build`。
+- `vitest.config.ts` 加载时先校验这些入口存在，不存在就抛一条能照着做的错误
+  （列出缺哪些文件 + "先跑 `pnpm run build`"）。这条对本地同样有效：全新克隆里直接
+  `pnpm test` 会命中它，而不是去查 `exports` 字段。
+
+这是第一轮那三个真缺陷的第四个同源实例：**本地长期有历次构建的残留，掩盖了真实依赖。**
+
+三条可以带走的经验：
 
 - **本地全绿证明不了新环境能跑起来。** 那三个真缺陷（死链、缺 `.env`、缺 `dist`）的
   共同点都是"本地有残留状态"。这正是 `integration.yml` 从干净 checkout 起容器的意义，
   也是为什么它值得那十分钟。
 - **配置错也是收获。** `setup-uv@v10` 这种"看起来一定存在的浮动大版本"只有真跑一次
   才知道不存在，写文档写得再细也发现不了。
+- **"修完了"要靠下一次真跑证明。** 第一轮的失败会把后面的步骤挡在门外，所以一轮全绿
+  之前，"还剩几个问题"是不可知的——第二轮那个缺陷从一开始就在，只是排在死链后面。
 
 ## 7. 明确不做的事（阶段 1）
 

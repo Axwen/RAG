@@ -163,9 +163,15 @@
   `PROJECT_STATE.md` 指向 gitignore 目录的死链、`security.yml` 的 audit job 缺 `.env` 导致
   `prisma generate` 报 `PrismaConfigEnvError`。已全部修复，记录见
   [CI/CD 文档](docs/engineering/ci-cd.md) §6。
-  已验证为绿：`node`、`compose`、`gitleaks（全历史密钥扫描）`。仍未验证：`quality` 的
-  覆盖率阈值与 `python`、`smoke` 三个 job（首轮死在更早的步骤，修复后待复跑）；CodeQL
-  在 private repo 上无法启用，已改为按仓库变量 `CODE_SCANNING_ENABLED` 开关，默认 skip。
+  第二轮复跑后 `Integration`、`Security` 转绿、CodeQL 如期变灰，只剩 `quality` 红在覆盖率：
+  跨包 import 解析到 `dist`，未构建时 6 个测试文件加载失败、129 个测试静默只剩 80 个
+  （首轮该 job 死在 `check:links`、没走到这一步；`node` job 一直绿是因为它的 `typecheck`
+  就是会 emit 的 `tsc -b`）。已在覆盖率前补构建步骤，并由 `vitest.config.ts` 校验入口存在。
+  已验证为绿：`node`、`compose`、`python`、`smoke`（干净 checkout 起六容器 + bootstrap
+  跑两遍 + 进程级冒烟）、`gitleaks（全历史密钥扫描）`、`pnpm audit`。仍未验证：`quality`
+  的覆盖率阈值（第三轮待复跑）、`dependency-review`（只在 PR 上跑，push 时 skip）；
+  CodeQL 在 private repo 上无法启用，已改为按仓库变量 `CODE_SCANNING_ENABLED` 开关，
+  默认 skip。
 - `~/.gstack` 评审日志持久化曾因审批服务 503 失败；项目内文档和 JSONL 是当前可靠副本。
 
 ## 当前阶段：T0 已收口，进入第一批业务票据
