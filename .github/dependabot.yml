@@ -20,6 +20,9 @@ updates:
   # 已把 engines.node 改成 ">=22.23.1"（.nvmrc 与 CI 的 setup-node 仍钉 22.23.1，那才是
   # 开发/构建用的版本）。**不要把它改回精确值**：engines 是"能跑在哪些 Node 上"的声明，
   # 精确值等于对所有用别的 Node 的工具关门，Dependabot 只是第一个撞上的。
+  # 改完当天 12:32 那条 run 第一次 success，并开出 #7（others 组：tsx + zod）、#8（typescript
+  # 6，major 单开）、#9（vite 8，major 单开）、#10（@types/node 26，major 单开）——正是之前
+  # 被跳过的那五个候选。经过见 docs/engineering/ci-cd.md §6.5.1。
   - package-ecosystem: npm
     directory: /
     schedule:
