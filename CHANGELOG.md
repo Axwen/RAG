@@ -290,6 +290,44 @@
   `set -a; . "$ENV_FILE"; set +a` 这行复合命令之上时只绑定到 `set -a`，SC1090 仍然报。
   已拆成四行，指令直接贴在 `.` 之上。
 
+- **第六轮（2026-09-03）：三项"开不了"的门禁随仓库转公开一次性落地**（完整记录见
+  [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6.6）。仓库由 `Axwen/myRAG`
+  改名为 `Axwen/RAG` 并改为 public，于是：
+  - **分支保护第一次真的生效**，上面那条"文档里的第一条手工配置根本做不到"就此关闭：
+    六条 required check（`node` / `quality` / `python` / `compose` / `smoke` /
+    `gitleaks`）+ `required_linear_history` + 0 approvals + 要求对话已解决 +
+    禁 force push / 删分支。`strict`（要求分支与 main 同步）刻意留 `false`——当时七个
+    Dependabot PR 在排队，勾上就是七轮多余 CI。`required_linear_history` 顺带关掉了
+    §2.3 记的 gitleaks 盲点：main 上不再可能出现合并提交，"只在冲突解决里引入的凭证
+    扫不到"这条路径没了。
+  - **CodeQL 与 dependency review 从整条 skip 变成真跑**：`ADVANCED_SECURITY_ENABLED=true`
+    后 `analyze（javascript-typescript）` 与 `analyze（python）` 首次产出真结果
+    （`dependency-review` 只在 `pull_request` 上跑，push 事件下 `skipped` 是设计如此）。
+  - **五个 `github_actions` major 升级 merge**（#13–#17）：`action-gh-release` v2→v3.0.3、
+    `setup-buildx-action` v3→v4.3.0、`download-artifact` v4→v8.0.1、`upload-artifact`
+    v4→v7.0.1、`metadata-action` v5→v6.2.0，每一个都仍钉 40 位 SHA。其中四处落在
+    `release.yml`，而那条流水线至今 0 次运行——第一次打标签时要专门盯 release job。
+  - **改名的坑单独记一笔**：`gh api` 对旧名 GET 会跟随重定向、`PATCH`/`PUT` 返回 307
+    并**静默不生效**，表现是"命令跑完没报错、设置也没生效"（开 secret scanning 的
+    `PATCH` 307 之后，紧接着的 `PUT .../automated-security-fixes` 报
+    `422 Vulnerability alerts must be enabled`，看着像依赖顺序问题，实际两条都打在旧
+    地址上）。改名后写侧调用一律要回读确认。
+
+### Security
+
+- **`pnpm.overrides` 关掉 5 条 Dependabot alerts**（2 high / 3 medium，全在传递依赖上）：
+  `deepmerge-ts@<8.0.0`（CVE-2026-40345，high）、`mysql2@<3.22.0`
+  （GHSA-3f6p-5ww8-9rcr，high）与 `<=3.23.0`（GHSA-rgwj-5xj2-c3m3）、`qs` 两条
+  （CVE-2026-82417、CVE-2026-82562）。三个包都不是直接依赖，改直接依赖动不到它们，只能用
+  `pnpm.overrides` 抬版本；键写成带区间的形式（`"qs@<6.16.0": "6.16.0"`）而不是裸包名，
+  这样上游自己升上去之后 override 自动变成空操作，不会把某个包永久钉死。
+  `--frozen-lockfile` 通过、129 个测试全过、四项覆盖率一位不变
+  （87.15 / 82.43 / 83.16 / 87.83），是纯粹的传递依赖抬升。
+  `pnpm audit` job 此前一直是绿的并不矛盾：它按设计只让 critical 阻断，high 与 medium
+  只报告，Dependabot alerts 面板才是这类告警的归口。
+- **Secret scanning、push protection、Dependabot alerts 与 security updates 全部开启**
+  （2026-09-03 转公开后）；`secret_scanning_validity_checks` 与非供应商模式仍刻意关闭。
+
 ### 首次领域迁移说明
 
 `packages/database/prisma/migrations/<timestamp>_t1a_core_domain/` 是仓库第一份

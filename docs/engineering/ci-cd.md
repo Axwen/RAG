@@ -4,7 +4,8 @@
 > 混在能力清单里。
 
 - 建立日期：2026-09-01
-- 远端：`https://github.com/Axwen/myRAG.git`
+- 远端：`https://github.com/Axwen/RAG.git`（2026-09-03 由 `myRAG` 改名而来；GET 会
+  跟随重定向，但 `PATCH`/`PUT` 对旧名返回 `307` 并**静默不生效**，写侧 `gh api` 必须用新名）
 - 适用范围：阶段 1（T0–T16）。生产部署编排等有目标环境与 ADR 后再加。
 
 ## 1. 五条工作流的分工
@@ -121,29 +122,42 @@ main 走 rebase 保持线性、没有人工解决的合并提交，所以实际�
 
 工作流文件进仓库就会跑，但下面这些是仓库设置，只能在网页上点：
 
-1. **分支保护**（Settings → Branches → Add rule，Branch name pattern `main`）
-   ——**本仓库当前开不了，下面这份是目标态，不是现状。** 2026-09-02 实测
-   `gh api repos/Axwen/myRAG/branches/main/protection` 返回
+1. **分支保护**（Settings → Branches，Branch name pattern `main`）
+   ——**2026-09-03 已配齐并生效，下面是现状。** 用户当天把仓库改为 public，这项能力随之
+   解锁：`gh api repos/Axwen/RAG/branches/main/protection` 从 `403` 变成
+   `404 Branch not protected`（"能配、还没配"），随后用一次 `PUT` 配齐。
+
+   **main 上的实际配置**（任何时候都能用上面那条命令复核）：
+   - 六条 required status checks 全部就位（清单见下）
+   - `required_linear_history: true`
+   - `required_pull_request_reviews.required_approving_review_count: 0`（单人项目保留 PR
+     流程但不要求批准；PR 的价值在于给每次改动留一轮 CI 记录，不在于凑一个批准数）
+   - `required_conversation_resolution: true`
+   - `allow_force_pushes: false`、`allow_deletions: false`
+   - `strict: false` ——**唯一一处刻意的偏离**，见下
+
+   `strict`（Require branches to be up to date before merging）没有勾：配这套门禁时有
+   七个 Dependabot PR 在排队，勾上它等于要求每个 PR 先 rebase 到最新 main 才能 merge，
+   七个就是七轮多余的 CI。所以先留 `false` 让队列排空。要不要翻上去是个独立决定：代价是
+   每次 merge 前多一次 rebase + 一整轮 CI，收益是消掉"两个 PR 各自绿、合起来红"的窗口
+   （单人低并发下这个窗口很小，所以不急）。
+
+   `required_linear_history: true` 顺带关掉了一个已记录的盲区——§6.5 那条 gitleaks 在
+   merge commit 上的扫描差异，在只有 rebase / squash 的历史里不会再出现。
+
+   历史留档（这一节从建立到 2026-09-02 一直写着"该配"，而实际配不了）：private + 个人
+   免费档下实测 `gh api repos/Axwen/myRAG/branches/main/protection`（当时仓库名还是
+   `myRAG`）返回
    `403 Upgrade to GitHub Pro or make this repository public to enable this feature.`，
-   网页上的 Add rule 同样点不动：private repo 的分支保护是付费能力，与 §3.3 的
-   `analyze` / `dependency-review` 卡在同一个根因（private + 免费档）。出路只有两条：
-   把仓库改公开，或升级 GitHub Pro。和 §3.3 有一处不同要说清：那边的"掏钱"不是真实选项
-   （Advanced Security 只卖给 organization，个人账号的 private repo 买不到），而分支保护
-   的 Pro 是**个人**订阅，确实买得到——两条路都能走通。
+   网页上的 Add rule 同样点不动——private repo 的分支保护是付费能力，与 §3.3 的
+   `analyze` / `dependency-review` 卡在同一个根因（private + 免费档）。当时列出的两条
+   出路是"把仓库改公开"或"升级个人 GitHub Pro"，用户选了前者。那段时间 main 上没有任何
+   保护，只能靠"走分支 + PR"的纪律代替（§6.5），而纪律拦不住手误直推、也不留机械痕迹。
+   **门禁从"写在文档里"变成"真的生效"用了一天**，这一节的教训值得留着：写下来的门禁和
+   生效的门禁是两件事（§6.5 第五项）。
 
-   所以**现状是 main 上没有任何保护**，`git push origin main` 会直接过去，required
-   checks 一条都没生效。当下只能靠纪律代替门禁：日常走分支 + PR（理由见 §6.5），merge
-   前自己把 Checks 看全绿。纪律不是保护——它拦不住手误直推，也没有任何机械留痕，只是
-   眼下唯一可用的替代。**不要因为这一节写在这里，就以为它已经配好了**（这正是 §6.5
-   那条"绿也要看是怎么绿的"的同一个坑：写下来的门禁和生效的门禁是两件事）。
-
-   等能开了要勾的：
-   - Require a pull request before merging（勾 Require approvals = 1；单人项目可留 0，
-     但保留 PR 流程，让每次改动都有 CI 记录）
-   - Require status checks to pass，把这些加为 required（搜索框里按 job 名找，
-     列表要等这些 job 至少跑过一次才会出现——**六个都已于 2026-09-02 第三轮全绿**，
-     其中 `quality` 与 `compose` 在第四轮（§6.4）**改过名**，改名后的名字要等这一轮
-     跑完才会出现在选择器里，老名字要手动去掉）：
+   已设为 required 的六条 status check（名字必须与 job 名逐字一致；网页选择器里只列出
+   至少跑过一次的 job，`quality` 与 `compose` 在第四轮（§6.4）改过名，选的是新名）：
      - `node（lint / typecheck / test / prisma / build）`
      - `quality（shell / YAML / 链接 / 提交信息 / 覆盖率）`
      - `python（parser uv / pytest）`
@@ -151,25 +165,45 @@ main 走 rebase 保持线性、没有人工解决的合并提交，所以实际�
      - `smoke（六容器 + bootstrap + 进程级 HTTP/日志断言）`
      - `gitleaks（全历史密钥扫描）`
 
-     剩下三个都不设为 required，各有各的理由：`pnpm audit` 按设计对 high 只报告
-     （critical 才阻断，它自己会红）；`dependency-review` 与 CodeQL 在本仓库整条 skip，
-     把 skip 设成 required 只是给自己一个假的安全感（见 §3.3）。
-   - Require branches to be up to date before merging
-   - Require conversation resolution before merging
-   - 不要勾 Allow force pushes / Allow deletions
+   其余几个 job **不**设为 required，理由 2026-09-03 起有变化：
+   - `pnpm audit（critical 阻断 / high 报告）`：按设计对 high 只报告（critical 才阻断，
+     它自己会红）。理由未变。
+   - `analyze（javascript-typescript）` / `analyze（python）`（CodeQL）：**转公开后已经
+     真跑并 `success`**，不再是永远 skip（实测 `abbaf85`）。所以"设成 required 只是假的
+     安全感"这个旧理由已经失效，但仍先不设——CodeQL 除 push 外还挂每周定时，且单次耗时
+     明显长于其他 job，先攒几轮真实结果再决定，免得刚开就用一条不了解其抖动的检查去卡
+     merge。这是"先观察"，不是"不打算设"。
+   - `dependency-review（PR 新增依赖与许可证）`：只在 `pull_request` 事件跑，push 到 main
+     时按设计 `skipped`（实测 `abbaf85`）。它现在是**真会执行**的（转公开解锁），红叉有
+     意义了，但两种事件下报告状态不一致的检查不适合直接当门禁，同上先观察。
+
+   仓库级合并设置一起对齐了 `required_linear_history`：关掉 merge commit，只留 squash 与
+   rebase，并打开 merge 后自动删分支。
 2. **Actions 权限**（Settings → Actions → General）
    - Workflow permissions 选 **Read repository contents and packages permissions**
      （各工作流已按需在 job 级声明 `packages: write` / `security-events: write`，
      不需要默认给写权限）
    - 勾 Allow GitHub Actions to create and approve pull requests：**不要勾**
 3. **Code scanning 与 dependency review**（Settings → Code security）
-   - 打开 Dependabot alerts 与 Dependabot security updates
-   - Secret scanning 与 push protection：公开仓库免费；private repo 属于付费的
-     Secret Protection，开不了就靠 `security.yml` 里的 gitleaks 兜底——注意这句话在
-     2026-09-02 之前是**不成立**的：当时那个 job 只扫本次推送的提交（§6.5）。现在它扫
-     所有引用可达的提交，兜底才真的成立
-   - **`analyze`（CodeQL）与 `dependency-review` 当前都是 skip。** 两者卡在同一件事上：
-     private repo 上它们都要求 Code Security / Advanced Security。没有时的实测报错分别是
+   ——**2026-09-03 全部已开，下面标注了哪些是现状、哪些是历史。**
+   - Dependabot alerts 与 Dependabot security updates：已开
+     （`security_and_analysis.dependabot_security_updates: enabled`）
+   - Secret scanning 与 push protection：**已开**（`secret_scanning`、
+     `secret_scanning_push_protection` 均 `enabled`）。公开仓库免费；private repo 属于
+     付费的 Secret Protection，开不了就靠 `security.yml` 里的 gitleaks 兜底——注意那句
+     兜底在 2026-09-02 之前是**不成立**的：当时那个 job 只扫本次推送的提交（§6.5）。现在
+     它扫所有引用可达的提交，兜底才真的成立。两者现在是叠加关系而非替代：push protection
+     拦"正在推上来的新密钥"，gitleaks 扫"全历史里已经在的"。
+     （`secret_scanning_validity_checks` 与 `secret_scanning_non_provider_patterns` 仍
+     `disabled`——前者会把检出的凭证拿去向厂商验活，后者会扩到非厂商模式、误报明显更多，
+     两个都不是必需项，等真有一次检出再决定。）
+   - **`analyze`（CodeQL）2026-09-03 起真跑，不再是 skip**：把仓库变量
+     `ADVANCED_SECURITY_ENABLED` 置为 `true` 后，`abbaf85` 上
+     `analyze（javascript-typescript）` 与 `analyze（python）` 双双 `success`。
+     `dependency-review` 同样解锁，但它只在 `pull_request` 事件跑，push 到 main 时按设计
+     `skipped`。两者是否设为 required check 见上面第 1 条。
+     以下是**当初为什么要加这个开关**的历史留档：private repo 上两者都要求
+     Code Security / Advanced Security，没有时的实测报错分别是
 
      ```text
      Code scanning is not enabled for this repository
@@ -198,6 +232,10 @@ main 走 rebase 保持线性、没有人工解决的合并提交，所以实际�
      - 让仓库归属一个开了 **Code Security / Advanced Security** 的 organization。该产品
        面向组织与企业销售，个人账号下的 private repo 买不到——所以在当前归属下，
        "掏钱开启"并不是一个真实选项。
+
+     **实际走的是第一条**：用户 2026-09-03 把仓库改为 public，变量当天 03:09 置为 `true`，
+     两个 job 随即在 main 上跑出真结果。这个开关留着不删——它记录了"为什么这两条检查曾经
+     整条 skip"，而且万一将来仓库转回 private，关掉变量就能回到不制造永久红叉的状态。
 4. **Actions secrets**：**当前一个都不需要**。所有工作流只用 `.env.example` 的占位值和
    自动注入的 `GITHUB_TOKEN`。哪天要加，先回答"CI 为什么需要真实凭证"。
 
@@ -522,6 +560,10 @@ Pro——注意这与 §3.3 不同，那边的 Advanced Security 只卖给 organ
 掏钱也买不到，而 Pro 是个人订阅，确实买得到）。在能开之前只能靠"日常走分支 + PR、merge
 前自己把 Checks 看全绿"的纪律代替，而纪律拦不住手误直推，也不留任何机械痕迹。
 
+> **这一项已于 2026-09-03 解决**：用户选了"改公开"，分支保护随之配齐，六条 required check
+> 第一次真的生效。§3 第 1 条现在写的是现状而不是目标态，经过见 §6.6。这条 finding 保留
+> 原文不动——它记录的是"文档写了不等于配了"这个形状，而那个形状与它是否已被修复无关。
+
 **第六个，也是这一串里最安静的一个：`dependabot.yml` 的 npm 那一段从来没产出过任何 PR。**
 清理 Action 运行记录时逐条看了那些 `failure`，其中两条 `Dependabot Updates`（02:04 与 02:12）
 是 npm 生态的更新作业，都失败了。日志里每个依赖一条：
@@ -583,7 +625,79 @@ PR #6 rebase merge 进 main 后 Dependabot 重跑，`npm_and_yarn` 那条 `Depen
 **活的**信号，不是垃圾；main 上那 2 条 `event: dynamic` 的 `Dependabot Updates` 失败是第三项
 缺陷的现场证据，而且它们本来就不在 Actions 列表里，删了也没有清理价值。
 
+### 6.6 第六轮（2026-09-03）：转公开，门禁第一次真的生效
 
+前五轮的共同形状是"门禁看着在，其实没在"。这一轮把最后一层补上了，起因是用户做了两个
+**仓库级**动作：把 `Axwen/myRAG` **改名**为 `Axwen/RAG`，并把它**改为 public**。
+
+**改名先埋了一个坑，值得单独记：`gh api` 的读写行为不对称。** GET 会跟随重定向，所以
+`gh api repos/Axwen/myRAG` 照样返回数据（`full_name` 字段里已经是 `Axwen/RAG`，只是没人
+去看）；而 `PATCH`/`PUT` 对旧名返回 **HTTP 307 并且什么都不做**。表现是一串"命令跑完没
+报错、设置也没生效"的调用——开 secret scanning 的 `PATCH` 307 了，紧接着
+`PUT .../automated-security-fixes` 报 `422 Vulnerability alerts must be enabled`，看起来
+像依赖顺序问题，实际是两条都打在旧地址上。诊断靠的是
+`gh api repos/Axwen/myRAG --jq .full_name` → `Axwen/RAG`。**教训：改名之后，写侧调用的
+静默成功要当失败看，一律回读确认。**
+
+转公开一次解锁三样此前 403 的能力，外加无限 Actions 分钟数：
+
+| 能力 | 公开前 | 公开后 |
+| --- | --- | --- |
+| 分支保护 | `403 Upgrade to GitHub Pro…` | `404 Branch not protected`（能配、还没配） |
+| Rulesets | `403` | `[]` |
+| CodeQL / dependency review | 整条 skip（§3 第 3 条） | `ADVANCED_SECURITY_ENABLED=true` 后真跑 |
+
+当天做完的配置（都已回读确认，命令见 §3）：
+
+1. **分支保护**：六条 required check + `required_linear_history` + 0 approvals +
+   要求对话已解决 + 禁 force push / 删分支，`strict` 刻意留 `false`（当时七个 Dependabot
+   PR 在排队，勾上就是七轮多余 CI）。仓库级同时关掉 merge commit、打开 merge 后删分支，
+   与 linear history 对齐。
+2. **Advanced Security**：`ADVANCED_SECURITY_ENABLED=true`（03:09:48Z），secret scanning、
+   push protection、Dependabot alerts 与 security updates 全开。
+3. **五个 `github_actions` major PR merge**（#13–#17，03:54）：`action-gh-release` v2→v3.0.3、
+   `setup-buildx-action` v3→v4.3.0、`download-artifact` v4→v8.0.1、`upload-artifact`
+   v4→v7.0.1、`metadata-action` v5→v6.2.0。**每一个都仍钉 40 位 SHA**，第四轮加的工作流
+   基线检查（不许浮动 tag）在这五个 PR 上没被绕过。注意其中四处落在 `release.yml` 里，
+   而那条流水线只有推 `v*` 标签才跑——**这五个升级里有一部分尚未被任何真实运行验证过**，
+   第一次打标签时要专门盯 release job。
+4. **`main` 上第一次全绿的"受保护"提交**：`abbaf85` 的 10 个 check 里 9 个 `success`、
+   1 个 `skipped`（`dependency-review`，push 事件下按设计不跑），CodeQL 双语言
+   （`analyze（javascript-typescript）` 03:56:19、`analyze（python）` 03:55:57）首次产出
+   真结果，最慢的 `smoke` 03:57:18 收尾。
+
+**顺带修掉 5 条 Dependabot alerts**（2 high / 3 medium，全在传递依赖上）：`deepmerge-ts`
+`<8.0.0`（CVE-2026-40345，high）、`mysql2` `<3.22.0`（GHSA-3f6p-5ww8-9rcr，high）与
+`<=3.23.0`（GHSA-rgwj-5xj2-c3m3）、`qs` 两条（CVE-2026-82417、CVE-2026-82562）。这三个包
+都不是我们的直接依赖，改直接依赖动不到它们，所以用 `pnpm.overrides` 按"低于修复版就抬到
+修复版"的形式钉：
+
+```json
+"pnpm": {
+  "overrides": {
+    "qs@<6.16.0": "6.16.0",
+    "mysql2@<3.23.1": "3.23.1",
+    "deepmerge-ts@<8.0.0": "8.0.0"
+  }
+}
+```
+
+写成带版本区间的键而不是裸包名，是为了**只在真的低于修复版时才干预**：将来上游自己升上去
+之后这条 override 自动变成空操作，不会把某个包永久钉死在 8.0.0。改完 `--frozen-lockfile`
+通过、129 个测试全过、四项覆盖率一位不变（87.15 / 82.43 / 83.16 / 87.83），说明是纯粹的
+传递依赖抬升，没有行为影响。
+
+`pnpm audit` job 之前一直是绿的，这 5 条却真实存在——**不矛盾**：那个 job 按设计只让
+critical 阻断，high 与 medium 只报告（§3 第 1 条）。它没漏报，是我们选择了不拦。Dependabot
+alerts 面板才是这类告警的归口，两者互补而不是互为替代。
+
+**还剩两个红，都是真迁移，与本轮无关**：#8 typescript 6.0.3（`TS2591`，要给
+`packages/contracts` 的 tsconfig 补 `types`）、#9 vite 8.2.2（覆盖率量法变了，functions
+80.76% vs 阈值 82%，按 §2.1 棘轮那段的规则处理）。它们不该和"转公开收尾"混在一个改动里。
+
+**成本口径也变了**：公开仓库 Actions 分钟数无限，第五轮算出来的"11 分钟/push、22 分钟/PR、
+免费档约 180 次 push/月"不再是约束，之前设计的三项省钱优化随之降级为**可选**——其中给
+smoke 加路径过滤仍然值得做，但理由从"省钱"换成了"缩短反馈时间"。
 
 ## 7. 明确不做的事（阶段 1）
 
