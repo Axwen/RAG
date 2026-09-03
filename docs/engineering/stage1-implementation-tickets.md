@@ -39,7 +39,7 @@
 | T9 Feedback/Evaluation | 固定语料、评测 Harness、反馈与发布报告 | Harness/语料在 T6 前交付；反馈、报告和完整 50 题门禁可在 T7 后完成 |
 | T10 Worker Runtime | ingestion/evaluation Profile、并发、in-flight、prefetch 和资源隔离 | 启动 Profile 与配置在 T3/T4 前；并行压测在 T9 完整链路后关闭 |
 | T11 Audit/Telemetry | 同步领域审计与异步运行遥测 | 同步审计在 T2/T3 前半段落地；遥测消费者和故障恢复可后置 |
-| T12 Performance/Budget | 配置硬上限、Budget Ledger、限流、缓存和性能报告 | Ledger schema/预扣在 T15 前；检索性能随 T6，完整报告随 T9 后关闭 |
+| [T12](tickets/T12-performance-budget.md) Performance/Budget | 配置硬上限、Budget Ledger、限流、缓存和性能报告 | 拆为 T12a 预算账本与配置骨架、T12b 限流缓存与性能报告两批；T12a 的 Ledger schema/预扣在 T15 前且属 HG-01 门禁；T12b 检索性能随 T6，完整报告随 T9 后关闭 |
 | T13 Untrusted Content | 解析、进入上下文前、输出后三处注入检测 | 分别随 T4、T6、T7 交付，不作为最后一次集中补丁 |
 | [T14](tickets/T14-identity-authorization.md) Identity/Business User/Authorization | Keycloak OIDC 只负责身份；自有 BusinessUser、租户/Workspace 成员、角色/能力权限、资源授权、作用域编译和 fail-closed | T0、T1a；在 T6 和所有 Web 路由前完成；为客服、研发、普通员工等后续域提供统一身份上下文，不复制用户系统（ADR-0039）|
 | [T15](tickets/T15-model-adapter.md) ModelAdapter | Chat、Embedding、Reranker、引用验证统一准入层及供应商方言 | T1a、T12 Ledger；在 T5 Embedding、T6 Rerank、T7 Chat/Citation 前完成 |

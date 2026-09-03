@@ -582,6 +582,7 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
 - [ ] **T12 (P1, human: ~4d / CC: ~1d)** — Performance/Budget — 落地查询、缓存、延迟和费用硬门禁。
   - 来源：Performance Review，N+1、无界候选、缓存过期授权和模型费用失控均会破坏本地可用性。
   - 计划文件：`packages/config/`、`apps/api/src/modules/retrieval/`、`apps/api/src/modules/model/`、`tests/performance/`。
+  - 范围补充：见 [T12 Ticket](tickets/T12-performance-budget.md)。按执行顺序拆为 T12a 预算账本与配置骨架（~2d / ~0.5d）和 T12b 限流、缓存与性能报告（~2d / ~0.5d）两批。余额事实源只在 PostgreSQL `model_budget_ledger`，Redis 只用于展示与快速拒绝；预扣先于调用，结算以供应商返回的 `cost` 为准，崩溃由 lease 回收；rerank 预扣估值由候选数计算。并发类限额不得只依赖 Redis（本地信号量 + PostgreSQL 可恢复 lease）；用户级配额落既有 `RATE_LIMITED`/429，不为预算新增打破 `ERROR_STATUS` 双射的错误码（ADR-0029、ADR-0034）。
   - 验证：配置 schema、批量查询计数、Redis 作用域缓存按 `aclRevision` 失效、分项延迟报告、用户级限流以及 5/16/500 元预算账本熔断。
   - 时点：Budget Ledger schema、预扣/结算/lease 必须在 ModelAdapter 前完成；检索性能随 T6 验证，完整性能报告在 T9 后收口。
 - [ ] **T13 (P1, human: ~4d / CC: ~1d)** — Untrusted Content — 落地不可信内容隔离与三处注入检测。
