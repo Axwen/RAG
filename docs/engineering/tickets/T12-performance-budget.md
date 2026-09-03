@@ -24,7 +24,7 @@ T12a 不得为了等 T12b 而推迟：账本是唯一一条钱花掉就收不回
 - `apps/api/src/modules/retrieval/`：Redis 作用域缓存及其按 `aclRevision` 的失效；批量查询替换逐条查询。
 - 用户级限流载体：Redis 计数软门（频次、每日、上传）+ API 本地信号量 + PostgreSQL 可恢复并发 lease（`AnswerRun`/SSE）。
 - `tests/performance/`：批量查询计数断言与分项延迟报告。
-- 领域审计原因码：预扣失败、结算差额、lease 回收、池边界拒绝四类。写入路径接 T11 Audit/Telemetry 的同步审计入口，与 T11 同批交付，不留到 T11 之后。
+- 领域审计原因码：预扣失败、结算差额、lease 回收、池边界拒绝四类，登记在 [T11a](T11-audit-telemetry.md#批次划分) 的中央注册表 `packages/contracts/src/audit/reason-codes.ts`（[ADR-0040](../../adr/0040-domain-audit-and-runtime-telemetry.md) 决策 3），不在预算模块私拍一套码。写入路径接 [T11](T11-audit-telemetry.md) 的同步审计入口，与 T11a 同批交付，不留到 T11 之后。
 
 ## Ledger 最小数据模型
 
@@ -75,8 +75,8 @@ T12a 不得为了等 T12b 而推迟：账本是唯一一条钱花掉就收不回
 ## 依赖与时点
 
 - 依赖 [T0](T0-monorepo-foundation.md)（配置包、Compose、Redis）与 T1a（Prisma/迁移口径、租户模型）。
-- **T12a 必须在 [T15](T15-model-adapter.md) 前完成**，且是 HG-01 门禁四项之一（T1a + T14 + T11 同步审计 + T12 Ledger/配置骨架）。
-- 领域审计写入与 T11 Audit/Telemetry 的同步审计入口同批交付；本票据只定义原因码与调用点。
+- **T12a 必须在 [T15](T15-model-adapter.md) 前完成**，且是 [HG-01 门禁](../manual-acceptance-gate.md#阶段-1-门禁点)四项之一（T1a + T12a Ledger/配置骨架 + T11a 同步审计骨架 + T14a/T14b）。
+- 领域审计写入与 [T11a](T11-audit-telemetry.md#批次划分) 的同步审计入口同批交付：账本 schema 与四条事务入口可以先落，四类审计写入必须与 T11a 同批合并，两张表的迁移合到同一次迁移评审。本票据只定义原因码与调用点。
 - T12b 的检索侧验证随 T6，完整性能报告在 T9 链路具备后收口；`AnswerRun`/SSE 并发限额随 T7 的 SSE 端点落地后才能端到端验证。
 - 用户级配额的身份上下文来自 [T14](T14-identity-authorization.md)：限额主体是 `businessUser`，不是请求体里的 `tenantId`。
 
@@ -100,7 +100,7 @@ T12a 不得为了等 T12b 而推迟：账本是唯一一条钱花掉就收不回
 
 - `model_budget_ledger` schema 与迁移合并，且 T15 只依赖事务入口即可工作，不需要直接读写表结构。
 - 预扣、结算、释放、lease 过期回收四条路径各有测试；并发预扣有竞态测试。
-- 预扣失败、结算差额、lease 回收、池边界拒绝四类都写领域审计（ADR-0029 要求），且 Trace/遥测故障不影响拒绝结果。
+- 预扣失败、结算差额、lease 回收、池边界拒绝四类都写领域审计（ADR-0029 要求），原因码在 [T11a](T11-audit-telemetry.md#批次划分) 的注册表中登记，且 Trace/遥测故障不影响拒绝结果。
 - 配置 schema 覆盖 5/16/500、池 350/100/50、汇率、lease 时长和 ADR-0034 的四项用户级配额（并发 `AnswerRun` 1、并发 SSE 2、提问 10 次/分与 200 次/日、上传 20 文件/小时）与管理侧 `rebuild` 每租户并发 1，并有「配出超硬上限即启动失败」的测试。
 - 429 响应带 `Retry-After`，且有测试钉住响应不泄漏他人用量。
 - 停掉 Redis 的集成测试证明并发限额仍然生效，且没有任何路径靠 Redis 单点放行预算。

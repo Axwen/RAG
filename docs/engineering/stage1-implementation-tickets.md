@@ -38,10 +38,10 @@
 | T8 Deletion/Replay | 删除目标、墓碑、Legal Hold、证明、恢复与 Replay | T3、T5、T7；包含 `/admin/deletions` 所需 API |
 | T9 Feedback/Evaluation | 固定语料、评测 Harness、反馈与发布报告 | Harness/语料在 T6 前交付；反馈、报告和完整 50 题门禁可在 T7 后完成 |
 | T10 Worker Runtime | ingestion/evaluation Profile、并发、in-flight、prefetch 和资源隔离 | 启动 Profile 与配置在 T3/T4 前；并行压测在 T9 完整链路后关闭 |
-| T11 Audit/Telemetry | 同步领域审计与异步运行遥测 | 同步审计在 T2/T3 前半段落地；遥测消费者和故障恢复可后置 |
+| [T11](tickets/T11-audit-telemetry.md) Audit/Telemetry | 同步领域审计与异步运行遥测：两条载体在包依赖图上互相看不见 | 拆为 T11a 同步审计骨架（契约、`domain_audit_event`、同事务写入口，属 HG-01 门禁）、T11b 异步遥测与恢复（依赖 T3 的 Outbox，HG-02 之后）；接入面随各域票据推进，不集中补丁（ADR-0040）|
 | [T12](tickets/T12-performance-budget.md) Performance/Budget | 配置硬上限、Budget Ledger、限流、缓存和性能报告 | 拆为 T12a 预算账本与配置骨架、T12b 限流缓存与性能报告两批；T12a 的 Ledger schema/预扣在 T15 前且属 HG-01 门禁；T12b 检索性能随 T6，完整报告随 T9 后关闭 |
 | T13 Untrusted Content | 解析、进入上下文前、输出后三处注入检测 | 分别随 T4、T6、T7 交付，不作为最后一次集中补丁 |
-| [T14](tickets/T14-identity-authorization.md) Identity/Business User/Authorization | Keycloak OIDC 只负责身份；自有 BusinessUser、租户/Workspace 成员、角色/能力权限、资源授权、作用域编译和 fail-closed | T0、T1a；在 T6 和所有 Web 路由前完成；为客服、研发、普通员工等后续域提供统一身份上下文，不复制用户系统（ADR-0039）|
+| [T14](tickets/T14-identity-authorization.md) Identity/Business User/Authorization | Keycloak OIDC 只负责身份；自有 BusinessUser、租户/Workspace 成员、角色/能力权限、资源授权、作用域编译和 fail-closed | T0、T1a；拆为 T14a 身份接入与 7 张业务身份表、T14b 统一授权入口，两批之间设临时门禁 [HG-01a](manual-acceptance-gate.md#阶段-1-门禁点)；T14b 依赖 T11a 的审计原因码注册表；在 T6 和所有 Web 路由前完成；为客服、研发、普通员工等后续域提供统一身份上下文，不复制用户系统（ADR-0039）|
 | [T15](tickets/T15-model-adapter.md) ModelAdapter | Chat、Embedding、Reranker、引用验证统一准入层及供应商方言 | T1a、T12 Ledger；在 T5 Embedding、T6 Rerank、T7 Chat/Citation 前完成 |
 | [T16](tickets/T16-web-admin-surfaces.md) Web/Admin Surfaces | 登录、知识上传/审核、入库状态、Chat 和三个管理控制台 | 页面开工前执行 Design Review；按后端 Ticket 纵向交付，不单独等待最后集成；拆为 T16a 用户主链与 T16b 管理控制台两批 |
 
@@ -59,7 +59,9 @@
 探针收尾提交
   -> T0
   -> DX Review + 实现准备增量工程复审
-  -> T1a + T14 + T11(同步审计) + T12(Ledger/配置骨架)
+  -> T1a + T12a(Ledger/配置骨架) + T11a(同步审计骨架) + T14a(身份接入)
+  -> HG-01a 临时人工核验（T14b 开工前确认登录链路与身份表结构；此时 7 张表还没有业务数据，改结构只是改迁移）
+  -> T14b(统一授权入口)
   -> HG-01 人工核验（当前并行 Agent 到此停止，用户通过后继续）
   -> T2 + T10(Worker 基础) -> T3 -> T1b
   -> HG-02 人工核验
@@ -70,7 +72,7 @@
   -> HG-04 人工核验
   -> Design Review -> T7 + T13(output) + T16a 用户主链
   -> HG-05 人工核验
-  -> T8 + T9(反馈/报告) + T10/T11/T12 收口 + T16b 管理控制台
+  -> T8 + T9(反馈/报告) + T10/T11b/T12b 收口 + T16b 管理控制台
   -> HG-06 人工核验
   -> Probe Gate 集成项全闭合 -> 完整增量工程复审与周期重估
   -> HG-07 人工核验
