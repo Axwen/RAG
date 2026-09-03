@@ -49,9 +49,28 @@ T12a 的四类预算审计、T14b 的授权决策、T13 的注入命中都调它
  *  这样 ADR-0035 第 13 行的「写失败则业务失败」由类型和事务共同保证。 */
 type Tx = Prisma.TransactionClient
 
-/** 原因码只能来自契约注册表。这里用注册表推导出的联合类型而不是 string，
- *  未注册的码在编译期就过不去——与 ERROR_STATUS 双射同一个思路。 */
+/** 注册表照 packages/contracts/src/errors.ts 的 ERROR_STATUS 形状写：frozen 对象 +
+ *  从它派生查找，不在别处另写一份 switch。一处**故意的分歧**是联合类型从对象推导
+ *  而不是独立声明（ERROR_STATUS 是先声明 ErrorCode 再注解 Record），因此新增一个码
+ *  只改一处，不会出现「类型里有、表里没有」。用 satisfies 而不是类型注解，
+ *  否则键会被擦成 string，keyof 推不出联合。 */
+export const REASON_CODES = Object.freeze({
+  'budget.reserve_rejected': 'BUDGET',
+  'budget.pool_boundary_rejected': 'BUDGET',
+  'budget.settlement_delta': 'BUDGET',
+  'budget.lease_expired': 'BUDGET',
+  // 其余域随各自票据追加：authz.* / membership.* / dataclass.* / injection.*
+  // / evidence.* / deletion.*，命名空间与 ADR-0040 决策 3 一致。
+}) satisfies Readonly<Record<string, AuditCategory>>
+
+/** 未注册的码在编译期就过不去——与 ERROR_STATUS 双射同一个思路。 */
 type ReasonCode = keyof typeof REASON_CODES
+
+/** 表里只记 category，不记 outcome：同一个码在不同调用点可能是 DENIED 也可能是
+ *  DEGRADED（数据等级阻断与降级共用一族码），outcome 由调用方按各域票据的表传。 */
+export function categoryForReasonCode(code: ReasonCode): AuditCategory {
+  return REASON_CODES[code]
+}
 
 /** 唯一的审计写入口。没有自建事务的重载，没有 fire-and-forget 版本。
  *  detail 在写入前强制过 redaction：正文、Prompt、检索命中片段、凭证一律替换为
@@ -137,7 +156,7 @@ export function writeAuditEvent(
 
 ## DoD
 
-- `domain_audit_event` schema 与迁移合并；原因码注册表落在 `packages/contracts/src/audit/` 且编译期可枚举。
+- `domain_audit_event` schema 与迁移合并；原因码注册表落在 `packages/contracts/src/audit/` 且编译期可枚举（形状见[审计写入口契约](#审计写入口契约)：frozen 对象 + `satisfies`，联合类型从对象推导，新增码只改一处）。
 - 审计写入口全仓唯一，签名按[审计写入口契约](#审计写入口契约)（含 `outcome` 与 `actor` 到列的映射）；有测试证明审计写失败导致业务事务回滚。
 - 有依赖断言或 lint 规则钉住 `@rag/observability` 不导出审计入口、审计入口不依赖遥测导出器。
 - 关闭 Trace/指标消费者后业务状态与审计仍提交（闭合记录 T11 原验证项）。
