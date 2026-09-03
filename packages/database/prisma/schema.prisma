@@ -16,6 +16,9 @@
 // - PipelineManifest 只表达一个已批准兼容组合，不是 Release 的父对象。
 // - ReleaseManifest 不写回激活时间或当前 Alias；激活事实由 ReleaseActivation
 //   记录（T5）。T1a 只落表结构与 CREATED 初始态。
+// - 复合外键的约束名用 @relation(map:) 钉住，与迁移 20260828130000_manifest_immutability
+//   的手写 SQL 对齐。不声明 map 时 Prisma 按字段名推导出另一套名字，schema 与迁移
+//   历史会长期漂移，任何人跑 `prisma migrate dev` 都会被要求 reset 开发库。
 //
 // 生成器选择 `prisma-client` 而不是已弃用的 `prisma-client-js`；
 // `moduleFormat = "cjs"` 与仓库统一的 CommonJS 产物一致（NestJS 与 Worker 都是 CJS）。
@@ -236,9 +239,9 @@ model PipelineManifest {
   createdAt           DateTime          @default(now()) @db.Timestamptz(6)
   approvedAt          DateTime?         @db.Timestamptz(6)
   tenant              Tenant            @relation(fields: [tenantId], references: [id])
-  ingestionManifest   IngestionManifest @relation(fields: [tenantId, ingestionManifestId], references: [tenantId, id])
-  retrievalManifest   RetrievalManifest @relation(fields: [tenantId, retrievalManifestId], references: [tenantId, id])
-  answerManifest      AnswerManifest    @relation(fields: [tenantId, answerManifestId], references: [tenantId, id])
+  ingestionManifest   IngestionManifest @relation(fields: [tenantId, ingestionManifestId], references: [tenantId, id], map: "pipeline_manifests_tenant_ingestion_fkey")
+  retrievalManifest   RetrievalManifest @relation(fields: [tenantId, retrievalManifestId], references: [tenantId, id], map: "pipeline_manifests_tenant_retrieval_fkey")
+  answerManifest      AnswerManifest    @relation(fields: [tenantId, answerManifestId], references: [tenantId, id], map: "pipeline_manifests_tenant_answer_fkey")
 
   @@unique([tenantId, ingestionManifestId, retrievalManifestId, answerManifestId])
   @@unique([tenantId, contentHash])
@@ -258,7 +261,7 @@ model IndexPartition {
   embeddingVersion  String
   createdAt         DateTime         @default(now()) @db.Timestamptz(6)
   tenant            Tenant           @relation(fields: [tenantId], references: [id])
-  knowledgeSpace    KnowledgeSpace   @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id])
+  knowledgeSpace    KnowledgeSpace   @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id], map: "index_partitions_tenant_knowledge_space_fkey")
   releaseManifests  ReleaseManifest[]
 
   @@unique([tenantId, knowledgeSpaceId, dataClass, indexSchemaVersion, embeddingVersion])
@@ -287,9 +290,9 @@ model ReleaseManifest {
   contentHash       String
   createdAt         DateTime       @default(now()) @db.Timestamptz(6)
   tenant            Tenant         @relation(fields: [tenantId], references: [id])
-  knowledgeSpace    KnowledgeSpace @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id])
-  indexPartition    IndexPartition @relation(fields: [tenantId, indexPartitionId], references: [tenantId, id])
-  ingestionManifest IngestionManifest @relation(fields: [tenantId, ingestionManifestId], references: [tenantId, id])
+  knowledgeSpace    KnowledgeSpace @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id], map: "release_manifests_tenant_knowledge_space_fkey")
+  indexPartition    IndexPartition @relation(fields: [tenantId, indexPartitionId], references: [tenantId, id], map: "release_manifests_tenant_partition_fkey")
+  ingestionManifest IngestionManifest @relation(fields: [tenantId, ingestionManifestId], references: [tenantId, id], map: "release_manifests_tenant_ingestion_fkey")
 
   @@unique([tenantId, contentHash])
   @@index([tenantId, knowledgeSpaceId])
