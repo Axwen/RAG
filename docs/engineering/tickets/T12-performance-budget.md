@@ -31,7 +31,7 @@ T12a 不得为了等 T12b 而推迟：账本是唯一一条钱花掉就收不回
 `model_budget_ledger` 一行 = 一次「打算花钱」的完整生命周期，不是一条流水日志：
 
 - 归属：`tenantId`、`answerRunId` 或 `jobId`、幂等键。幂等键让重放不重复扣款。
-- 分池：`pool ∈ {interactive, evaluation, reserve}`、`period ∈ {日, 月}`。评测负载不得吃掉交互池，这是 T10 资源隔离在费用维度上的同一条边界。
+- 分池：`pool ∈ {interactive, evaluation, reserve}`、`period ∈ {日, 月}`。评测负载不得吃掉交互池，这是 T10 资源隔离在费用维度上的同一条边界。`period` 落地时不是列：一行预扣同时算进当日与当月两个窗口，单值填不了，一行一窗口又会让账本翻倍，所以两个窗口由应用按 `createdAt` 范围 CAS（走索引 `(tenantId, pool, status, createdAt)`），预算日的时区归 T12b 运行配置而不进 schema。
 - 金额：`reservedAmount`（预扣估值）、`actualAmount`（结算实际）。两者都记，差额本身是审计对象。
 - 生命周期：`status ∈ {RESERVED, SETTLED, RELEASED, EXPIRED}`、`leaseExpiresAt`。
 - 沿用仓库既有 Prisma 约定：`@id @default(uuid(7)) @db.Uuid`、`DateTime @db.Timestamptz(6)`、`@@map("model_budget_ledger")`、`@@unique([tenantId, id])` 以便租户级外键用 `references: [tenantId, id]` 把租户谓词焊进外键；枚举写在文件顶部并注明 ADR 出处。
