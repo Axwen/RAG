@@ -25,7 +25,7 @@ decision-basis: T12 票据落地时发现领域审计有六处 ADR 级写入要�
 - [ADR-0025](0025-data-class-routing-enforcement-point.md) 第 12 行（阻断与降级都写审计）、[ADR-0029](0029-model-budget-ledger-and-limits.md) 第 17 行（预扣失败、结算差额、lease 回收、池越界四类）、[ADR-0032](0032-untrusted-content-and-prompt-injection.md) 第 13 行（注入命中含文档版本、Chunk、命中模式与处置结果）、[ADR-0033](0033-deterministic-evidence-conflict-resolution.md) 第 15 行（Finalizer 选择、冲突来源与最终状态）、[ADR-0034](0034-per-user-rate-limit-and-concurrency-quota.md) 第 11 行（反向约束：频次软门不写）、[ADR-0036](0036-stage1-protocol-clarifications.md) 第 59 行（把「审计与异步遥测」钉在模型准入顺序末端）。
 - [T12 Ticket](../engineering/tickets/T12-performance-budget.md) 第 27 行要求四类预算原因码接同步审计入口；[T14 Ticket](../engineering/tickets/T14-identity-authorization.md) 第 79 行要求授权决策写同步领域审计。
 
-现状是三个空位：`packages/database/prisma/schema.prisma` 的 10 个模型里没有审计表；`packages/observability/src` 共 4 个文件 265 行，只有 health、logger、redaction；`packages/contracts/src` 只有 errors 与 manifests。
+现状是三个空位：`packages/database/prisma/schema.prisma` 的 10 个模型里没有审计表；`packages/observability/src` 只有 health、logger、redaction 三个模块；`packages/contracts/src` 只有 errors 与 manifests。
 
 归属也不唯一：`packages/observability/src/index.ts` 的头注释把「审计事件」按票据分给 T3/T10/T12/T14，而[闭合记录](../engineering/plan-eng-review-closure.md#16-实施任务)第 16 节把 `packages/observability/` 分给 T11。两处都不算错，但没有一处回答「审计写在哪个包、落哪张表、原因码谁登记」。这是需要 ADR 而不是票据补丁的信号：六个域都要写它，任何一个域先动手都会定义出只适合自己的形状，后来者要么迁移要么各写一套——而审计是出了事之后唯一的追溯面，各写一套等于没有。
 
