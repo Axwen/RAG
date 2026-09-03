@@ -4,6 +4,9 @@
 本地中间件 Compose、幂等初始化和 CI 冻结检查；T1a 起加入领域核心
 （租户、知识空间、Manifest、Release 与兼容矩阵）。
 
+**要动这个仓库的代码（人或 AI Agent）先读 [`AGENTS.md`](AGENTS.md)**：事实源层级、六条
+required checks 对应的本地命令、Prisma 与包边界约定、以及明确挂起不做的事，都在那一页。
+
 ## 黄金路径（新终端从零到全绿）
 
 ```bash
