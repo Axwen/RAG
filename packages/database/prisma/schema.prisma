@@ -8,6 +8,8 @@
 // - T1b：chunk_manifest 与最终 Chunk 字段（PROBE-006 冻结后）
 // - T2：正交状态命令与状态迁移事实
 // - T3：Outbox 与事件投递事实
+// - T12a：model_budget_ledger 模型预算账本（ADR-0029）
+// - T11a：domain_audit_event 同步领域审计（ADR-0040）
 //
 // 边界约定（ADR-0036 §4）：
 // - 所有表都带 tenantId；租户是最高隔离域，即使阶段 1 只有一个租户。
@@ -75,6 +77,67 @@ enum ReleaseStatus {
   ABORTED
 }
 
+// ─── 模型预算账本（ADR-0029）─────────────────────────────────────────
+// 一行 = 一次「打算花钱」的完整生命周期，不是流水日志。合法转移只有三条：
+// RESERVED → SETTLED / RELEASED / EXPIRED，因此终态时间戳只需要一个。
+
+enum BudgetPool {
+  INTERACTIVE
+  EVALUATION
+  RESERVE
+}
+
+enum BudgetLedgerStatus {
+  RESERVED
+  SETTLED
+  RELEASED
+  EXPIRED
+}
+
+// 结算金额的来源。供应商在 usage 里返回 cost 时记 PROVIDER；没返回时记
+// ESTIMATED 并落本地估值，差额本身是审计对象（ADR-0029 第 17 行）。
+enum BudgetCostSource {
+  PROVIDER
+  ESTIMATED
+}
+
+// 释放只用于调用确实没发生。客户端超时或挂起不得走这条——钱可能真花了，
+// 那种情况留给 lease 过期回收（T12 票据不变量）。
+enum BudgetReleaseReason {
+  GATED
+  CANCELLED_BEFORE_DISPATCH
+}
+
+// ─── 领域审计（ADR-0040）─────────────────────────────────────────────
+// 一行 = 一次领域判定的事实，不是访问日志。频次类软门（429）只计指标、
+// 不写这张表（ADR-0034 第 11 行）。一张表两个分域维度：category 用于翻页与
+// 索引，reasonCode 用于精确断言，唯一来源是契约包的注册表（ADR-0040 决策 3）。
+
+enum AuditCategory {
+  BUDGET
+  AUTHZ
+  MEMBERSHIP
+  DATA_CLASS
+  INJECTION
+  EVIDENCE
+  DELETION
+}
+
+// SYSTEM 用于没有业务用户的系统动作（lease 回收、对账），此时 actorId 记
+// 动作名而不是 uuid，因此 actorId 是 String 而不是 @db.Uuid。
+enum AuditActorType {
+  BUSINESS_USER
+  SYSTEM
+}
+
+// 域内语义不同但读侧口径统一，便于「查这个租户所有 DENIED」。
+enum AuditOutcome {
+  ALLOWED
+  DENIED
+  DEGRADED
+  RECLAIMED
+}
+
 // ─── 租户与知识空间（§4.1）────────────────────────────────────────────
 
 model Tenant {
@@ -90,6 +153,8 @@ model Tenant {
   pipelineManifests   PipelineManifest[]
   indexPartitions     IndexPartition[]
   releaseManifests    ReleaseManifest[]
+  budgetLedgerEntries ModelBudgetLedger[]
+  domainAuditEvents   DomainAuditEvent[]
 
   @@map("tenants")
 }
@@ -297,4 +362,87 @@ model ReleaseManifest {
   @@unique([tenantId, contentHash])
   @@index([tenantId, knowledgeSpaceId])
   @@map("release_manifests")
+}
+
+// ─── 模型预算账本（ADR-0029 / T12a）──────────────────────────────────
+// 余额的事实源只有这张表。Redis 可以缓存剩余额度用于展示和快速拒绝，
+// 不得作为放行依据（T12 不变量第一条）。没有 RESERVED 记录的模型调用是缺陷。
+//
+// 三处刻意的取舍，实现时不要「补回来」：
+// 1. 没有 period 列。票据写「period ∈ {日, 月}」，但一行预扣同时算进当日与
+//    当月两个窗口，单值填不了；一行一窗口又会让账本翻倍。日/月窗口由应用
+//    按 createdAt 范围 CAS，预算日的时区归 T12b 运行配置，不进 schema。
+// 2. 终态时间戳只有 finalizedAt。RESERVED 之后恰好一次终态转移，
+//    settledAt/releasedAt/expiredAt 三列里永远两列是空的。
+// 3. answerRunId / jobId 暂无外键：AnswerRun 归 T7、job 归 T3，两张表都还
+//    不存在。恰好一个非空由 CHECK 约束保证（见迁移 SQL）。
+
+model ModelBudgetLedger {
+  id             String               @id @default(uuid(7)) @db.Uuid
+  tenantId       String               @db.Uuid
+  // 幂等键让重放不重复扣款：命中已存在的行时返回那一行（replayed: true）。
+  idempotencyKey String
+  pool           BudgetPool
+  status         BudgetLedgerStatus   @default(RESERVED)
+  // 金额一律 Decimal(12, 6)：¥0.0012 这种四位小数在一个月的账本行上累加，
+  // 浮点误差会变成对不上的账。actualAmount 结算前为空。
+  reservedAmount Decimal              @db.Decimal(12, 6)
+  actualAmount   Decimal?             @db.Decimal(12, 6)
+  costSource     BudgetCostSource?
+  releaseReason  BudgetReleaseReason?
+  // 与金额分开记录，不把「当时的汇率」折进金额里（T12 不变量）。
+  exchangeRate   Decimal              @db.Decimal(10, 6)
+  leaseExpiresAt DateTime             @db.Timestamptz(6)
+  // 续租次数只受配置的总时长上限约束；留计数便于对账看「谁在长调用」。
+  renewCount     Int                  @default(0)
+  answerRunId    String?              @db.Uuid
+  jobId          String?              @db.Uuid
+  createdAt      DateTime             @default(now()) @db.Timestamptz(6)
+  finalizedAt    DateTime?            @db.Timestamptz(6)
+  tenant         Tenant               @relation(fields: [tenantId], references: [id])
+
+  // 幂等键按租户唯一：重放判定必须带租户谓词，不留按裸键查的口子。
+  @@unique([tenantId, idempotencyKey])
+  // 租户级外键的落点（references: [tenantId, id]），与其余模型同一口径。
+  @@unique([tenantId, id])
+  // 日/月/池三层 CAS 的求和路径：按租户 + 池 + 时间窗扫 RESERVED 与 SETTLED。
+  @@index([tenantId, pool, status, createdAt])
+  // lease 回收任务不带 tenantId（expireBudgetLeases(tx, { now, limit })），
+  // 所以这个索引必须以 status 开头，否则回收会全表扫。
+  @@index([status, leaseExpiresAt])
+  @@index([tenantId, answerRunId])
+  @@map("model_budget_ledger")
+}
+
+// ─── 领域审计（ADR-0040 / T11a）──────────────────────────────────────
+// 审计行不可变，且不随业务数据删除而删除（含墓碑写入与 Legal Hold 释放）。
+// 不可变由迁移里的 UPDATE/DELETE 阻断触发器保证，不靠评审提醒。
+// 前提是 detail 不落正文：写入口在写库前强制过 redaction。
+
+model DomainAuditEvent {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  tenantId    String         @db.Uuid
+  occurredAt  DateTime       @default(now()) @db.Timestamptz(6)
+  // category 由注册表按 reasonCode 派生（categoryForReasonCode），调用方不传；
+  // 这一列是那个映射的反范式化，读侧要按它翻页和建索引。
+  category    AuditCategory
+  // 唯一来源是 packages/contracts/src/audit/reason-codes.ts。编译期由 satisfies
+  // 保证已注册，库里再加一条格式 CHECK 兜住绕过 TS 的写入路径。
+  reasonCode  String
+  outcome     AuditOutcome
+  actorType   AuditActorType
+  // SYSTEM 动作记动作名（LEASE_REAPER / RECONCILER），所以不是 @db.Uuid。
+  actorId     String?
+  subjectType String?
+  subjectId   String?
+  detail      Json?
+  // 审计不依赖遥测：拿不到 traceId 也必须写成功。
+  traceId     String?
+  tenant      Tenant         @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, id])
+  // 读侧是按租户 + 时间 + 域翻页；缺这两个索引，T8 的删除证明查询会全表扫。
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, category, occurredAt])
+  @@map("domain_audit_event")
 }

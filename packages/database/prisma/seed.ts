@@ -20,6 +20,11 @@ import { createPrismaClient } from '../src/client'
  *   正式值由 T6 在真实业务语料上比较后拍板。
  * - `candidateBudget` 使用 ADR-0035 冻结值 1024。
  * - 种子实体使用固定 UUID，重复执行 upsert 不产生重复行。
+ *
+ * T12a/T11a 刻意不加种子行，不是漏了：`model_budget_ledger` 一行是「钱花掉了」的事实，
+ * 种一条 SETTLED 就会吃掉开发库当日/当月预算窗口；`domain_audit_event` 一行是领域判定
+ * 的事实且设计上不可删，种进去就是每个开发库里一条永久的假事实。两张表的行只应由
+ * 事务入口在真实调用路径上产生。
  */
 
 // 固定种子 ID：幂等键。只用于本地开发种子，不进入运行时代码路径。
