@@ -9,7 +9,7 @@
 - `apps/api/src/modules/model/`：Chat、Embedding、Reranker、引用验证四类调用及 Provider 能力表。
 - `packages/contracts/src/model/`：`ModelCallContext`、结构化结果、错误码、取消信号和用量事实。
 - `packages/config/`：服务端模型/base/超时/批量上限和供应商能力配置；密钥只来自环境变量。
-- `packages/database/`：调用前预算预扣、lease、结算、未知上游计费状态和回收协议；schema 由 T12 前置部分提供。
+- `packages/database/`：调用前预算预扣、lease、结算、未知上游计费状态和回收协议；schema 由 [T12a](T12-performance-budget.md#批次划分) 提供。
 - OpenRouter Embedding/Reranker 与 fluxionai Responses 适配；不引入独立 Model Gateway。
 
 ## 不变量
@@ -30,7 +30,7 @@
 
 ## 依赖
 
-- T0、T1a、T12 的 Budget Ledger schema/事务入口。
+- T0、T1a、[T12a](T12-performance-budget.md) 的 Budget Ledger schema/事务入口。
 - T5 的 Embedding、T6 的 Rerank、T7 的 Chat/Citation 必须依赖本 Ticket，不得各写供应商客户端。
 
 ## 验证

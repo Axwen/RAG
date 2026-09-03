@@ -84,7 +84,7 @@ HTTP 503。依赖的中间件不可用（如数据库未启动）。
 
 ### RATE_LIMITED
 
-HTTP 429。触发用户级配额（T12 落地）。修复：按 `Retry-After` 退避。
+HTTP 429。触发用户级配额（[T12](tickets/T12-performance-budget.md) 落地）。修复：按 `Retry-After` 退避。
 
 ### INTERNAL_ERROR
 
