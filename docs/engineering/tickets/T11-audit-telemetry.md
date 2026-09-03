@@ -4,7 +4,7 @@
 
 「可观测性」这个词盖住了两件性质相反的事。领域审计是业务事实的一部分：写不进去，业务就不该提交。运行遥测是诊断信息：丢了不许影响业务。本票据把这条原则从一句话变成两条互不依赖的代码路径——一条焊在业务事务里，一条挂在 Outbox 上，且在包依赖图上互相看不见。决策依据见 [ADR-0040](../../adr/0040-domain-audit-and-runtime-telemetry.md)（载体、数据形状与原因码口径）与 [ADR-0035](../../adr/0035-stage1-runtime-protocol-ratification.md) 第 13 行（同步/异步载体原则）。
 
-现状是六处 ADR 在写它、零处定义它：`packages/database/prisma/schema.prisma` 的 10 个模型里没有审计表，`packages/observability/src` 共 4 个文件 265 行只有 health/logger/redaction，`packages/contracts/src` 只有 errors 与 manifests。[T12](T12-performance-budget.md) 的四类预算原因码和 [T14](T14-identity-authorization.md) 的授权决策审计都在等这个入口。
+现状是六处 ADR 在写它、零处定义它：`packages/database/prisma/schema.prisma` 的 10 个模型里没有审计表，`packages/observability/src` 只有 health/logger/redaction 三个模块，`packages/contracts/src` 只有 errors 与 manifests。[T12](T12-performance-budget.md) 的四类预算原因码和 [T14](T14-identity-authorization.md) 的授权决策审计都在等这个入口。
 
 ## 批次划分
 
