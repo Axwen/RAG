@@ -135,7 +135,7 @@ export function renewBudgetLease(
 - **审计写入不在这五个函数里。** 它们只返回足够写审计的信息，实际写入由调用方在**同一个 `tx`**
   上调 T11a 的[审计写入口](T11-audit-telemetry.md#审计写入口契约)完成（[ADR-0040](../../adr/0040-domain-audit-and-runtime-telemetry.md) 决策 1、4）。
 - **四类审计的原因码和 `outcome` 在这里定，实现时不另起名字。** 向 T11a 注册表登记这四个，
-  `category` 一律 `BUDGET`：
+  注册表里 `category` 一律 `BUDGET`（写入口按码派生，调用方不传）：
 
   | 原因码 | 触发点 | `outcome` |
   |---|---|---|
