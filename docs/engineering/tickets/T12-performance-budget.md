@@ -155,7 +155,7 @@ export function renewBudgetLease(
 
 | 腿 | 模型 | 单价 | 证据 |
 |---|---|---|---|
-| Embedding | `qwen/qwen3-embedding-8b`（OpenRouter） | **$0.010 / 1M tok** | `probe-005-model-adapter.json`：19 tok → `cost` 1.9e-07 |
+| Embedding | `qwen/qwen3-embedding-8b`（OpenRouter） | **$0.010 / 1M tok** | `probe-005-model-adapter.json`：19 tok → `cost` 1.9e-07；单样本反算，已于 2026-09-03 对照 OpenRouter 账户内的实际价目确认 |
 | Reranker | `qwen/qwen3-reranker-8b`（OpenRouter） | **$0.200 / 1M tok** | `probe-005-model-adapter-rerank-openrouter.json` 三次独立样本 813/913/893 tok → 0.0001626/0.0001826/0.0001786，三次都精确折出 0.2 |
 | Chat | fluxionai `gpt-5.6-terra` | **$0.10 in / $0.30 out / 1M tok** | [PROBE-005 决策日志](PROBE-005-model-adapter-decision-log.md) 第 196 行 |
 | 汇率 | — | **7.2 CNY/USD** | PROBE-005 第 222 行的原话是「汇率假设 7.2」，此处冻为配置默认值 |
