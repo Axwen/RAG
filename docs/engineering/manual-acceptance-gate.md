@@ -59,15 +59,18 @@ REJECTED -> IMPLEMENTING -> READY_FOR_HUMAN
 
 | 门禁 | 完成范围 | 通过后才可启动 |
 |---|---|---|
-| HG-01 | T1a + T14 + T11 同步审计 + T12 Ledger/配置骨架（当前并行批次） | T2/T10/T3/T1b |
+| HG-01 | T1a + [T12a](tickets/T12-performance-budget.md#批次划分) Ledger/配置骨架 + [T11a](tickets/T11-audit-telemetry.md#批次划分) 同步审计骨架 + [T14a/T14b](tickets/T14-identity-authorization.md#批次划分)（当前并行批次） | T2/T10/T3/T1b |
+| HG-01a（临时） | [T14a](tickets/T14-identity-authorization.md#批次划分) 身份接入与 7 张业务身份表迁移 | T14b 统一授权入口 |
 | HG-02 | T2 + T10 Worker 基础 + T3 + T1b | T15/T4a/T5 主批次 |
 | HG-03 | T15 + T4a + T13(parse) + T5；T4b 按 PROBE-007 状态纳入或单列 | T9/T6 检索批次 |
 | HG-04 | T9 Harness/语料 + T6 + T13(context)，并拍板 `rerankInputSize` | T7/T16a 用户主链 |
 | HG-05 | Design Review + T7 + T13(output) + T16a | T8 与管理收口批次 |
-| HG-06 | T8 + T9/T10/T11/T12 收口 + T16b | 最终集成复审 |
+| HG-06 | T8 + T9/T10/[T11b](tickets/T11-audit-telemetry.md#批次划分)/[T12b](tickets/T12-performance-budget.md#批次划分) 收口 + T16b | 最终集成复审 |
 | HG-07 | Probe Gate 集成项全闭合 + 完整增量工程复审 | 阶段 1 交付或发布准备 |
 
-若某一批次过大、用户要求提前查看，或出现公开 API、数据结构、安全边界、UI 方向等关键决策，必须增加临时人工门禁，不必等到表中的固定门禁点。
+若某一批次过大、用户要求提前查看，或出现公开 API、数据结构、安全边界、UI 方向等关键决策，必须增加临时人工门禁，不必等到表中的固定门禁点。已决定设置的临时门禁一律登记进上表并带 `（临时）` 标记：只写在 `PROJECT_STATE.md` 里的门禁，下一个人读门禁表时看不到，等于没有。
+
+HG-01a 的设置理由：身份接入是后续所有受保护路由的地基。T14a 的 7 张业务身份表在 HG-01 内还没有业务数据，此时改结构只是改迁移；等 T14b 的授权判定和受保护 Web 路由都压在上面之后再改，代价完全不同。在开工 T14b 之前让用户看一遍真实登录链路与表结构，比在 HG-01 一次性验收整批更早暴露方向性问题。
 
 ## 验收记录模板
 

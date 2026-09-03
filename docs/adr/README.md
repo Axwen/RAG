@@ -43,3 +43,4 @@
 | [0037](0037-stage1-index-field-alignment.md) | accepted | 阶段 1 OpenSearch 索引字段与 ACL 作用域口径对齐 | 细化 0026、0028 |
 | [0038](0038-vlm-parser-backend-and-multimodal-scope.md) | accepted | 阶段 1 多模态解析范围重定：DeepDOC OCR 与 Office 库提取，VLM 后置 | - |
 | [0039](0039-business-identity-and-unified-authorization.md) | accepted | 业务身份体系与统一授权入口：外部身份与业务用户分离，能力权限与资源策略分层 | 细化 0002、0026；不改 0036、0037 |
+| [0040](0040-domain-audit-and-runtime-telemetry.md) | accepted | 领域审计与运行遥测分载体：审计同事务写 PostgreSQL，遥测走 Outbox，原因码中央注册 | 细化 0035 第 13 行；不改 0034 第 11 行 |
