@@ -704,6 +704,15 @@ alerts 面板才是这类告警的归口，两者互补而不是互为替代。
 `packages/contracts` 的 tsconfig 补 `types`）、#9 vite 8.2.2（覆盖率量法变了，functions
 80.76% vs 阈值 82%，按 §2.1 棘轮那段的规则处理）。它们不该和"转公开收尾"混在一个改动里。
 
+**#8 的结局，附一条容易多做一步的操作细节（同日 05:11–05:14）**：预修 `contracts` 的
+tsconfig（`3d01366`，根因是 TS 6 收紧了 `@types` 的默认自动包含，八个工程里只有它零第三方
+类型依赖）随 PR #19 合入 main 之后，**不需要人工去 PR 里评论 `@dependabot rebase`**——base
+分支一动，Dependabot 自己在 05:14 对 #8 与 #9 各做了一次 force push（`dependabot.yml` 没写
+`rebase-strategy`，默认即 `auto`；活动日志里两条 `force_push … actor=dependabot[bot]` 就是
+它）。#8 随即 11/11 全绿，只差一次 merge 点击；#9 只有 `quality` 一条红、其余十条全过，
+仍按棘轮规则等 vite 8 真装上后重取基线。人工评论只在自动 rebase 没发生（比如分支有冲突、
+或改过 `rebase-strategy: disabled`）时才需要。
+
 **成本口径也变了**：公开仓库 Actions 分钟数无限，第五轮算出来的"11 分钟/push、22 分钟/PR、
 免费档约 180 次 push/月"不再是约束，之前设计的三项省钱优化随之降级为**可选**——其中给
 smoke 加路径过滤仍然值得做，但理由从"省钱"换成了"缩短反馈时间"。
