@@ -1,9 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
+  "//": "types 显式写 node，是为了兼容 TypeScript 6：本包是唯一没有任何第三方依赖顺带把 node 类型拖进来的工程（其余包经 pino / @nestjs/* / @prisma/client 的 .d.ts 间接引入），而 TS 6 收紧了 @types 的默认自动包含——实测同一份配置在 5.9.3 下能解析到根 node_modules/@types/node，6.0.3 下不能，src/manifests/hash.ts 的 node:crypto 因此报 TS2591。在 5.9.3 下这一行是无行为变化的显式声明。",
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "dist/.tsbuildinfo"
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"]
 }

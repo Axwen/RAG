@@ -100,6 +100,17 @@
 
 ### Fixed
 
+- **`packages/contracts` 在 TypeScript 6 下 typecheck 失败**（Dependabot PR #8 `typescript 5.9.3 → 6.0.3` 的红）：
+  `src/manifests/hash.ts:1` 的 `import { createHash } from 'node:crypto'` 报 `TS2591`。根因是
+  **TS 6 收紧了 `@types` 的默认自动包含**——实测同一份 tsconfig，5.9.3 能解析到根
+  `node_modules/@types/node`，6.0.3 不能。逐个工程用 `pnpm --package=typescript@6.0.3 dlx tsc`
+  扫过，八个工程里**只有 `contracts` 中招**：其余包都经 pino / `@nestjs/*` / `@prisma/client` 的
+  `.d.ts` 间接把 node 类型拖了进来，而它是唯一零第三方类型依赖的包。修法是只给这一个包的
+  tsconfig 显式写 `"types": ["node"]`（TS 6 的报错文案本身就给了这个提示），**不动
+  `tsconfig.base.json`**——加在 base 上会连带切掉 `apps/web` 自动加载的 DOM / React / next 类型。
+  该字段在当前 5.9.3 下是无行为变化的显式声明：`pnpm run typecheck`、`pnpm run test`
+  （16 文件 / 129 测试）、`pnpm run format` 全绿。升级动作本身不在这个改动里，仍由
+  Dependabot #8 带入，它 rebase 后自动变绿。
 - **第五轮审计（2026-09-02）：`gitleaks（全历史密钥扫描）` 从建立起就只扫两条提交**
   （完整记录见 [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md) §6.5）。这条门禁（§3
   清单里列为 required——实际因分支保护开不了而从未生效，见下）有两个独立缺陷，起因都是 `gitleaks/gitleaks-action` **按事件名自行决定扫描范围**：
