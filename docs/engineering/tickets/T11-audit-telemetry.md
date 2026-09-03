@@ -42,15 +42,15 @@ T11a 不得推迟到 T12a 之后收口：账本的四类审计写入没有入口
 
 签名在这里定死，理由与 [T12 的事务入口契约](T12-performance-budget.md#事务入口契约)相同：
 T12a 的四类预算审计、T14b 的授权决策、T13 的注入命中都调它，形状改一次要连带改多张票据。
-落点 `packages/database/src/audit/`，只从包根导出这一个函数与它的类型。
+下面这段横跨两个包，落点不同：注册表在 `packages/contracts/src/audit/reason-codes.ts`
+（无实现、无依赖），写入口在 `packages/database/src/audit/`，只从包根导出这一个函数与
+它的类型。写入口 import 注册表，反向不成立。
 
 ```ts
-/** 与预算入口同一个句柄类型。审计写入与业务写入必须在同一个 tx 上，
- *  这样 ADR-0035 第 13 行的「写失败则业务失败」由类型和事务共同保证。 */
-type Tx = Prisma.TransactionClient
+// ── packages/contracts/src/audit/reason-codes.ts ──────────────────────────
 
 /** 注册表照 packages/contracts/src/errors.ts 的 ERROR_STATUS 形状写：frozen 对象 +
- *  从它派生查找，不在别处另写一份 switch。一处**故意的分歧**是联合类型从对象推导
+ *  从它派生查找，不在别处另写一份 switch。一处故意的分歧是联合类型从对象推导
  *  而不是独立声明（ERROR_STATUS 是先声明 ErrorCode 再注解 Record），因此新增一个码
  *  只改一处，不会出现「类型里有、表里没有」。用 satisfies 而不是类型注解，
  *  否则键会被擦成 string，keyof 推不出联合。 */
@@ -66,11 +66,18 @@ export const REASON_CODES = Object.freeze({
 /** 未注册的码在编译期就过不去——与 ERROR_STATUS 双射同一个思路。 */
 type ReasonCode = keyof typeof REASON_CODES
 
-/** 表里只记 category，不记 outcome：同一个码在不同调用点可能是 DENIED 也可能是
- *  DEGRADED（数据等级阻断与降级共用一族码），outcome 由调用方按各域票据的表传。 */
+/** 写入口用它填 category 列，调用方不传。
+ *  表里不记 outcome：同一个码在不同调用点可能是 DENIED 也可能是 DEGRADED
+ *  （数据等级阻断与降级共用一族码），outcome 由调用方按各域票据的表传。 */
 export function categoryForReasonCode(code: ReasonCode): AuditCategory {
   return REASON_CODES[code]
 }
+
+// ── packages/database/src/audit/ ──────────────────────────────────────────
+
+/** 与预算入口同一个句柄类型。审计写入与业务写入必须在同一个 tx 上，
+ *  这样 ADR-0035 第 13 行的「写失败则业务失败」由类型和事务共同保证。 */
+type Tx = Prisma.TransactionClient
 
 /** 唯一的审计写入口。没有自建事务的重载，没有 fire-and-forget 版本。
  *  detail 在写入前强制过 redaction：正文、Prompt、检索命中片段、凭证一律替换为
@@ -80,7 +87,9 @@ export function writeAuditEvent(
   tx: Tx,
   event: {
     tenantId: string
-    category: AuditCategory
+    /** 不传 category：它由注册表按 reasonCode 派生（categoryForReasonCode），
+     *  否则调用方可以写出 category=AUTHZ + reasonCode=budget.* 这种自相矛盾的行。
+     *  列仍然存在，因为读侧要按它翻页和建索引——它是注册表映射的反范式化。 */
     reasonCode: ReasonCode
     /** 读侧统一口径，不由 reasonCode 反推：同一个码在不同域可能既有 DENIED 也有 DEGRADED。 */
     outcome: 'ALLOWED' | 'DENIED' | 'DEGRADED' | 'RECLAIMED'
@@ -157,7 +166,7 @@ export function writeAuditEvent(
 ## DoD
 
 - `domain_audit_event` schema 与迁移合并；原因码注册表落在 `packages/contracts/src/audit/` 且编译期可枚举（形状见[审计写入口契约](#审计写入口契约)：frozen 对象 + `satisfies`，联合类型从对象推导，新增码只改一处）。
-- 审计写入口全仓唯一，签名按[审计写入口契约](#审计写入口契约)（含 `outcome` 与 `actor` 到列的映射）；有测试证明审计写失败导致业务事务回滚。
+- 审计写入口全仓唯一，签名按[审计写入口契约](#审计写入口契约)（`category` 由注册表派生而不由调用方传，`outcome` 与 `actor` 有到列的映射）；有测试证明审计写失败导致业务事务回滚。
 - 有依赖断言或 lint 规则钉住 `@rag/observability` 不导出审计入口、审计入口不依赖遥测导出器。
 - 关闭 Trace/指标消费者后业务状态与审计仍提交（闭合记录 T11 原验证项）。
 - T12a 的四类预算原因码在注册表登记并被真实写入路径使用；库内不存在未注册的 `reasonCode`。
