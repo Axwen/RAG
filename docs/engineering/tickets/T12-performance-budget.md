@@ -134,6 +134,17 @@ export function renewBudgetLease(
   让租户级外键写成 `references: [tenantId, id]`。
 - **审计写入不在这五个函数里。** 它们只返回足够写审计的信息，实际写入由调用方在**同一个 `tx`**
   上调 T11a 的[审计写入口](T11-audit-telemetry.md#审计写入口契约)完成（[ADR-0040](../../adr/0040-domain-audit-and-runtime-telemetry.md) 决策 1、4）。
+- **四类审计的原因码和 `outcome` 在这里定，实现时不另起名字。** 向 T11a 注册表登记这四个，
+  `category` 一律 `BUDGET`：
+
+  | 原因码 | 触发点 | `outcome` |
+  |---|---|---|
+  | `budget.reserve_rejected` | `reserveBudget` 单次/日/月三层 CAS 任一层不足 | `DENIED` |
+  | `budget.pool_boundary_rejected` | `reserveBudget` 池额度不足（交互/评测/应急） | `DENIED` |
+  | `budget.settlement_delta` | `settleBudget` 的 `delta ≠ 0`，含 `costSource: 'ESTIMATED'` | `ALLOWED` |
+  | `budget.lease_expired` | `expireBudgetLeases` 每回收一行写一条 | `RECLAIMED` |
+
+  `renewBudgetLease` 不写审计：续租只推 `leaseExpiresAt`，不是领域判定。
 
 ## 预扣估值价格表与汇率
 
@@ -222,7 +233,7 @@ LIVE 锚点 ¥0.0012 / 0.0099 / 0.0397 / 0.1587 相差 ≤ 2.5%。**实现的估
 
 - `model_budget_ledger` schema 与迁移合并，且 T15 只依赖事务入口即可工作，不需要直接读写表结构。
 - 预扣、结算、释放、lease 过期回收四条路径各有测试；并发预扣有竞态测试。
-- 预扣失败、结算差额、lease 回收、池边界拒绝四类都写领域审计（ADR-0029 要求），原因码在 [T11a](T11-audit-telemetry.md#批次划分) 的注册表中登记，且 Trace/遥测故障不影响拒绝结果。
+- 预扣失败、结算差额、lease 回收、池边界拒绝四类都写领域审计（ADR-0029 要求），四个码与 `outcome` 按[事务入口契约](#事务入口契约)的表登记进 [T11a](T11-audit-telemetry.md#批次划分) 的注册表，且 Trace/遥测故障不影响拒绝结果。
 - 配置 schema 覆盖 5/16/500、池 350/100/50、汇率、lease 时长和 ADR-0034 的四项用户级配额（并发 `AnswerRun` 1、并发 SSE 2、提问 10 次/分与 200 次/日、上传 20 文件/小时）与管理侧 `rebuild` 每租户并发 1，并有「配出超硬上限即启动失败」的测试。
 - 429 响应带 `Retry-After`，且有测试钉住响应不泄漏他人用量。
 - 停掉 Redis 的集成测试证明并发限额仍然生效，且没有任何路径靠 Redis 单点放行预算。
