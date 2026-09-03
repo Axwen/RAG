@@ -18,8 +18,8 @@ T12a 不得为了等 T12b 而推迟：账本是唯一一条钱花掉就收不回
 ## 范围
 
 - `packages/database/prisma/schema.prisma` 与新增迁移目录：`model_budget_ledger` 及其枚举。按 T1a 口径单独计划、单独评审，不与门禁代码混在一个提交里。
-- `packages/database/`：预扣、结算、释放、lease 回收四条事务入口。调用方只看到入口，不允许业务模块自己拼 SQL 改账。
-- `packages/config/`：`budgetLimitsSchema` 补池三分（交互 350 / 评测 100 / 应急 50）与汇率配置项；新增 ADR-0034 的四项用户级配额与管理侧 `rebuild` 并发；补 lease 时长与续租上限。
+- `packages/database/`：预扣、结算、释放、lease 回收四条事务入口，签名见[事务入口契约](#事务入口契约)。调用方只看到入口，不允许业务模块自己拼 SQL 改账。
+- `packages/config/`：`budgetLimitsSchema` 补池三分（交互 350 / 评测 100 / 应急 50）与汇率配置项（默认值与单价见[预扣估值价格表与汇率](#预扣估值价格表与汇率)）；新增 ADR-0034 的四项用户级配额与管理侧 `rebuild` 并发；补 lease 时长与续租上限。
 - `apps/api/src/modules/model/`：预扣与结算的调用侧编排入口（**供应商方言、`usage.cost` 读取、429 退避、流式取消触发结算归 [T15](T15-model-adapter.md)**，本票据只提供它调用的账本入口与原因码）。
 - `apps/api/src/modules/retrieval/`：Redis 作用域缓存及其按 `aclRevision` 的失效；批量查询替换逐条查询。
 - 用户级限流载体：Redis 计数软门（频次、每日、上传）+ API 本地信号量 + PostgreSQL 可恢复并发 lease（`AnswerRun`/SSE）。
@@ -44,6 +44,128 @@ T12a 不得为了等 T12b 而推迟：账本是唯一一条钱花掉就收不回
 - 流式调用在流结束或取消时结算；取消按已产出 token 结算，不按预扣值。
 
 预扣事务的顺序不可调换：开事务 → CAS 校验单次/日/月/池四层 → 写 `RESERVED` 与 lease → 提交 → **然后**才发出模型调用。先调用后记账等于没有门禁。
+
+## 事务入口契约
+
+四条入口的签名在这里定死，**不由实现者自创形状**：[T15](T15-model-adapter.md) 的每次模型调用
+和 [T11a](T11-audit-telemetry.md#批次划分) 的审计写入都建在它上面，形状改一次要连带改两张票据。
+`packages/database/src` 目前只有 `client.ts`/`index.ts`/`env.ts`/`health.ts`，没有 repository 或
+service 层先例可抄，所以这一节是白地设计的裁决，不是对既有代码的描述。
+
+落点 `packages/database/src/budget/`，只从包根 `index.ts` 导出这五个函数与它们的类型。
+调用方拿不到 `PrismaClient`，也拿不到表结构。
+
+```ts
+/** 已开启的事务句柄。不提供自建事务的重载，也不提供 fire-and-forget 版本。 */
+type Tx = Prisma.TransactionClient
+
+/** 金额一律 Prisma.Decimal（列用 @db.Decimal(12, 6)）。不用 number：¥0.0012 这种
+ *  四位小数在一个月的账本行上累加，浮点误差会变成对不上的账。 */
+type Cny = Prisma.Decimal
+
+type Pool = 'INTERACTIVE' | 'EVALUATION' | 'RESERVE'
+
+/** 拒绝原因与 packages/contracts/src/audit/reason-codes.ts 的四类一一对应，
+ *  不在这里另起字符串。 */
+type ReserveRejection =
+  | { reason: 'budget.reserve_rejected'; layer: 'SINGLE' | 'DAILY' | 'MONTHLY'; remaining: Cny }
+  | { reason: 'budget.pool_boundary_rejected'; pool: Pool; remaining: Cny }
+
+/** 1. 预扣。顺序不可调换：开事务 → 四层 CAS → 写 RESERVED 与 lease → 提交 → 然后才调模型。
+ *  幂等键命中已存在的行时返回那一行，不再扣一次（replayed: true）。 */
+export function reserveBudget(
+  tx: Tx,
+  input: {
+    tenantId: string
+    idempotencyKey: string
+    pool: Pool
+    estimatedAmount: Cny
+    exchangeRate: Cny // 与金额分开记录，不把「当时的汇率」折进金额里
+    leaseSeconds?: number // 默认取配置，不硬编码 60
+    owner: { answerRunId: string } | { jobId: string }
+  },
+): Promise<
+  | { ok: true; ledgerId: string; reservedAmount: Cny; leaseExpiresAt: Date; replayed: boolean }
+  | ({ ok: false } & ReserveRejection)
+>
+
+/** 2. 结算。actualAmount 以供应商返回的 cost 为准；供应商没返回时传本地估值并置
+ *  costSource: 'ESTIMATED'，差额本身是审计对象。RESERVED → SETTLED。 */
+export function settleBudget(
+  tx: Tx,
+  input: {
+    ledgerId: string
+    tenantId: string
+    actualAmount: Cny
+    costSource: 'PROVIDER' | 'ESTIMATED'
+  },
+): Promise<{ ok: true; delta: Cny } | { ok: false; reason: 'ILLEGAL_TRANSITION'; status: string }>
+
+/** 3. 释放。只用于调用确实没发生：数据等级门禁拦下、客户端在发出前取消。
+ *  RESERVED → RELEASED。客户端超时或挂起**不得**走这条，钱可能真的花了。 */
+export function releaseBudget(
+  tx: Tx,
+  input: { ledgerId: string; tenantId: string; reason: 'GATED' | 'CANCELLED_BEFORE_DISPATCH' },
+): Promise<{ ok: true } | { ok: false; reason: 'ILLEGAL_TRANSITION'; status: string }>
+
+/** 4. lease 过期回收。批量把过期未结算的 RESERVED 变 EXPIRED 并释放额度，
+ *  返回被回收的行以便逐条写审计。RESERVED → EXPIRED。 */
+export function expireBudgetLeases(
+  tx: Tx,
+  input: { now: Date; limit: number },
+): Promise<Array<{ ledgerId: string; tenantId: string; reservedAmount: Cny; pool: Pool }>>
+
+/** 5. 续租。只推 leaseExpiresAt，不改 status，因此不算上面「四条」里的一条
+ *  （四条 = 一次写入 + 三条状态转移）。受配置的续租上限约束，超限拒绝，
+ *  不得靠调大 lease 默认值掩盖没人续租。 */
+export function renewBudgetLease(
+  tx: Tx,
+  input: { ledgerId: string; tenantId: string; leaseSeconds: number },
+): Promise<{ ok: true; leaseExpiresAt: Date } | { ok: false; reason: 'RENEW_LIMIT_EXCEEDED' | 'ILLEGAL_TRANSITION' }>
+```
+
+四条约束跟着这份签名一起成立，实现时不能绕：
+
+- **超限返回值而不是抛异常。** 预算耗尽按 [ADR-0029](../../adr/0029-model-budget-ledger-and-limits.md)
+  是降级/`EVIDENCE_ONLY`/`REFUSED` 的业务结果，调用方要能分支处理；只有非法转移和读不到账本
+  才是异常。
+- **读不到账本时 fail closed。** 任何一条入口在异常路径上都不得返回「放行」语义。
+- **每个 `tenantId` 参数都不是装饰。** 所有查询谓词必须带它，靠 `@@unique([tenantId, id])`
+  让租户级外键写成 `references: [tenantId, id]`。
+- **审计写入不在这五个函数里。** 它们只返回足够写审计的信息，实际写入由调用方在**同一个 `tx`**
+  上调 T11a 的[审计写入口](T11-audit-telemetry.md#审计写入口契约)完成（[ADR-0040](../../adr/0040-domain-audit-and-runtime-telemetry.md) 决策 1、4）。
+
+## 预扣估值价格表与汇率
+
+[不变量](#不变量)一节要求预扣估值由候选数计算、汇率独立记录，但仓库里此前没有价目。
+下面这张表从 PROBE-005 的 LIVE 报文反算而来（供应商自己返回的 `usage.cost`），
+是**初始值可校准**，校准结果写运行配置，不重开 ADR——与
+[ADR-0034](../../adr/0034-per-user-rate-limit-and-concurrency-quota.md) 对五个配额值的处理同一口径。
+
+| 腿 | 模型 | 单价 | 证据 |
+|---|---|---|---|
+| Embedding | `qwen/qwen3-embedding-8b`（OpenRouter） | **$0.010 / 1M tok** | `probe-005-model-adapter.json`：19 tok → `cost` 1.9e-07 |
+| Reranker | `qwen/qwen3-reranker-8b`（OpenRouter） | **$0.200 / 1M tok** | `probe-005-model-adapter-rerank-openrouter.json` 三次独立样本 813/913/893 tok → 0.0001626/0.0001826/0.0001786，三次都精确折出 0.2 |
+| Chat | fluxionai `gpt-5.6-terra` | **$0.10 in / $0.30 out / 1M tok** | [PROBE-005 决策日志](PROBE-005-model-adapter-decision-log.md) 第 196 行 |
+| 汇率 | — | **7.2 CNY/USD** | PROBE-005 第 222 行的原话是「汇率假设 7.2」，此处冻为配置默认值 |
+
+Rerank 预扣估值的公式（不得用固定值）：
+
+```
+tokens ≈ 候选数 × 108
+¥      = tokens / 1e6 × 0.200 × 汇率
+```
+
+反算校验：候选 8 / 64 / 256 / 1024 得 ¥0.0012 / 0.0097 / 0.0387 / 0.1548，与不变量一节记录的
+LIVE 锚点 ¥0.0012 / 0.0099 / 0.0397 / 0.1587 相差 ≤ 2.5%。**实现的估值函数必须能在 ±5% 内
+复现这四个锚点**，这是可写成单元测试的断言，比「由候选数计算」这句话可验证。
+
+两处必须显式处理，不能当成价目表的一行：
+
+- **Chat 的输入 token 要按缓存命中价分档。** PROBE-005 第 196 行实测 40/40 次都命中
+  `cached_tokens: 64`（system prompt 前缀缓存）；把全部输入按未缓存价估，会系统性高估输入成本。
+- **逐句验证腿（Embedding + 蕴含）用上面 Embedding 与 Chat 两行的单价组合。** 它没有独立价目，
+  但 [不变量](#不变量)要求「单次 ≤ 5 元覆盖一次问答的全部四类调用之和」，估值函数必须把它算进去。
 
 ## 不变量
 
@@ -82,7 +204,7 @@ T12a 不得为了等 T12b 而推迟：账本是唯一一条钱花掉就收不回
 
 ## 验证
 
-- 单元/契约：配置 schema 边界（5/16/500 上界、池求和 350+100+50 与 16×31=496 的自洽、覆盖值超硬上限即失败）；rerank 预扣估值随候选数变化；结算差额计算；状态机非法转移被拒。
+- 单元/契约：配置 schema 边界（5/16/500 上界、池求和 350+100+50 与 16×31=496 的自洽、覆盖值超硬上限即失败）；rerank 预扣估值随候选数变化，且在 ±5% 内复现[价格表](#预扣估值价格表与汇率)记录的四个 LIVE 锚点；结算差额计算；状态机非法转移被拒。
 - PostgreSQL 集成：两个请求同时预扣到日限边界只有一个成功；幂等键重放不重复扣款；lease 过期回收把 `RESERVED` 变 `EXPIRED` 并释放额度；租户 A 的预扣不影响租户 B 的可用额度。
 - Redis 集成：每分钟窗口与每日计数；`429` 带 `Retry-After`；停掉 Redis 后频次类告警放行、`AnswerRun`/SSE 并发仍然生效（ADR-0034 明确要求这条分叉不得静默降级）。
 - 并发 SSE 集成：同一用户第 3 条 SSE 被拒，且拒绝响应不含其他用户的用量信息。

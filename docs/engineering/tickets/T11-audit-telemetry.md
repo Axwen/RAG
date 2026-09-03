@@ -19,7 +19,7 @@ T11a 不得推迟到 T12a 之后收口：账本的四类审计写入没有入口
 
 - `packages/contracts/src/audit/`：审计事件形状、`category` 枚举与原因码注册表。不把 Prisma 生成类型暴露为领域契约。
 - `packages/database/prisma/schema.prisma` 与新增迁移目录：`domain_audit_event` 及其枚举。按 T1a 口径单独计划、单独评审，不与接入代码混在一个提交里。
-- `packages/database/`：全仓唯一的审计写入口。签名要求调用方传入已开启的事务句柄，不提供自建事务或 fire-and-forget 的重载。
+- `packages/database/`：全仓唯一的审计写入口，签名见[审计写入口契约](#审计写入口契约)。要求调用方传入已开启的事务句柄，不提供自建事务或 fire-and-forget 的重载。
 - `apps/api/src/modules/audit/`：按域组装事件与原因码的编排层。阶段 1 不做通用审计检索 API（见 [ADR-0040](../../adr/0040-domain-audit-and-runtime-telemetry.md) 扩展点 3）。
 - `apps/api/src/modules/telemetry/`：遥测事件投递、Trace 上下文传递、指标注册。
 - `packages/observability/`：补指标与 Trace 入口，并把 `src/index.ts` 头注释里「审计事件」的归属改到 ADR-0040 的口径。**本包不新增审计写入口**。
@@ -37,6 +37,55 @@ T11a 不得推迟到 T12a 之后收口：账本的四类审计写入没有入口
 - 细节：`detail` JSONB，受脱敏口径约束。注入命中按 [ADR-0032](../../adr/0032-untrusted-content-and-prompt-injection.md) 记文档版本、Chunk id、命中模式名与处置结果，**但不记命中的原文**。
 - 关联：`traceId` 可空。审计不依赖遥测——拿不到 traceId 也必须写成功，这是「二者不得互换载体」在字段层面的体现。
 - 索引：`(tenantId, occurredAt)` 与 `(tenantId, category, occurredAt)`。读侧是按租户 + 时间 + 域翻页，缺这两个索引，T8 的删除证明查询会全表扫。
+
+## 审计写入口契约
+
+签名在这里定死，理由与 [T12 的事务入口契约](T12-performance-budget.md#事务入口契约)相同：
+T12a 的四类预算审计、T14b 的授权决策、T13 的注入命中都调它，形状改一次要连带改多张票据。
+落点 `packages/database/src/audit/`，只从包根导出这一个函数与它的类型。
+
+```ts
+/** 与预算入口同一个句柄类型。审计写入与业务写入必须在同一个 tx 上，
+ *  这样 ADR-0035 第 13 行的「写失败则业务失败」由类型和事务共同保证。 */
+type Tx = Prisma.TransactionClient
+
+/** 原因码只能来自契约注册表。这里用注册表推导出的联合类型而不是 string，
+ *  未注册的码在编译期就过不去——与 ERROR_STATUS 双射同一个思路。 */
+type ReasonCode = keyof typeof REASON_CODES
+
+/** 唯一的审计写入口。没有自建事务的重载，没有 fire-and-forget 版本。
+ *  detail 在写入前强制过 redaction：正文、Prompt、检索命中片段、凭证一律替换为
+ *  [REDACTED]，复用 packages/observability/src/redaction.ts 的
+ *  contentFieldNames / secretFieldNames 口径（只复用字段名清单，不 import 遥测导出器）。 */
+export function writeAuditEvent(
+  tx: Tx,
+  event: {
+    tenantId: string
+    category: AuditCategory
+    reasonCode: ReasonCode
+    /** 读侧统一口径，不由 reasonCode 反推：同一个码在不同域可能既有 DENIED 也有 DEGRADED。 */
+    outcome: 'ALLOWED' | 'DENIED' | 'DEGRADED' | 'RECLAIMED'
+    /** 判定主体。可省略，省略即 actorType=SYSTEM 且 actorId 为空；
+     *  传 { system: ... } 时 actorId 记系统动作名，便于区分 lease 回收与对账。 */
+    actor?: { businessUserId: string } | { system: 'LEASE_REAPER' | 'RECONCILER' }
+    /** 被判定的资源，映射到 subjectType + subjectId 两列。 */
+    subject?: { type: string; id: string }
+    /** 结构化补充信息。写入前过脱敏，因此可以放判定依据，不能放正文。 */
+    detail?: Record<string, unknown>
+    /** 与本次业务事务同一个 traceId，便于把审计行与日志对上。 */
+    traceId?: string
+  },
+): Promise<{ auditEventId: string }>
+```
+
+三条约束跟着签名成立：
+
+- **不返回「写失败」的软结果。** 写不进去就抛，让外层事务整体回滚。这是与遥测入口最本质的
+  区别——遥测失败必须被吞，审计失败必须炸。
+- **调用方不构造 `occurredAt` 与 `id`。** 由入口用数据库时间与 `uuid(7)` 生成，避免调用方
+  用本地时钟写出乱序的审计行。
+- **批量写入用同一个 `tx` 多次调用**，不提供 `writeAuditEvents(events[])`：lease 回收一次
+  回收 N 行要写 N 条审计，逐条写才能让其中一条脱敏失败时整批回滚。
 
 ## 不变量
 
@@ -89,7 +138,7 @@ T11a 不得推迟到 T12a 之后收口：账本的四类审计写入没有入口
 ## DoD
 
 - `domain_audit_event` schema 与迁移合并；原因码注册表落在 `packages/contracts/src/audit/` 且编译期可枚举。
-- 审计写入口全仓唯一，签名要求事务句柄；有测试证明审计写失败导致业务事务回滚。
+- 审计写入口全仓唯一，签名按[审计写入口契约](#审计写入口契约)（含 `outcome` 与 `actor` 到列的映射）；有测试证明审计写失败导致业务事务回滚。
 - 有依赖断言或 lint 规则钉住 `@rag/observability` 不导出审计入口、审计入口不依赖遥测导出器。
 - 关闭 Trace/指标消费者后业务状态与审计仍提交（闭合记录 T11 原验证项）。
 - T12a 的四类预算原因码在注册表登记并被真实写入路径使用；库内不存在未注册的 `reasonCode`。
