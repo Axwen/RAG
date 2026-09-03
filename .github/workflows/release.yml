@@ -159,7 +159,7 @@ jobs:
           ref: ${{ inputs.tag || github.ref }} # notes 要从标签指向的 CHANGELOG 抽，不是 main 的
 
       - name: 取 SBOM
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: parser-sbom
 
