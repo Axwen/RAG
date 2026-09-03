@@ -704,6 +704,40 @@ alerts 面板才是这类告警的归口，两者互补而不是互为替代。
 `packages/contracts` 的 tsconfig 补 `types`）、#9 vite 8.2.2（覆盖率量法变了，functions
 80.76% vs 阈值 82%，按 §2.1 棘轮那段的规则处理）。它们不该和"转公开收尾"混在一个改动里。
 
+**两个红的结局（同日 05:11–14:20），以及一条"看着像量法退化、其实是盲点"的教训**：
+
+- **#8 的修法**：只给 `packages/contracts` 的 tsconfig 显式写 `types: ["node"]`。TS 6 收紧了
+  `@types` 的默认自动包含，八个工程里只有它零第三方类型依赖（其余包经 pino / `@nestjs/*` /
+  `@prisma/client` 的 `.d.ts` 间接把 node 类型拖了进来）。修在这一个包上而不是
+  `tsconfig.base.json`——加在 base 会连带切掉 `apps/web` 自动加载的 DOM / React / next 类型。
+  预修随 PR #19 合入后 Dependabot 自己 rebase，#8 转绿并合入。
+- **不需要人工评论 `@dependabot rebase`**：base 分支一动，Dependabot 在 05:14 就对 #8 与 #9
+  各做了一次 force push（`.github/dependabot.yml` 没写 `rebase-strategy`，默认即 `auto`；
+  活动日志里两条 `force_push … actor=dependabot[bot]` 就是它）。人工评论只在自动 rebase
+  没发生时才需要——分支有冲突，或显式改成 `rebase-strategy: disabled`。
+- **#9 的真正原因不是"覆盖率量法变了"**：报错是 `functions (80.76%) does not meet global
+  threshold (82%)`，但 80.76% = **84/104**，而 vite 7 下是 **84/101**——**分子一个没变，
+  分母多了 3**。多出来的 3 个函数全在 `apps/api/src/database/prisma.service.ts`，而这个文件
+  在 vite 7 的报告里**连行都没有**（不是 0%，是整个文件缺席）。两个原因叠加：vitest 4 默认
+  只报告"测试运行里被加载过"的文件（本仓库没配 `coverage.include`），而 vite 7 的 esbuild
+  转译会把 `manifests.service.ts` 里只出现在构造函数参数类型位置的
+  `import { PrismaService }` 整个消掉——和 T0 那次「`tsx` 不产出 `design:paramtypes` 导致
+  NestJS DI 全线 500」是同一个机制。vite 8 换用 Oxc/Rolldown（lockfile 里
+  `rollup 4.63.0` → `rolldown 1.2.7`），import 被保留，模块第一次真的加载，三个一行都没测过
+  的函数随之现形。**所以该改的是测试，不是阈值**：补 `apps/api/test/prisma.service.test.ts`
+  后 functions 回到 87/104 = 83.65%，vite 升到 8.2.2 与那份单测一起合入，#9 被取代。
+- **由此得到一条一般性结论，记在这里而不是只记在 CHANGELOG**：阈值是按"当前工具链量出来的
+  分母"定的，**换转译器会改变分母**（同一份代码 vite 8 量到 87.25 / 81.97 / 83.65 / 88.05，
+  vite 7 量到 87.31 / 82.43 / 83.65 / 87.95）。所以看到覆盖率阈值失败，第一步是比对
+  `covered/total` 两个数各自怎么动的：分子掉了才是"测试变少了"，只有分母涨了说明**报告范围
+  变大了**——后者往往意味着此前有文件根本没被计入，是好事而不是回归。§2.1 的棘轮因此按
+  两个 vite 版本里较低的一侧定档，本轮只把 lines 由 86 抬到 87。
+- **vite 8 还带来一条新警告，刻意只记录不处理**：`Your Vite config uses features that are
+  unsupported by configLoader: 'native'`——`vitest.config.ts` 用 ESM 语法却按 CJS 加载。
+  两条出路都会牵动别处（根 `package.json` 加 `"type": "module"` 会改变所有 `.js` 的解析；
+  改名 `vitest.config.mts` 要同步 8 处文档与脚本引用，含一条 `check:links` 校验的链接），
+  而它要到未来某个大版本才成为默认。等真要做 ESM 化时一并处理。
+
 **成本口径也变了**：公开仓库 Actions 分钟数无限，第五轮算出来的"11 分钟/push、22 分钟/PR、
 免费档约 180 次 push/月"不再是约束，之前设计的三项省钱优化随之降级为**可选**——其中给
 smoke 加路径过滤仍然值得做，但理由从"省钱"换成了"缩短反馈时间"。
