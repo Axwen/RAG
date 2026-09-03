@@ -49,6 +49,14 @@ Prisma 生成产物、`apps/web`、种子脚本）：statements 87.15 / branches
 functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新增未测代码把
 整体拉下来"，不是一个漂亮数字——所以不要为了过阈值去写断言恒真的测试。
 
+棘轮有个副作用要知道：阈值贴着实测值走，余量只有 1pp 上下（functions 83.16 对 82），
+于是**任何改变测量口径的工具升级都会翻转这条门禁**。实例是 Dependabot 开的 vite
+7.3.6 → 8.2.2（PR #9）：129 个测试一个不少地全过，但 v8 覆盖率报告变成 statements
+86.5 / branches 81.97 / functions 80.76 / lines 87.27，四项各降 0.5~2.4pp，functions
+掉到 82 以下，`quality` 就红了。红得没错——阈值本来就是"不许退"。但退的不是代码质量，
+是量法。所以碰到这类红先分清是哪一种：新增未测代码（补测试），还是插桩口径变了
+（按棘轮规则重取基线，只往上调那一档，并写清是哪次升级换了量法）。
+
 ### 2.2 日志检测
 
 日志检测由 [`scripts/smoke-api.sh`](../../scripts/smoke-api.sh) 在 `integration.yml`
@@ -549,6 +557,31 @@ Skipping zod in group others: No dependency change was created
 - **不在 Actions 列表里的运行也会红。** npm 的依赖更新失败了近十个小时没人知道，因为
   `Dependabot Updates` 只在 Insights → Dependabot 页显示。审计范围不能等于"网页默认给我看
   的那一屏"——`gh run list` 里 `event: dynamic` 的那几条同样要逐条看结论。
+
+#### 6.5.1 修复的验证与收尾（2026-09-02 12:3x）
+
+前两项（gitleaks 范围、分支保护）的验证在 PR #6 自己的 Checks 上；第三项（`engines.node`）
+只能靠"Dependabot 这次是不是真开出 PR 来"来验，所以单独记一笔。
+
+PR #6 rebase merge 进 main 后 Dependabot 重跑，`npm_and_yarn` 那条 `Dependabot Updates`
+（`33630492673`）**第一次 success**，并且一口气开出四个 PR——正好是之前被
+`tool_version_not_supported` 跳过的那批候选：
+
+| PR | 内容 | 结论 |
+| --- | --- | --- |
+| #7 | `others` 组：tsx 4.23.12→4.23.13、zod 4.4.3→4.5.4 | 7 项全绿 |
+| #8 | typescript 5.9.3→**6.0.3**（major，按设计单开） | `node` 红：`packages/contracts` 的 `src/manifests/hash.ts:1` 报 `TS2591: Cannot find name 'node:crypto'`——TS 6 改了默认类型解析，要动 tsconfig 的 `types` |
+| #9 | vite 7.3.6→**8.2.2**（major） | `quality` 红：测试全过，是覆盖率量法变了（见 §2.1 棘轮那段） |
+| #10 | @types/node 22.20.1→**26.4.0**（major） | 7 项全绿 |
+
+`github_actions` 侧同时验证了上一轮加的 `update-types: [minor, patch]`：#5 那个"10 个更新、
+8 个 major 挤一个 commit"的 PR 被 Dependabot 关掉，换成 #11——组里只剩 sbom-action
+0.24.0→0.24.2 一个 patch。八个 major 不再挤在一起，这正是加那一行想要的效果。
+
+收尾把 30 条已被取代的失败运行删了（PR #1/#3/#5 三个已关 PR 的全部运行、#2/#4 rebase 前的
+旧运行、main 上 02:04–04:03 那批已有更新绿运行的失败）。刻意留下 5 条：#8 / #9 的 3 条是
+**活的**信号，不是垃圾；main 上那 2 条 `event: dynamic` 的 `Dependabot Updates` 失败是第三项
+缺陷的现场证据，而且它们本来就不在 Actions 列表里，删了也没有清理价值。
 
 
 

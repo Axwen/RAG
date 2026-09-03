@@ -139,6 +139,10 @@
     **不在 Actions 列表里**（`gh run list` 里是 `event: dynamic`）。已把 `engines.node`
     改成 `">=22.23.1"`——`.nvmrc` 与 CI 的 `setup-node` 仍钉 22.23.1，那才是开发与构建用的
     版本；`engines` 是"能跑在哪些 Node 上"的声明，精确值等于对所有用别的 Node 的工具关门。
+    改完当天 12:32 那条运行第一次 `success` 并开出四个 PR（#7 `others` 组 tsx + zod；#8
+    typescript 6、#9 vite 8、#10 @types/node 26 三个 major 各自单开），正是此前被跳过的
+    那五个候选——这是该项修复唯一可能的验证途径。其中 #8 / #9 是**真红**（TS 6 改了默认
+    类型解析；vite 8 换了 v8 覆盖率的量法），恰好说明 major 拆开单独开 PR 是对的。
   - **文档里的第一条手工配置根本做不到**：ci-cd.md §3 第 1 条一直写着"设分支保护 +
     把六个 job 设为 required check"，实测
     `gh api repos/Axwen/myRAG/branches/main/protection` 返回
