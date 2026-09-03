@@ -658,9 +658,18 @@ PR #6 rebase merge 进 main 后 Dependabot 重跑，`npm_and_yarn` 那条 `Depen
 3. **五个 `github_actions` major PR merge**（#13–#17，03:54）：`action-gh-release` v2→v3.0.3、
    `setup-buildx-action` v3→v4.3.0、`download-artifact` v4→v8.0.1、`upload-artifact`
    v4→v7.0.1、`metadata-action` v5→v6.2.0。**每一个都仍钉 40 位 SHA**，第四轮加的工作流
-   基线检查（不许浮动 tag）在这五个 PR 上没被绕过。注意其中四处落在 `release.yml` 里，
-   而那条流水线只有推 `v*` 标签才跑——**这五个升级里有一部分尚未被任何真实运行验证过**，
-   第一次打标签时要专门盯 release job。
+   基线检查（不许浮动 tag）在这五个 PR 上没被绕过。其中 `upload-artifact` 那个同时改了
+   `ci.yml` 与 `integration.yml`，已随 `abbaf85` 实跑过；**另外四个只落在 `release.yml`，
+   而那条流水线只有推 `v*` 标签才跑，至今 0 次运行。** 这四个当天逐个核对了 upstream
+   release notes，结论是**都只是把 action runtime 从 Node 20 换到 Node 24**——
+   `metadata-action` v6 另有"list 输入保留值内 `#`"的行为变化（本仓库 `tags:` 里没有 `#`），
+   `setup-buildx-action` v4 删了 deprecated 输入（本仓库这一步不带任何 `with:`），
+   没有一条影响现有用法的输入/输出破坏。四者的共同前提是 Actions Runner ≥ 2.327.1，
+   而它已由 `ci.yml` 里同世代的 `checkout@v7` / `setup-node@v7` / `upload-artifact@v7`
+   在 `abbaf85` 跑绿间接证明。`download-artifact@v8` + `upload-artifact@v7` 正是 upstream
+   README 的示例配对——跨 major 无硬性匹配要求，只有"直传不打包"特性要求上传侧 v7 且
+   `archive: false`，本仓库不用。所以第一次打标签的剩余风险不在 action 版本上，而在
+   `release.yml` 那些从未执行过的业务逻辑：GHCR 推送权限、SBOM 生成、Release 创建。
 4. **`main` 上第一次全绿的"受保护"提交**：`abbaf85` 的 10 个 check 里 9 个 `success`、
    1 个 `skipped`（`dependency-review`，push 事件下按设计不跑），CodeQL 双语言
    （`analyze（javascript-typescript）` 03:56:19、`analyze（python）` 03:55:57）首次产出
