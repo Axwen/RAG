@@ -63,14 +63,18 @@ export default defineConfig({
       /**
        * 阈值是棘轮而不是理想值：取当前实测值下取整一档，只允许往上调。
        * 目的是拦住"新增未测代码把整体拉下来"，不是给一个漂亮数字。
-       * 实测基线 2026-09-01（16 文件 / 129 测试，已排除生成产物）：
-       *   statements 87.15 / branches 82.43 / functions 83.16 / lines 87.83
+       * 实测基线 2026-09-03（17 文件 / 131 测试，已排除生成产物），vite 8.2.2：
+       *   statements 87.25 / branches 81.97 / functions 83.65 / lines 88.05
+       * 同一份代码在 vite 7.3.6 下量到 87.31 / 82.43 / 83.65 / 87.95——**分母随转译器变**
+       * （vite 8 换 Oxc/Rolldown，转译出的语句/分支形状与 esbuild 不同），所以阈值按两者
+       * 较低的一侧定。为什么 vite 8 下 functions 分母多了 3 个、以及那 3 个是怎么补上的，
+       * 见 CHANGELOG 里 vite 8 那条。
        */
       thresholds: {
         statements: 86,
         branches: 81,
         functions: 82,
-        lines: 86,
+        lines: 87,
       },
     },
   },

@@ -38,8 +38,9 @@
   **`scripts/release-notes.sh`**（从 CHANGELOG 抽取指定版本段落，标签与 CHANGELOG
   不对齐即失败）。
 - **覆盖率阈值**（`vitest.config.ts`）：statements 86 / branches 81 / functions 82 /
-  lines 86。取自 2026-09-01 实测（87.15 / 82.43 / 83.16 / 87.83，已排除 Prisma 生成
-  产物、`apps/web`、种子脚本）。这是棘轮值而非理想值，只上调。
+  lines 87。取自 2026-09-03 实测（vite 8.2.2 下 87.25 / 81.97 / 83.65 / 88.05，已排除
+  Prisma 生成产物、`apps/web`、种子脚本；lines 由 86 抬到 87 即此轮棘轮）。这是棘轮值
+  而非理想值，只上调。分母会随转译器变化，见下方 vite 8 那条。
 - **三条新增门禁**（第四轮审计产出，见 ci-cd.md §6.4）：
   - **`pnpm run check:workflows`**（`scripts/check-workflows.sh` + `scripts/lib/lint-workflows.py`）：
     工作流 YAML 的静态检查，两层。基线层只用 PyYAML、永远跑——YAML 可解析、`needs` 指向
@@ -99,6 +100,39 @@
   [报告](docs/engineering/plan-devex-review-20260901-boomerang.md)，DX 6/10 → 8/10。
 
 ### Fixed
+
+- **vite 8 照出一个从建立起就存在的覆盖率盲点：`apps/api/src/database/prisma.service.ts`
+  从来没进过覆盖率报告**（Dependabot PR #9 `vite 7.3.6 → 8.2.2` 的红）。表面症状是
+  `quality` job 报 `functions (80.76%) does not meet global threshold (82%)`，看着像
+  "vite 8 换了覆盖率量法"，实际是**分子没变、分母多了 3**：vite 7 下 84/101，vite 8 下
+  84/104。多出来的 3 个函数全在这个文件里（`constructor` / `onModuleInit` /
+  `onModuleDestroy`），而它在 vite 7 的报告里**连行都没有**——不是 0%，是整个文件缺席。
+  两个原因叠加才形成这个盲点：① vitest 4 默认只报告"测试运行里被加载过"的文件（本仓库
+  没配 `coverage.include`）；② vite 7 用 esbuild 转译 TS，会把 `manifests.service.ts` 里
+  只出现在构造函数参数类型位置的 `import { PrismaService }` 整个消掉（正是 T0 那次
+  "`tsx` 不产出 `design:paramtypes` 导致 NestJS DI 失效"的同一个机制），于是该模块在测试
+  里从未被加载。vite 8 换用 Oxc/Rolldown（lockfile 里 `rollup 4.63.0` → `rolldown 1.2.7`、
+  新增 `lightningcss`），这个 import 被保留，模块第一次真的加载，三个一行都没测过的函数
+  随之现形。**所以要修的是测试而不是阈值**：新增 `apps/api/test/prisma.service.test.ts`
+  钉住三件事——缺 `DATABASE_URL` 时构造即失败（"不等到第一个请求"这条设计承诺此前无人验证）、
+  `onModuleInit` 委派 `$connect`、`onModuleDestroy` 委派 `$disconnect`；连接串指向不监听的
+  端口、两个方法用 spy 拦下，不触真库（pg 连接池懒建立，构造本身不发网络请求）。
+  functions 回到 87/104 = 83.65%，该文件四项均 100%。
+  - **同一份代码在两个 vite 下都过阈值**：vite 8 量到 87.25 / 81.97 / 83.65 / 88.05，
+    vite 7 量到 87.31 / 82.43 / 83.65 / 87.95。各文件分母的小幅差异（例如
+    `health.controller.ts` 语句总数 9 → 7）是转译器输出形状不同，不是代码变了；所以阈值
+    按两侧较低的一档定，本轮只把 lines 由 86 抬到 87（棘轮只上调）。
+  - **升级本身的兼容面已核对**：vite 8 的 `engines` 是 `^20.19.0 || >=22.12.0`，本仓库
+    `.nvmrc` 钉 22.23.1、五处 `setup-node` 全用 `node-version-file: .nvmrc`，满足；
+    vitest 4.1.11 的 peer 已声明 `vite ^6.0.0 || ^7.0.0 || ^8.0.0`；`pnpm why vite` 只有
+    vitest / `@vitest/mocker` / 根 devDependencies 三处引用，它是纯测试期工具，不进任何
+    运行时产物（`apps/web` 走 Next.js，不用 vite）。
+  - **vite 8 新增一条警告，本轮刻意只记录不动**：`Your Vite config uses features that are
+    unsupported by configLoader: 'native'` —— `vitest.config.ts` 用 ESM 语法却按 CJS 加载
+    （vite 7 下没有这条）。两条出路都会牵动别处：根 `package.json` 加 `"type": "module"`
+    会改变仓库里所有 `.js` 的解析方式；把配置改名 `vitest.config.mts` 要同步 8 处文档与
+    脚本里的引用（含一条 `check:links` 校验的相对链接）。它要到未来某个大版本才变成默认，
+    现在只是警告，等真要动 ESM 化时一并处理。
 
 - **`packages/contracts` 在 TypeScript 6 下 typecheck 失败**（Dependabot PR #8 `typescript 5.9.3 → 6.0.3` 的红）：
   `src/manifests/hash.ts:1` 的 `import { createHash } from 'node:crypto'` 报 `TS2591`。根因是
