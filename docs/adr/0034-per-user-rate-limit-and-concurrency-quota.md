@@ -11,3 +11,11 @@ status: accepted
 载体分层与预算一致：提问频次、每日次数和上传频次是 Redis 计数器软闸门，超限返回 `429` 并携带 `Retry-After`，不写领域审计但计入指标；租户级预算仍然只在 PostgreSQL `model_budget_ledger` 上判定（见 ADR-0029）。Redis 不可用时这些频次计数可以告警后放行，但并发 `AnswerRun` 和 SSE 不得完全依赖 Redis：API 进程必须保留本地 semaphore，`AnswerRun` 创建事务必须取得可回收的 PostgreSQL 用户并发 lease。Redis 故障不能关闭本地并发限制或数据库 lease。
 
 配额超限只表现为拒绝与排队，不表现为静默降级：不因用户限流而跳过引用验证、不因限流而缩短候选集、不因限流而改变数据分级路由。每个限制项都必须可按租户覆盖，默认值随代码发布，覆盖值随租户配置。DoD 要求限流有集成测试覆盖并发 SSE 与每分钟窗口两条路径，且验证超限响应不泄漏其他用户的用量信息。
+
+## 2026-09-04 补充：配置 schema 的安全上界（默认值与校准口径不变）
+
+**六个限制项在配置 schema 上各有一个安全上界，它们不是政策上限。** `concurrentAnswerRuns ≤ 8`、`concurrentSseConnections ≤ 16`、`questionsPerMinute ≤ 120`、`questionsPerDay ≤ 5000`、`uploadsPerHour ≤ 500`、`concurrentRebuildsPerTenant ≤ 4`（`packages/config/src/resource-limits.ts`）。上面一段说的「校准结果写入运行配置而不是重开 ADR」照旧成立：这六个数字挡的是量级打错（并发 1 敲成 1000、每分钟 10 敲成 10000），不是校准区间的边界——**默认值 1 / 2 / 10 / 200 / 20 / 1 一个都没变**。之所以要写进 ADR 而不是只留在代码注释里：一个只出现在代码里的上界，下一个人读 ADR 会以为「可按租户覆盖」是无界的，而运行配置真的写了 200 次/分钟时会在启动时被拒绝，那时找不到依据。
+
+**上界必须宽到装得下任何经济上可行的校准值，否则它就成了隐藏的政策上限。** 用 [ADR-0029](0029-model-budget-ledger-and-limits.md) 的实测成本反推：每日 16 元，1024 候选全量 rerank 时单次问答约 ¥0.1587，只够约 100 次；`rerankInputSize` 取 64 时约 ¥0.0099，约 1600 次。也就是说预算先耗尽的位置比 `questionsPerDay ≤ 5000` 低了一个量级以上——这条上界不可能挡住任何真实校准值，先拒绝请求的一定是预算门禁而不是 schema。并发与上传同理：并发 8 个 `AnswerRun` 已经超出单进程 semaphore 与 SSE 连接的现实容量，触到它意味着配置写错了。
+
+**上界与「按租户覆盖」不冲突。** 覆盖值走同一个 schema 校验（ADR-0034 与 ADR-0029 的租户级覆盖是同一条路径），所以租户覆盖也不能突破量级安全线。要真正提高某一项，改 schema 与本节数字是同一次改动，会被 review 看见——这正是把它写进 ADR 想要的效果。

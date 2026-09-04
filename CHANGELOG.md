@@ -104,6 +104,44 @@
 
 ### Fixed
 
+- **Codex 外部评审（2026-09-04，范围 `main...c214812`）照出两个能静默关掉预算门禁的缺陷**。
+  评审自身的结论是"可作为 T12a/T11a 的配置 + 表结构切片验收，不可作为 T12a/T11a 完成验收"；
+  它列为阻塞的第三条（五条事务入口、`writeAuditEvent`、原因码注册表与两层测试缺失）是**范围
+  假象**——`c214812` 是 PR #27 的头，那些代码在 PR #28 的 `78d8b1b` 里，从来不在被评审的 diff 内。
+  - **单价 0 能通过 schema，于是那条腿的预扣恒为 0**（`packages/config/src/model-pricing.ts`）：
+    五个单价字段原为 `z.coerce.number().nonnegative()`，而 `z.coerce.number()` 把 `''`、`null`、
+    `' '`、`[]`、`false` 全折成 0（zod 4.5.4 实测），T12b 要从环境变量读的正是这几个值。后果不是
+    估值偏低一点，是四层 CAS 全部通过、门禁静默打开。改成 `.positive()`，与 `resource-limits.ts`
+    每个数值字段（`positiveInt`、`cnyAmount`、三条预算上限）同一口径——`.nonnegative()` 原本是
+    全包唯一的例外。真有免费档就写显式极小值（`1e-6`），让"免费"和"忘了配"在配置里长得不一样。
+  - **四个估值入口不校验入参**：实测 `estimateRerankCny(..., { candidateCount: -1 })` 返回
+    `-0.000156`。补 `requireCount()`（有限非负整数；`Number.isInteger` 一次挡掉 NaN、±Infinity
+    与小数），并让 `estimateAnswerRunCny` 对 `verification.*` **四项各自校验**——只校验乘积挡不住
+    `sentenceCount: -1` 配 `embeddingTokensPerSentence: -1`，负负得正。NaN 是比负数更危险的那一半：
+    `reserveBudget` 有 `lessThan(0)` 挡负数，而 NaN 让账本里每个 `greaterThan` 都成假，四层 CAS
+    全过；负数在四条腿求和里也只是把总额抹低（抵消），不会以负数形态到达 `reserveBudget`。
+    `tokensToCny` 再兜住手搓的 `ModelPricing`——`{ ...modelPricingDefaults,
+    embeddingUsdPerMillionTokens: 0 }` 是合法类型，TypeScript 看不见，与迁移里那条 `reasonCode`
+    格式 CHECK 兜住 TS 注册表是同一个道理。用例 37 → 58 条，覆盖 0/`''`/`null`/负/NaN/Infinity
+    与那条 `-0.000156` 回归。
+  - **`domain_audit_event` 与 `model_budget_ledger` 可被一条语句清空**：append-only 触发器是
+    `FOR EACH ROW`，而 TRUNCATE 不触发任何行级触发器——上一条迁移的注释还把这条路当成"清库
+    路径仍然通畅"写了下来。于是"审计不可变"（ADR-0040 决策 5）在一条语句面前不成立；账本更糟，
+    余额的事实源只有它（ADR-0029），清空等于把所有花销归零而 Redis 还缓着旧余额。新迁移
+    `20260904133000_audit_and_ledger_truncate_guard` 给两张表各加一个
+    `BEFORE TRUNCATE ... FOR EACH STATEMENT` 触发器（语句级是唯一对 TRUNCATE 触发的形式），
+    抛 `check_violation`。**边界写进迁移注释**：表 owner 仍可 `DROP TRIGGER` 再 TRUNCATE，所以这道
+    防线做的是把"手抖清库"变成响亮的报错、把绕过变成 review 看得见的显式 DDL；真正的硬边界是
+    应用角色与迁移角色分离（T14/部署期）。集成层两条新用例用裸 SQL 撞它，连
+    `TRUNCATE "tenants" CASCADE` 一起（级联表上语句级触发器同样触发，实测通过），且都包在会
+    回滚的事务里——防线万一没了，结局是测试红，不是先把表清空再报红。
+  - **`resource-limits.ts` 六个 `.max()` 在 ADR 里没有依据**：`concurrentAnswerRuns ≤ 8` 等六个
+    上界只活在代码注释里，读 ADR 的人会以为"可按租户覆盖"是无界的，等运行配置真写了 200 次/分钟
+    被启动校验拒绝时找不到依据。补进 ADR-0034 的「2026-09-04 补充：配置 schema 的安全上界」，
+    并记下为什么它们挡不住任何真实校准值（按 ADR-0029 实测：每日 16 元在 1024 候选下约 100 次
+    问答、64 候选下约 1600 次，先耗尽的一定是预算而不是 `questionsPerDay ≤ 5000`）。
+    **六个默认值 1/2/10/200/20/1 一个都没变。**
+
 - **一次 npm 侧网络抖动就把合并挡住：`pnpm audit（critical 阻断）` 是 required check，却依赖
   活网络**（PR #28）。`POST /-/npm/v1/security/audits/quick` 在 pnpm 自己那三次退避（10s /
   60s）之后仍然 `ERR_SOCKET_TIMEOUT`，整步跑了 4 分钟才失败，红得和"真有 critical 通告"
