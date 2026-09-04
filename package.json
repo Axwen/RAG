@@ -17,6 +17,7 @@
     "build": "pnpm --recursive --stream run build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "preflight": "bash scripts/check-env.sh",
     "dx:baseline": "bash scripts/dx-baseline.sh",
     "check:links": "bash scripts/check-links.sh",
@@ -46,6 +47,8 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@rag/config": "workspace:*",
+    "@rag/database": "workspace:*",
     "@types/node": "26.4.0",
     "@vitest/coverage-v8": "4.1.11",
     "eslint": "10.9.1",

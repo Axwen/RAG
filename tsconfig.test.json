@@ -12,6 +12,11 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "apps/*/test/**/*.ts"],
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/test/**/*.ts",
+    "apps/*/test/**/*.ts",
+    "tests/**/*.ts"
+  ],
   "exclude": ["node_modules", "**/dist/**", "**/generated/**", "**/.next/**", "coverage"]
 }

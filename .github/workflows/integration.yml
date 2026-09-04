@@ -78,6 +78,14 @@ jobs:
       - name: 构建（冒烟跑编译产物，不跑 dev 入口）
         run: pnpm run build
 
+      # 库层集成测试（tests/）：跑在刚 bootstrap 出来的真 PostgreSQL 上。
+      # 单测抓不到的正是这一层：advisory lock 下的并发预扣、FOR UPDATE SKIP LOCKED 的
+      # 批次挑行、append-only 触发器、事务回滚把审计与账本一起撤掉——全在数据库里，
+      # 假事务只能证明调用顺序，证不了这些。
+      # 放在 smoke:api 之前：它只用 PostgreSQL，失败面比整条 HTTP 冒烟窄，先红先定位。
+      - name: 集成：事务入口 + 审计原子性（真 PostgreSQL）
+        run: pnpm run test:integration
+
       - name: 冒烟：HTTP 契约 + 日志结构 + 日志泄漏
         run: pnpm run smoke:api
 

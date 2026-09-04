@@ -37,6 +37,10 @@ export const contentFieldNames = [
   'instructions',
   'documentText',
   'chunkText',
+  // 检索命中片段的常见键名。docblock 里「检索命中片段」这一条原先在清单里没有落点，
+  // 而它正是审计 detail 最容易夹带正文的地方（EVIDENCE/INJECTION 两个域的判定详情）。
+  'snippet',
+  'snippets',
   'text',
   'content',
   'answer',

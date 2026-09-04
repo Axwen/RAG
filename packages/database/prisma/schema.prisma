@@ -160,13 +160,13 @@ model Tenant {
 }
 
 model KnowledgeSpace {
-  id               String           @id @default(uuid(7)) @db.Uuid
-  tenantId         String           @db.Uuid
+  id               String            @id @default(uuid(7)) @db.Uuid
+  tenantId         String            @db.Uuid
   slug             String
   name             String
-  defaultDataClass DataClass        @default(INTERNAL)
-  createdAt        DateTime         @default(now()) @db.Timestamptz(6)
-  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  defaultDataClass DataClass         @default(INTERNAL)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(6)
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
   documents        Document[]
   indexPartitions  IndexPartition[]
   releaseManifests ReleaseManifest[]
@@ -181,31 +181,31 @@ model KnowledgeSpace {
 // 解析产物、Chunk 与投影状态由 T1b/T2/T4a 加入，本表不持有它们。
 
 model Document {
-  id              String           @id @default(uuid(7)) @db.Uuid
-  tenantId        String           @db.Uuid
-  knowledgeSpaceId String          @db.Uuid
-  createdAt       DateTime         @default(now()) @db.Timestamptz(6)
-  tenant          Tenant           @relation(fields: [tenantId], references: [id])
-  knowledgeSpace  KnowledgeSpace   @relation(fields: [knowledgeSpaceId], references: [id])
-  versions        DocumentVersion[]
+  id               String            @id @default(uuid(7)) @db.Uuid
+  tenantId         String            @db.Uuid
+  knowledgeSpaceId String            @db.Uuid
+  createdAt        DateTime          @default(now()) @db.Timestamptz(6)
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  knowledgeSpace   KnowledgeSpace    @relation(fields: [knowledgeSpaceId], references: [id])
+  versions         DocumentVersion[]
 
   @@index([tenantId, knowledgeSpaceId])
   @@map("documents")
 }
 
 model DocumentVersion {
-  id             String   @id @default(uuid(7)) @db.Uuid
-  tenantId       String   @db.Uuid
-  documentId     String   @db.Uuid
-  version        Int
-  sourceFormat   String
-  dataClass      DataClass @default(INTERNAL)
-  contentHash    String
-  objectKey      String
-  sizeBytes      Int
-  createdAt      DateTime @default(now()) @db.Timestamptz(6)
-  tenant         Tenant   @relation(fields: [tenantId], references: [id])
-  document       Document @relation(fields: [documentId], references: [id])
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @db.Uuid
+  documentId   String    @db.Uuid
+  version      Int
+  sourceFormat String
+  dataClass    DataClass @default(INTERNAL)
+  contentHash  String
+  objectKey    String
+  sizeBytes    Int
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  document     Document  @relation(fields: [documentId], references: [id])
 
   @@unique([documentId, version])
   @@unique([tenantId, contentHash])
@@ -218,22 +218,22 @@ model DocumentVersion {
 // JSON + SHA-256 计算（packages/contracts/src/manifests），数据库唯一约束兜底。
 
 model IngestionManifest {
-  id             String         @id @default(uuid(7)) @db.Uuid
-  tenantId       String         @db.Uuid
+  id             String             @id @default(uuid(7)) @db.Uuid
+  tenantId       String             @db.Uuid
   version        Int
-  status         ManifestStatus @default(DRAFT)
+  status         ManifestStatus     @default(DRAFT)
   parserRef      String
   chunkerRef     String
   embeddingRef   String
   indexSchemaRef String
   // 解析后端标识（ADR-0038）：契约一次定形，默认 deepdoc；T4b 增量加入
   // office_hybrid/image_ocr 时只做增量实现，不改契约。
-  parseBackend   String         @default("deepdoc")
+  parseBackend   String             @default("deepdoc")
   sourceFormats  String[]
   contentHash    String
-  createdAt      DateTime       @default(now()) @db.Timestamptz(6)
-  approvedAt     DateTime?      @db.Timestamptz(6)
-  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  createdAt      DateTime           @default(now()) @db.Timestamptz(6)
+  approvedAt     DateTime?          @db.Timestamptz(6)
+  tenant         Tenant             @relation(fields: [tenantId], references: [id])
   pipelines      PipelineManifest[]
   releases       ReleaseManifest[]
 
@@ -243,10 +243,10 @@ model IngestionManifest {
 }
 
 model RetrievalManifest {
-  id              String         @id @default(uuid(7)) @db.Uuid
-  tenantId        String         @db.Uuid
+  id              String             @id @default(uuid(7)) @db.Uuid
+  tenantId        String             @db.Uuid
   version         Int
-  status          ManifestStatus @default(DRAFT)
+  status          ManifestStatus     @default(DRAFT)
   sparsePolicy    Json
   vectorPolicy    Json
   fusionPolicy    Json
@@ -257,9 +257,9 @@ model RetrievalManifest {
   // 预算参数。必须是 Manifest 字段而不是环境变量。开发种子显式写 64。
   rerankInputSize Int
   contentHash     String
-  createdAt       DateTime       @default(now()) @db.Timestamptz(6)
-  approvedAt      DateTime?      @db.Timestamptz(6)
-  tenant          Tenant         @relation(fields: [tenantId], references: [id])
+  createdAt       DateTime           @default(now()) @db.Timestamptz(6)
+  approvedAt      DateTime?          @db.Timestamptz(6)
+  tenant          Tenant             @relation(fields: [tenantId], references: [id])
   pipelines       PipelineManifest[]
 
   @@unique([tenantId, contentHash])
@@ -268,19 +268,19 @@ model RetrievalManifest {
 }
 
 model AnswerManifest {
-  id             String         @id @default(uuid(7)) @db.Uuid
-  tenantId       String         @db.Uuid
+  id             String             @id @default(uuid(7)) @db.Uuid
+  tenantId       String             @db.Uuid
   version        Int
-  status         ManifestStatus @default(DRAFT)
+  status         ManifestStatus     @default(DRAFT)
   promptRef      String
   modelRouteRef  String
   citationPolicy Json
   riskPolicy     Json
   fallbackPolicy Json
   contentHash    String
-  createdAt      DateTime       @default(now()) @db.Timestamptz(6)
-  approvedAt     DateTime?      @db.Timestamptz(6)
-  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  createdAt      DateTime           @default(now()) @db.Timestamptz(6)
+  approvedAt     DateTime?          @db.Timestamptz(6)
+  tenant         Tenant             @relation(fields: [tenantId], references: [id])
   pipelines      PipelineManifest[]
 
   @@unique([tenantId, contentHash])
@@ -318,16 +318,16 @@ model PipelineManifest {
 // 数据等级、索引 Schema 或 Embedding 版本变化创建新分区，不原地重写。
 
 model IndexPartition {
-  id                String           @id @default(uuid(7)) @db.Uuid
-  tenantId          String           @db.Uuid
-  knowledgeSpaceId  String           @db.Uuid
-  dataClass         DataClass
+  id                 String            @id @default(uuid(7)) @db.Uuid
+  tenantId           String            @db.Uuid
+  knowledgeSpaceId   String            @db.Uuid
+  dataClass          DataClass
   indexSchemaVersion String
-  embeddingVersion  String
-  createdAt         DateTime         @default(now()) @db.Timestamptz(6)
-  tenant            Tenant           @relation(fields: [tenantId], references: [id])
-  knowledgeSpace    KnowledgeSpace   @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id], map: "index_partitions_tenant_knowledge_space_fkey")
-  releaseManifests  ReleaseManifest[]
+  embeddingVersion   String
+  createdAt          DateTime          @default(now()) @db.Timestamptz(6)
+  tenant             Tenant            @relation(fields: [tenantId], references: [id])
+  knowledgeSpace     KnowledgeSpace    @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id], map: "index_partitions_tenant_knowledge_space_fkey")
+  releaseManifests   ReleaseManifest[]
 
   @@unique([tenantId, knowledgeSpaceId, dataClass, indexSchemaVersion, embeddingVersion])
   @@unique([tenantId, id])
@@ -338,26 +338,26 @@ model IndexPartition {
 // 只表达入库事实与成员集；不写回激活时间、当前 Alias 或最终替代关系。
 
 model ReleaseManifest {
-  id                String         @id @default(uuid(7)) @db.Uuid
-  tenantId          String         @db.Uuid
-  knowledgeSpaceId  String         @db.Uuid
-  indexPartitionId  String         @db.Uuid
-  ingestionManifestId String       @db.Uuid
-  status            ReleaseStatus  @default(CREATED)
-  memberSetUri      String
-  memberSetHash     String
-  memberCount       Int
-  docIndexName      String
-  chunkIndexName    String
-  candidateAlias    String
-  indexSchemaVersion String
-  embeddingVersion  String
-  contentHash       String
-  createdAt         DateTime       @default(now()) @db.Timestamptz(6)
-  tenant            Tenant         @relation(fields: [tenantId], references: [id])
-  knowledgeSpace    KnowledgeSpace @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id], map: "release_manifests_tenant_knowledge_space_fkey")
-  indexPartition    IndexPartition @relation(fields: [tenantId, indexPartitionId], references: [tenantId, id], map: "release_manifests_tenant_partition_fkey")
-  ingestionManifest IngestionManifest @relation(fields: [tenantId, ingestionManifestId], references: [tenantId, id], map: "release_manifests_tenant_ingestion_fkey")
+  id                  String            @id @default(uuid(7)) @db.Uuid
+  tenantId            String            @db.Uuid
+  knowledgeSpaceId    String            @db.Uuid
+  indexPartitionId    String            @db.Uuid
+  ingestionManifestId String            @db.Uuid
+  status              ReleaseStatus     @default(CREATED)
+  memberSetUri        String
+  memberSetHash       String
+  memberCount         Int
+  docIndexName        String
+  chunkIndexName      String
+  candidateAlias      String
+  indexSchemaVersion  String
+  embeddingVersion    String
+  contentHash         String
+  createdAt           DateTime          @default(now()) @db.Timestamptz(6)
+  tenant              Tenant            @relation(fields: [tenantId], references: [id])
+  knowledgeSpace      KnowledgeSpace    @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id], map: "release_manifests_tenant_knowledge_space_fkey")
+  indexPartition      IndexPartition    @relation(fields: [tenantId, indexPartitionId], references: [tenantId, id], map: "release_manifests_tenant_partition_fkey")
+  ingestionManifest   IngestionManifest @relation(fields: [tenantId, ingestionManifestId], references: [tenantId, id], map: "release_manifests_tenant_ingestion_fkey")
 
   @@unique([tenantId, contentHash])
   @@index([tenantId, knowledgeSpaceId])
@@ -397,6 +397,8 @@ model ModelBudgetLedger {
   renewCount     Int                  @default(0)
   answerRunId    String?              @db.Uuid
   jobId          String?              @db.Uuid
+  // `@default(now())` 是 Prisma **客户端**生成的值，列的 DEFAULT 只兜住省略该列的原始 SQL。
+  // 所以 reserveBudget 显式传 txNow(tx)：CAS 按事务时钟校验窗口，行必须落在同一个时刻上。
   createdAt      DateTime             @default(now()) @db.Timestamptz(6)
   finalizedAt    DateTime?            @db.Timestamptz(6)
   tenant         Tenant               @relation(fields: [tenantId], references: [id])
@@ -422,6 +424,7 @@ model ModelBudgetLedger {
 model DomainAuditEvent {
   id          String         @id @default(uuid(7)) @db.Uuid
   tenantId    String         @db.Uuid
+  // 同 ModelBudgetLedger.createdAt：写入口显式传 txNow(tx)，列默认值只是原始 SQL 的兜底。
   occurredAt  DateTime       @default(now()) @db.Timestamptz(6)
   // category 由注册表按 reasonCode 派生（categoryForReasonCode），调用方不传；
   // 这一列是那个映射的反范式化，读侧要按它翻页和建索引。

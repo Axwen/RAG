@@ -16,6 +16,12 @@ importers:
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.9.1(jiti@2.7.0))
+      '@rag/config':
+        specifier: workspace:*
+        version: link:packages/config
+      '@rag/database':
+        specifier: workspace:*
+        version: link:packages/database
       '@types/node':
         specifier: 26.4.0
         version: 26.4.0
@@ -165,6 +171,9 @@ importers:
       '@prisma/client':
         specifier: 7.10.0
         version: 7.10.0(prisma@7.10.0(@types/node@26.4.0)(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(magicast@0.5.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@6.0.3))(typescript@6.0.3)
+      '@rag/config':
+        specifier: workspace:*
+        version: link:../config
       '@rag/contracts':
         specifier: workspace:*
         version: link:../contracts

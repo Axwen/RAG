@@ -21,6 +21,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "@rag/config": "workspace:*",
     "@rag/contracts": "workspace:*",
     "@rag/observability": "workspace:*",
     "pg": "8.23.0"
