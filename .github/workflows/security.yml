@@ -61,26 +61,27 @@ jobs:
   deps-audit:
     name: 依赖漏洞（critical 阻断 / 其余报告）
     runs-on: ubuntu-24.04
-    # 10：原来的 20 是给 pnpm audit 的三轮 ERR_SOCKET_TIMEOUT 加 pnpm 自己的退避留的
-    # （实测这一步通过过一次 15m3s、失败过一次 10m26s）。换成 bulk 端点后不再需要
-    # pnpm/node/install，但 2026-09-04 首跑证明 5 分钟不够——npm 的通告服务本身就慢，
-    # 200 个包一片要 45s 以上，60s 读超时正卡在它的响应时间上，整步被 runner 掐掉。
-    # 现在脚本自己带 7 分钟总预算（--budget-seconds 420）：预算先到，它能带着 ::error::
-    # 说清是谁没回；job 上限只是兜底，被 runner 掐掉只会留一句 The operation was canceled.
-    timeout-minutes: 10
+    # 5：这一步现在只有 checkout + 两次 python3，没有 pnpm/node/install。数据源换成
+    # OSV.dev 之后实测本机 548 个 name@version 一次 1.4s、自检 3.8s（ci-cd.md §6.10），
+    # 脚本自带的总预算是 120s，所以最坏情况约 2 分半。
+    # 这个数字的角色只是"挂住了就掐掉"，不该参与判定：判定要由脚本自己带着 ::error::
+    # 和耗时分布做出来，被 runner 掐掉只会留一句 The operation was canceled.
+    # 20 → 5 → 10 → 5 的来回见 ci-cd.md §6.7-§6.10，别再往上调而不看那几节。
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 自检（离线，桩 registry）
-        # 先证明解析守卫、严重度分档与 fail closed 都还在，再去信下一步的结论。
+      - name: 自检（离线桩服务器，27 条断言）
+        # 先证明解析守卫、严重度分档、撤回处理与 fail closed 都还在，再去信下一步的结论。
         # 这个门禁最坏的失效方式不是红，是解析出 0 个包然后报「没有漏洞」。
         run: bash scripts/check-npm-advisories.sh --self-test
 
       - name: critical 阻断 / 其余只报告
-        # 显式指定官方 registry 由脚本默认值完成：本地开发常配 npmmirror，其 audit 端点不存在。
+        # 数据源是 OSV.dev（--api 默认 https://api.osv.dev），无需鉴权，所以这一步不读
+        # 任何 secret。npm 生态的条目同样来自 GitHub Advisory DB，分档口径没变。
         # 取不到数据仍然失败——审计跑不了不等于没有漏洞，fail closed 与仓库其他门禁一致。
-        # 分片/并发/超时/预算四个数走脚本默认值（64 / 4 / 120s / 420s），理由与首跑实测写在
-        # scripts/check-npm-advisories.sh 头部；输出末尾那行耗时分布是下一次调它们的依据。
+        # 超时与预算走脚本默认值（30s / 120s），理由与实测写在脚本头部；输出末尾那行
+        # 耗时分布是下一次调它们的依据。
         run: bash scripts/check-npm-advisories.sh --audit-level critical
 
   dependency-review:

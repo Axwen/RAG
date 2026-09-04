@@ -85,7 +85,7 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 | 检查 | 阻断阈值 | 为什么这样定 |
 |---|---|---|
 | gitleaks（所有引用可达的提交） | 任何命中 | `.env` 被 gitignore 与"从没被提交过"是两件事，只有扫全历史能确认。**2026-09-02 起才真的在扫全历史**——此前用的 `gitleaks/gitleaks-action` 按事件名自行收窄范围，见 §6.5 |
-| 依赖漏洞（[`scripts/check-npm-advisories.sh`](../../scripts/check-npm-advisories.sh)） | critical 阻断，其余只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过。数据源仍是 GitHub Advisory DB，但 2026-09-04 起**不再经 `pnpm audit`**：它打的 `/security/audits/quick` 正在被 npm 下线，实测耗时横跨 pnpm 那个改不动的 60s 超时，门禁成了抛硬币（§6.8）。改直连 `/advisories/bulk`：一次 POST，不装依赖也不要 node。取不到数据仍然失败——审计跑不了不等于没有漏洞 |
+| 依赖漏洞（[`scripts/check-npm-advisories.sh`](../../scripts/check-npm-advisories.sh)） | critical 阻断，其余只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过。判定口径始终是 GitHub Advisory DB 的 GHSA 四档，但 2026-09-04 起**不再经 `pnpm audit`**：它打的 `/security/audits/quick` 正在被 npm 下线，实测耗时横跨 pnpm 那个改不动的 60s 超时，门禁成了抛硬币（§6.8）；直连 `/advisories/bulk` 也没救——npm 的通告服务本身慢得没有规律（§6.9、§6.10）。现在问 **OSV.dev**：548 个 `name@version` 一次 `POST /v1/querybatch`，实测 1.4s，无需鉴权，不装依赖也不要 node，且本机可复现。取不到数据仍然失败——审计跑不了不等于没有漏洞 |
 | dependency-review（仅 PR） | high；拒绝 AGPL / SSPL | 供应链的入口在引入那一刻，不在事后。**当前 skip**：private repo 上这个 action 同样要 Code Security，见 §3.3 |
 | CodeQL | 不阻断，进 Security 页签 | 先看全（`security-and-quality`），要当门禁再加进 required checks。**private repo 需先有 Code Security 才能开 code scanning**，否则上传 SARIF 必然失败，见 §3.3 |
 
@@ -264,12 +264,14 @@ CI 里带 `--strict`，两层都跑。
 `typecheck` 步骤就是 `tsc -b`，会顺手 emit。真忘了也不会踩坑，`vitest.config.ts` 会先
 报出缺哪些产物。
 
-`pnpm run check:advisories` 本地可直接跑，脚本自带官方 registry 默认值、不读 npm/pnpm 的
-本地配置，所以不会像旧的 `pnpm audit` 那样在 registry 指向 npmmirror 时报
-`AUDIT_ENDPOINT_NOT_EXISTS`。它**不在 `verify` 里**：verify 是可离线跑的本地检查，而这一条
-要活网络。进 verify 的是它的离线自检 `pnpm run check:advisories:self-test`（桩 registry、
-16 条断言、约 1 秒）——这个门禁最坏的失效方式不是红，是解析出 0 个包然后报「没有漏洞」，
-所以解析守卫、严重度分档、超时与预算耗尽时的 fail closed 都要有可复跑的断言（§6.8、§6.9）。
+`pnpm run check:advisories` 本地可直接跑（实测 1.4s），脚本不读 npm/pnpm 的本地配置，所以
+不会像旧的 `pnpm audit` 那样在 registry 指向 npmmirror 时报 `AUDIT_ENDPOINT_NOT_EXISTS`。
+**本机能跑通这一条本身就是门禁设计的一部分**：上一版只有 runner 能验证它，于是每次调参都要花
+一轮 7 分钟的 CI，三轮全红（§6.10）。它**不在 `verify` 里**：verify 是可离线跑的本地检查，而
+这一条要活网络。进 verify 的是它的离线自检 `pnpm run check:advisories:self-test`（桩服务器、
+27 条断言、约 4 秒）——这个门禁最坏的失效方式不是红，是解析出 0 个包然后报「没有漏洞」，所以
+解析守卫、严重度分档、已撤回通告、响应结构错位、超时与预算耗尽时的 fail closed 都要有可复跑的
+断言，且这些断言本身被植入缺陷验证过（§6.8-§6.10）。
 
 `pnpm run check:commits` **不在 `verify` 里**（它要 `origin/main..HEAD` 这个范围，而 verify
 是可离线跑的本地检查），所以提交完、推之前要单独跑一次，否则 CI 的 `quality` 会因为提交
@@ -305,7 +307,7 @@ CI 里带 `--strict`，两层都跑。
   **PR 标题**很长，但**提交主题**是缩写过的（如
   `chore(deps): bump python in /services/parser`，44 列）。
 
-## 6. 真跑记录（2026-09-02 起）：三轮修到全绿，六轮主动审计、真回归与假红
+## 6. 真跑记录（2026-09-02 起）：三轮修到全绿，七轮主动审计、真回归与假红
 
 ### 6.1 第一轮：五条工作流全红
 
@@ -912,6 +914,7 @@ userconfig `.npmrc` 里写 `fetch-timeout=2000` 同样无视。所以唯一的�
 （靠并发压墙钟）两种情况下，9 片 / 并发 4 都落在 420s 预算内。为了让下一次调参有据可依，脚本
 跑完会打一行耗时分布：`bulk 请求 N 次成功：最快 / 中位 / 最慢，墙钟 …（分片 64 个包、并发 4、
 单次上限 120s、总预算 420s）`。
+（**这一行当天就把两种假设一起否掉了：同一个 64 包载荷有一次 0.4s 回、多数 120s 不回。见 §6.10。**）
 
 **自检从 11 条加到 16 条**，新增的五条正对着这一轮改的代码：`--chunk`/`--workers` 只收正整数、
 分片切到 1 个包也不漏包（同时走并发路径）、单次请求超时且重试用尽时 fail closed、总预算不够再
@@ -925,6 +928,73 @@ userconfig `.npmrc` 里写 `fetch-timeout=2000` 同样无视。所以唯一的�
 那时候要换的是**数据源**——OSV.dev 的 `POST /v1/querybatch`（一次最多 1000 条、无需鉴权、npm
 生态的条目同样来自 GHSA），而不是再调一次超时。换数据源会换掉信任对象，要先问过再做；目前没有
 证据说必须换，所以先把这四个数验掉。
+
+（**这四个数当天就被验掉了，两次跑都以同一种方式失败，于是这条路当天就走了：见 §6.10。**）
+
+### 6.10 第十轮（2026-09-04）：三次红换来一个方法结论——先把反馈回路搬回本机，再改代码
+
+重定四个数之后的两次跑（`2671522`、`041ad30`）都以同一种方式失败，区别是这次的失败自己会说话：
+
+```
+bulk 请求 4 次成功：最快 0.4s / 中位 39.4s / 最慢 74.0s，墙钟 420.1s
+（分片 64 个包、并发 4、单次上限 120s、总预算 420s）
+```
+
+job `100965301733`，08:42:41 → 08:49:46（7m05s），退出码是脚本自己的 2（总预算耗尽），不是
+`The operation was canceled.`。四个 worker 的首个请求在 08:44:45 一起撞 120s 读超时，08:46:55
+又是四个，然后预算到点。
+
+**§6.9 押的两种假设一起被否掉。** 同一个 64 包载荷有一次 0.4s 就回、多数过了 120s 不回：延迟既不
+随包数涨，也不是固定开销，它根本没有可用的分布。四路并发下首批请求整齐挂住，更像按客户端排队或
+限流（但没有 429）。这种服务上，超时、分片、并发三个旋钮怎么调都是赌。
+
+**真正的问题不是那三个旋钮，是反馈回路。** 本机到 npm 这两个端点的 POST 一律卡死——只放 1 个包也
+90s 读超时（§6.9 实测），所以每验一次假设都要花一轮 7 分钟的 runner。三轮 CI 全红，绝大部分时间
+花在等 runner，不在改代码。这条教训写在文档里而不是提交信息里：**当一个门禁只能在 CI 上被验证时，
+第一件事是把它变成能在本机验证的，而不是继续调参。**
+
+换成 OSV.dev 之后本机四个探针（全部 `env -u *_PROXY` 直连，无鉴权）：
+
+| 探针 | 结果 |
+|---|---|
+| 真 lockfile 的 548 个 `name@version`，一次 `POST /v1/querybatch` | **1.58s**，命中 0 |
+| 再掺 `lodash@4.17.15`、`minimist@1.2.0`、`axios@0.21.0` 三个已知有洞的包（551 条） | 1.63s，**恰好命中这 3 个**——所以那个 0 是真阴性，不是解析失败 |
+| `minimist@1.2.0` 对 `minimist@1.2.8` | 2 条对 0 条：版本区间在服务端匹配，本地不需要实现 semver |
+| `POST /v1/query axios@0.21.0` | 1.70s，25 条，`database_specific.severity` 直接给 HIGH 11 / MODERATE 13 / LOW 1，无 `next_page_token` |
+
+同一台机器上 npm 的 bulk 端点连 1 个包都 90s 不回，所以这不是本机网络的问题。
+
+**换掉的是数据源，不是判定口径。** npm 生态的条目在 OSV 里同样来自 GitHub Advisory DB（每条的
+`database_specific.source` 指回 `github/advisory-database`），severity 还是 GHSA 那四档
+LOW/MODERATE/HIGH/CRITICAL，所以 `--audit-level critical` 的含义一个字没变。误报也查过：
+`lodash@4.17.21` 的三条命中全是 `github_reviewed`、`withdrawn` 为空、区间是精确的
+`introduced`/`fixed`，不是"宁滥勿缺"的模糊匹配。
+
+脚本这一版的增删：
+
+| 动作 | 内容 | 理由 |
+|---|---|---|
+| 删 | `--chunk`、`--workers`、`concurrent.futures`、按分片顺序合并结果的那套逻辑 | 548 条一次 1.6s，分片和并发是为绕开 npm 的不稳定才加的，代价是三个旋钮 |
+| 改 | `--registry` → `--api`（默认 `https://api.osv.dev`）；`--request-timeout` 120 → 30；`--budget-seconds` 420 → 120；job `timeout-minutes` 10 → 5 | 按实测的 1.4s 定，留 20 倍以上余量；这些数字不该参与判定 |
+| 加 | `results` 条数必须等于 `queries` 条数 | OSV 按查询顺序一一对应返回，条数不等就是错位，此时任何"没命中"都不可信 |
+| 加 | 任何 `next_page_token` 一律响 | 门禁只问"有没有"，截断不影响这个判断，但它说明我们对这个 API 的理解有缺口 |
+| 加 | 批量命中而详情为空 → 视为两个端点矛盾并响 | 半份答案上不判定 |
+| 加 | `withdrawn` 的通告只报告、不阻断，打印时带`（已撤回）` | 撤回意味着判定依据被上游作废，用它卡住所有人是拿一条作废的事实收费；但也不静默丢掉 |
+
+**自检 16 → 27 条，且断言本身被验证过。** 五个植入缺陷各自变红：
+
+| 植入 | 变红的断言 |
+|---|---|
+| 未知 severity 回退成 `low` 而不是 `critical` | #5、#6 |
+| 不再校验 `results` 条数 | #24 |
+| 已撤回的通告也阻断 | #7 |
+| `packages:` 段 0 个包时不再报错 | #12 |
+| 取不到数据时返回空结果（fail closed 退化成 fail open） | #20、#23，且输出里出现了那句绝不该出现的 `✅ 无 critical 及以上依赖漏洞` |
+
+**这一轮先在本机跑绿再推。** 真 `pnpm-lock.yaml`：1.4s、绿、0 命中。掺了
+`lodash@4.17.15` + `minimist@1.2.0` 的桩 lockfile：2.9s、红，8 条通告里 1 条 critical 阻断
+（`GHSA-xvch-5gv4-984h`），其余 7 条只报告，退出码 1。离线自检 3.8s。CI 这次的角色是确认，
+不是实验——这正是前三轮缺的那一步。
 
 ## 7. 明确不做的事（阶段 1）
 
