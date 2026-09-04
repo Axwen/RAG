@@ -131,10 +131,11 @@
     exit 3。未见过的 severity 枚举值按 critical 处理。这个门禁最坏的失效方式不是红，是解析出
     0 个包然后报"没有漏洞"。
   - **自检进 `verify`，真调网络的那条不进**：`pnpm run check:advisories:self-test` 起桩
-    registry 跑 11 条断言（下一条又加了 5 条，现共 16 条）（三条解析守卫、参数校验、干净放行、critical 阻断、低于阈值只报告、
+    registry 跑 11 条断言（三条解析守卫、参数校验、干净放行、critical 阻断、低于阈值只报告、
     阈值下调后阻断、多版本定位、未知严重度、503 时 fail closed），全离线约 1 秒；植入三个缺陷
     验证过断言会红（未知严重度回退成 low、去掉键数守卫、把取不到数据当成没有漏洞）。
-    `check:advisories` 要活网络，而 `verify` 至今是完全离线的一批检查，所以不进。
+    `check:advisories` 要活网络，而 `verify` 至今是完全离线的一批检查，所以不进。下一条又加了
+    5 条，现共 16 条。
   - **两点说明**：`deps-audit` 从来不在 main 的六条 required checks 里，它红挡住的是"PR 页面
     是否全绿"而不是 merge 按钮；本机代理会让到这两个端点的 POST 一律卡死（GET 秒级），所以
     网络分支只能由 CI 首跑验证，本地测出的耗时全部作废。
