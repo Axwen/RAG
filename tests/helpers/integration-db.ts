@@ -78,8 +78,9 @@ export class IntegrationDb {
    *   `RESERVED` 行会混进下一轮的回收批次，把「按 leaseExpiresAt 升序、被 limit 截断」变成
    *   偶尔红一次的谜题。删除本身是允许的：状态机触发器是 `BEFORE UPDATE`，不管 DELETE。
    * - **审计行删不掉。** 触发器 `domain_audit_event_append_only` 对行级 UPDATE/DELETE 直接
-   *   抛 `check_violation`（ADR-0040 决策 5）。迁移里写着 TRUNCATE 不触发行级触发器，所以清库
-   *   路径「仍然通畅」——但那是清库，不是清一个租户；这里不用它，测试不该有应用代码没有的后门。
+   *   抛 `check_violation`（ADR-0040 决策 5）。TRUNCATE 曾是绕过它的那条路（行级触发器对
+   *   TRUNCATE 不触发），迁移 `20260904133000` 的语句级触发器把它也堵上了，所以现在连清库后门
+   *   都没有：整库重来只有 `pnpm run infra:reset`（重建容器与卷）。
    * - **写过审计的租户跟着删不掉**，其余的删得掉。审计行到 `tenants` 的外键是
    *   `ON DELETE RESTRICT`，所以「留着审计行就留着租户」只对那些真写了审计的租户成立——
    *   一次运行里绝大多数租户只做预扣与回收，没有审计行，删得掉就该删。不筛一遍全留下的话，

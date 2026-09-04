@@ -177,6 +177,64 @@ describe('审计行的派生列与不可变性', () => {
 })
 
 /**
+ * 批量抹除只能靠语句级触发器挡。TRUNCATE 不触发任何行级触发器，所以
+ * `domain_audit_event_append_only`（`BEFORE UPDATE OR DELETE FOR EACH ROW`）对它完全无效：
+ * 上一条迁移把这条路留着，于是「审计不可变」在一条语句面前不成立。账本更糟——余额的事实源
+ * 只有它（ADR-0029），清空等于把所有花销归零，而 Redis 里还缓着旧余额。
+ *
+ * 撞它必须用裸 SQL：Prisma 没有 truncate API，而防线要挡的正是没有类型化 API 的那些路径
+ * （psql、清库脚本、以后某个用别的语言写的服务）。
+ */
+describe('事实表不得被批量抹掉（TRUNCATE 防线）', () => {
+  /**
+   * 包一层会回滚的事务。防线万一不在了，TRUNCATE 会**真的成功**，而这两张表在本机开发库里
+   * 攒着几十轮跑下来的事实。哨兵异常让 Prisma 回滚，于是「防线没了」的结局是测试红，
+   * 不是先把表清空再报红。
+   */
+  async function expectTruncateRejected(sql: Prisma.Sql, label: string): Promise<void> {
+    await expect(
+      db.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw(sql)
+        throw new Error(`${label} 没有被拒绝：批量抹除防线不在了（本次已回滚）`)
+      }, TX),
+    ).rejects.toThrow(/must not be erasable in bulk/)
+  }
+
+  it('审计表与账本都挡住直接 TRUNCATE', async () => {
+    const tenantId = await db.createTenant('truncate-guard')
+    await db.prisma.$transaction(
+      (tx) =>
+        writeAuditEvent(tx, {
+          tenantId,
+          reasonCode: 'budget.reserve_rejected',
+          outcome: 'DENIED',
+        }),
+      TX,
+    )
+    const auditRows = await db.prisma.domainAuditEvent.count()
+
+    await expectTruncateRejected(
+      Prisma.sql`TRUNCATE "domain_audit_event"`,
+      'TRUNCATE domain_audit_event',
+    )
+    await expectTruncateRejected(
+      Prisma.sql`TRUNCATE "model_budget_ledger"`,
+      'TRUNCATE model_budget_ledger',
+    )
+
+    // 断言行数而不是只断言抛异常：`BEFORE` 触发器抛在前，一行都不该少。
+    expect(await db.prisma.domainAuditEvent.count()).toBe(auditRows)
+  })
+
+  it('从 tenants 级联下来的 TRUNCATE 同样挡住', async () => {
+    // `TRUNCATE ... CASCADE` 会在**每张被级联的表**上触发语句级触发器，所以「清一下租户表」
+    // 这条最容易手抖的路径也走不通。这正是行级 append-only 触发器完全看不见的那条路径：
+    // 它一行 DELETE 都没发生，两张事实表却会被一起清空。
+    await expectTruncateRejected(Prisma.sql`TRUNCATE "tenants" CASCADE`, 'TRUNCATE tenants CASCADE')
+  })
+})
+
+/**
  * 裸 SQL 插一行账本。库层 CHECK 存在的理由就是「绕过事务入口的写入路径」，所以撞它们必须
  * 绕过 Prisma 的类型化 API——用 `create()` 撞不到，那只证明了 TypeScript 在工作。
  *
