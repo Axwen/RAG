@@ -124,20 +124,42 @@
     引一个手写区间解析器。同名多版本时逐版本再问一次，报告才说得出是哪个版本中招。
   - **job 从 5 步变 3 步**：不再需要 `pnpm/action-setup`、`setup-node` 与
     `pnpm install --frozen-lockfile --ignore-scripts`（脚本只用 python3 标准库），
-    `timeout-minutes` 20 → 5。不用 PyYAML：`check-workflows.sh` 在 `import yaml` 失败时降级成
+    `timeout-minutes` 20 → 5（**这个 5 分钟当天就被证明不够，见下一条**）。不用 PyYAML：`check-workflows.sh` 在 `import yaml` 失败时降级成
     警告，runner 上并不保证有它。
   - **解析要么对要么响**：断言 `lockfileVersion` 是 9.x、断言 `packages:` 键数等于
     `resolution:` 行数（当前 548 == 548）、断言每个键切得出"包名 + 数字开头版本"，任一不成立
     exit 3。未见过的 severity 枚举值按 critical 处理。这个门禁最坏的失效方式不是红，是解析出
     0 个包然后报"没有漏洞"。
   - **自检进 `verify`，真调网络的那条不进**：`pnpm run check:advisories:self-test` 起桩
-    registry 跑 11 条断言（三条解析守卫、参数校验、干净放行、critical 阻断、低于阈值只报告、
+    registry 跑 11 条断言（下一条又加了 5 条，现共 16 条）（三条解析守卫、参数校验、干净放行、critical 阻断、低于阈值只报告、
     阈值下调后阻断、多版本定位、未知严重度、503 时 fail closed），全离线约 1 秒；植入三个缺陷
     验证过断言会红（未知严重度回退成 low、去掉键数守卫、把取不到数据当成没有漏洞）。
     `check:advisories` 要活网络，而 `verify` 至今是完全离线的一批检查，所以不进。
   - **两点说明**：`deps-audit` 从来不在 main 的六条 required checks 里，它红挡住的是"PR 页面
     是否全绿"而不是 merge 按钮；本机代理会让到这两个端点的 POST 一律卡死（GET 秒级），所以
     网络分支只能由 CI 首跑验证，本地测出的耗时全部作废。
+
+  - **首跑又超时：慢的不是"退役中的那个端点"，是 npm 的通告服务**（`deps-audit` 在 `21faa18`
+    上结论 `cancelled`，跑了 5m16s 撞上刚调下来的 5 分钟上限）。runner 日志的时间轴：200 个包
+    一片，第 1 片两次 60s 读超时、第三次约 45s 成功，第 2 片又一次 60s 超时，然后被 runner 掐掉。
+    也就是说 §6.8 的诊断只对了一半——"pnpm 那 60 秒超时改不动"是真原因，"退役端点慢"推错了对象，
+    bulk 端点在同样规模上一样要 45s 以上。四个数按这份实测重定：`--request-timeout 120`（实测
+    最慢的一次成功 45s，60s 正卡在响应时间上）、`--chunk 64`（548 个键切 9 片）、`--workers 4`
+    （阻塞在 socket 上，不抢 GIL）、`--budget-seconds 420`；job 上限 5 → 10 只作兜底。**脚本必须
+    有自己的预算**：被 runner 掐掉只留一句 `The operation was canceled.`，连是哪一片没回都说不
+    出来，而超预算是脚本自己的 exit 2 并带 `::error::`；退避前会先算"剩下的时间够不够再问一次"，
+    不够就直接 fail closed。这一轮不赌"延迟随包数涨"还是"固定开销"哪个成立：两种情况下 9 片 /
+    并发 4 都落在 420s 内，跑完再打一行最快/中位/最慢/墙钟，下次调参用它而不是再赌一轮 CI。
+    自检加到 16 条（新增：`--chunk`/`--workers` 只收正整数、分片切到 1 个包也不漏包并走并发路径、
+    单次超时重试用尽 fail closed、总预算不够再退避一轮 fail closed、预算已耗尽不再发请求），
+    四个植入缺陷都被抓住。本机在无代理、只放 1 个包时 POST 仍然 90s 超时，所以延迟数字只有
+    runner 侧那一份。**下一步不是再调超时**：若这四个数仍不够，换的是数据源（OSV.dev
+    `POST /v1/querybatch`），那会换掉信任对象，要先问过再做。
+  - **Python 侧的缺口单开票据，不塞进这次解阻断**：`services/parser` 的 `uv.lock` 至今没有任何
+    东西在扫，Dependabot 的 uv 升级 PR 不是漏洞门禁（它按"有没有新版本"提 PR，不按"当前锁定版本
+    有没有已知漏洞"阻断）。新增 [CI-01](docs/engineering/tickets/CI-01-python-dependency-scanning.md)
+    记下要先定的三件事（工具与数据源、阻断阈值、severity 口径）与要沿用的四条不变量。在它落地
+    之前，"依赖漏洞门禁已生效"只对 Node 侧成立。
 
 - **Codex 外部评审（2026-09-04，范围 `main...c214812`）照出两个能静默关掉预算门禁的缺陷**。
   评审自身的结论是"可作为 T12a/T11a 的配置 + 表结构切片验收，不可作为 T12a/T11a 完成验收"；

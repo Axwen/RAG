@@ -135,7 +135,8 @@
   （真起六容器 → `bootstrap` 跑两遍验幂等 → 编译产物起进程 → `smoke:api`）、
   `security.yml`（gitleaks 扫所有引用可达的提交 + 依赖漏洞 critical 阻断
   （`scripts/check-npm-advisories.sh`，2026-09-04 起从 `pnpm audit` 换成直连 npm bulk
-  advisory 端点，理由见 ci-cd.md §6.8）+ PR 依赖/许可证审查；**"全历史"这句话
+  advisory 端点，理由见 ci-cd.md §6.8；分片/并发/超时/预算四个数按首跑实测重定，见 §6.9）
+  + PR 依赖/许可证审查；**"全历史"这句话
   2026-09-02 之前不成立**，见下）、
   `codeql.yml`（TS+Python，暂不设 required）、`release.yml`（`v*` 标签 → 重跑 verify +
   标签↔CHANGELOG 对齐 → Parser 镜像进 GHCR 带 provenance/SBOM → GitHub Release）。
@@ -173,7 +174,8 @@
 - **`services/parser` 的 Python 依赖至今没有任何漏洞扫描**：`uv.lock` 没人扫。npm 侧的门禁
   2026-09-04 已换成 `scripts/check-npm-advisories.sh`（直连 npm bulk advisory 端点，critical
   阻断），但那是另一套生态、另一套数据源，覆盖不到 Python。这条单独开票据，不塞进 npm 侧那次
-  解阻断里。在它落地之前，"依赖漏洞门禁已生效"这句话只对 Node 侧成立。
+  解阻断里（已开：[CI-01](docs/engineering/tickets/CI-01-python-dependency-scanning.md)）。在它
+  落地之前，"依赖漏洞门禁已生效"这句话只对 Node 侧成立。
 - 尚无真实业务语料的完整混合检索、Rerank 后质量、生产 ACL/有效期/删除过滤链和 50 题业务回归基线；1024 维相对原生 4096 维也没有同语料对照，不能宣称无召回损失。
 - `rerankInputSize` 正式值尚未拍板；T1a 开发种子使用 N=64，T6 必须用真实业务语料比较质量、延迟和成本后再冻结。
 - ModelAdapter 数据分级门禁和 PostgreSQL Budget Ledger、Parser/Worker 生命周期、AMQP Publisher Confirm/prefetch 仍是实现集成条件，不能把探针结论当成业务实现证据。
