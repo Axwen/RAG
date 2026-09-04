@@ -17,7 +17,19 @@ import { z } from 'zod'
  * 用 `new Prisma.Decimal(...)` 包一层再写账本（见 T12 票据的事务入口契约）。
  */
 
-const usdPerMillionTokens = z.coerce.number().nonnegative().max(1000)
+/**
+ * 单价一律 `.positive()`，不接受 0。
+ *
+ * 0 不是「免费」的合法写法，而是**配置缺失的伪装**：`z.coerce.number()` 把 `''`、`null`、`' '`、
+ * `[]`、`false` 全部折成 0（zod 4.5.4 实测），而 T12b 的运行配置正是要从环境变量读这几个值。
+ * 单价 0 的后果不是估值偏低一点，是那条腿的预扣恒为 0——四层 CAS 全部通过，门禁静默打开，
+ * 与「预扣不能低于真实支出」直接冲突。真有免费档就写一个显式的极小值（例如 1e-6），
+ * 让「免费」在配置里看得见，而不是和「忘了配」共用同一个 0。
+ *
+ * 与 `./resource-limits` 同一口径：那边每个数值字段（`positiveInt`、`cnyAmount`、三条预算上限）
+ * 都是 `.positive()`，这里原先的 `.nonnegative()` 是全包唯一的例外。
+ */
+const usdPerMillionTokens = z.coerce.number().positive().max(1000)
 
 export const modelPricingSchema = z
   .object({
@@ -79,14 +91,56 @@ function roundToLedgerScale(cny: number): number {
   return Number(cny.toFixed(ledgerScale))
 }
 
+/**
+ * 估值入参必须是有限非负整数。
+ *
+ * 不是防御式编程的装饰，是「预扣不能低于真实支出」在函数边界上的落点：
+ * - **负数会互相抵消。** 单独一条负腿在 `reserveBudget` 会被「预扣金额为负」挡下，但
+ *   `estimateAnswerRunCny` 是四条腿相加：`rerankCandidateCount: -1000` 配一条正常的 Chat 腿，
+ *   总额仍是正数、只是偏低，四层 CAS 全部通过。实测 `estimateRerankCny(..., { candidateCount: -1 })`
+ *   返回 `-0.000156`。
+ * - **`NaN` 比负数更危险。** 它传到账本比较时 `greaterThan` 全为 false，于是每层上限都「没超」。
+ *   fail closed 的唯一办法是在这里就抛。
+ * - `Number.isInteger` 一次挡掉 `NaN`、`±Infinity` 与小数：token 与候选数没有半个。
+ *
+ * 抛而不是返回错误值：与 `reserveBudget` 的入参校验同一立场——参数写错是调用方的缺陷，
+ * 不是「预算不够」这类业务结果，两者在调用侧必须长得不一样。0 合法（0 token、0 候选、0 句）。
+ */
+function requireCount(name: string, value: number): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(
+      `估值入参 ${name} 必须是有限非负整数，收到 ${String(value)}：估值出错时不得记账`,
+    )
+  }
+  return value
+}
+
+/**
+ * `ModelPricing` 只约束形状，不保证这份价目过了 `parseModelPricing`：
+ * `{ ...modelPricingDefaults, embeddingUsdPerMillionTokens: 0 }` 是合法的 `ModelPricing`。
+ * 所以单价的正数约束在这里再兜一次，口径同迁移里那条 `reasonCode` 格式 CHECK——兜住绕过
+ * schema 的写入路径，不复制 schema 的内容。写 `!(x > 0)` 而不是 `x <= 0`：前者连 `NaN` 一起挡。
+ */
 function tokensToCny(tokens: number, usdPerMillion: number, cnyPerUsd: number): number {
+  if (!(usdPerMillion > 0)) {
+    throw new Error(
+      `模型单价必须为正，收到 ${String(usdPerMillion)}：单价 0 让这条腿的预扣恒为 0，等于关掉门禁`,
+    )
+  }
+  if (!(cnyPerUsd > 0)) {
+    throw new Error(`汇率必须为正，收到 ${String(cnyPerUsd)}：汇率 0 会把折算金额全抹成 0`)
+  }
   return (tokens / 1_000_000) * usdPerMillion * cnyPerUsd
 }
 
 /** 查询腿与逐句验证腿的 Embedding 估值。 */
 export function estimateEmbeddingCny(pricing: ModelPricing, input: { tokens: number }): number {
   return roundToLedgerScale(
-    tokensToCny(input.tokens, pricing.embeddingUsdPerMillionTokens, pricing.cnyPerUsd),
+    tokensToCny(
+      requireCount('tokens', input.tokens),
+      pricing.embeddingUsdPerMillionTokens,
+      pricing.cnyPerUsd,
+    ),
   )
 }
 
@@ -101,7 +155,18 @@ export function estimateRerankCny(
   pricing: ModelPricing,
   input: { candidateCount: number },
 ): number {
-  const tokens = input.candidateCount * pricing.rerankTokensPerCandidate
+  // 每候选 token 数同属价目表，也要兜一次：它是 0 时候选数再大 tokens 也是 0，
+  // 与单价 0 是同一种「门禁静默打开」。
+  if (
+    !Number.isInteger(pricing.rerankTokensPerCandidate) ||
+    pricing.rerankTokensPerCandidate <= 0
+  ) {
+    throw new Error(
+      `rerankTokensPerCandidate 必须是正整数，收到 ${String(pricing.rerankTokensPerCandidate)}`,
+    )
+  }
+  const tokens =
+    requireCount('candidateCount', input.candidateCount) * pricing.rerankTokensPerCandidate
   return roundToLedgerScale(
     tokensToCny(tokens, pricing.rerankerUsdPerMillionTokens, pricing.cnyPerUsd),
   )
@@ -117,12 +182,19 @@ export function estimateChatCny(
   pricing: ModelPricing,
   input: { inputTokens: number; cachedInputTokens?: number; outputTokens: number },
 ): number {
-  const cached = Math.min(input.cachedInputTokens ?? 0, input.inputTokens)
-  const uncached = input.inputTokens - cached
+  const inputTokens = requireCount('inputTokens', input.inputTokens)
+  const outputTokens = requireCount('outputTokens', input.outputTokens)
+  // 命中数超过输入总数是合法的（调用方按 prompt 前缀长度给），按输入总数截断即可；
+  // 但它必须先过一遍非负整数校验，否则 `Math.min(-1, 100)` 会把负数原样带下去。
+  const cached = Math.min(
+    requireCount('cachedInputTokens', input.cachedInputTokens ?? 0),
+    inputTokens,
+  )
+  const uncached = inputTokens - cached
   return roundToLedgerScale(
     tokensToCny(uncached, pricing.chatInputUsdPerMillionTokens, pricing.cnyPerUsd) +
       tokensToCny(cached, pricing.chatCachedInputUsdPerMillionTokens, pricing.cnyPerUsd) +
-      tokensToCny(input.outputTokens, pricing.chatOutputUsdPerMillionTokens, pricing.cnyPerUsd),
+      tokensToCny(outputTokens, pricing.chatOutputUsdPerMillionTokens, pricing.cnyPerUsd),
   )
 }
 
@@ -152,6 +224,15 @@ export function estimateAnswerRunCny(
   legs: { queryEmbedding: number; rerank: number; chat: number; verification: number }
 } {
   const { verification: v } = input
+  // 四项各自校验，不能只校验乘积：`sentenceCount: -1` 配 `embeddingTokensPerSentence: -1`
+  // 的乘积是 1，负负得正正好绕过下游 `estimateEmbeddingCny` 的校验。
+  requireCount('verification.sentenceCount', v.sentenceCount)
+  requireCount('verification.embeddingTokensPerSentence', v.embeddingTokensPerSentence)
+  requireCount('verification.entailmentInputTokensPerSentence', v.entailmentInputTokensPerSentence)
+  requireCount(
+    'verification.entailmentOutputTokensPerSentence',
+    v.entailmentOutputTokensPerSentence,
+  )
   const legs = {
     queryEmbedding: estimateEmbeddingCny(pricing, { tokens: input.queryEmbeddingTokens }),
     rerank: estimateRerankCny(pricing, { candidateCount: input.rerankCandidateCount }),
