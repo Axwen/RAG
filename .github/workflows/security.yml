@@ -61,10 +61,13 @@ jobs:
   deps-audit:
     name: 依赖漏洞（critical 阻断 / 其余报告）
     runs-on: ubuntu-24.04
-    # 5 而不是原来的 20：那 20 分钟是给 pnpm audit 的三轮 ERR_SOCKET_TIMEOUT 加 pnpm 自己
-    # 的退避留的（实测这一步通过过一次 15m3s、失败过一次 10m26s）。换成 bulk 端点后整步是
-    # 一次 POST，也不再需要 pnpm/node/install——脚本只用 python3 标准库读 lockfile。
-    timeout-minutes: 5
+    # 10：原来的 20 是给 pnpm audit 的三轮 ERR_SOCKET_TIMEOUT 加 pnpm 自己的退避留的
+    # （实测这一步通过过一次 15m3s、失败过一次 10m26s）。换成 bulk 端点后不再需要
+    # pnpm/node/install，但 2026-09-04 首跑证明 5 分钟不够——npm 的通告服务本身就慢，
+    # 200 个包一片要 45s 以上，60s 读超时正卡在它的响应时间上，整步被 runner 掐掉。
+    # 现在脚本自己带 7 分钟总预算（--budget-seconds 420）：预算先到，它能带着 ::error::
+    # 说清是谁没回；job 上限只是兜底，被 runner 掐掉只会留一句 The operation was canceled.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -76,6 +79,8 @@ jobs:
       - name: critical 阻断 / 其余只报告
         # 显式指定官方 registry 由脚本默认值完成：本地开发常配 npmmirror，其 audit 端点不存在。
         # 取不到数据仍然失败——审计跑不了不等于没有漏洞，fail closed 与仓库其他门禁一致。
+        # 分片/并发/超时/预算四个数走脚本默认值（64 / 4 / 120s / 420s），理由与首跑实测写在
+        # scripts/check-npm-advisories.sh 头部；输出末尾那行耗时分布是下一次调它们的依据。
         run: bash scripts/check-npm-advisories.sh --audit-level critical
 
   dependency-review:
