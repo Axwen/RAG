@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
-  "//": "references 里的 ../contracts 不被 src/** 使用，而是给 prisma/seed.ts 用的：tsc -b 会先把 contracts 的 .d.ts 产出，随后 tsconfig.seed.json 的类型检查才能解析 @rag/contracts。删掉它，seed 的类型检查会依赖构建顺序的巧合。",
+  "//": "references 三条都必须留：../contracts 与 ../config 被 src/audit 与 src/budget 直接使用（原因码注册表、预算上限与汇率默认值），../observability 提供审计脱敏复用的两张字段名表。../contracts 同时是 prisma/seed.ts 的前置——tsc -b 先产出它的 .d.ts，tsconfig.seed.json 的类型检查才能解析 @rag/contracts。",
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
@@ -8,6 +8,9 @@
   },
   "include": ["src/**/*.ts"],
   "references": [
+    {
+      "path": "../config"
+    },
     {
       "path": "../contracts"
     },

@@ -63,18 +63,22 @@ export default defineConfig({
       /**
        * 阈值是棘轮而不是理想值：取当前实测值下取整一档，只允许往上调。
        * 目的是拦住"新增未测代码把整体拉下来"，不是给一个漂亮数字。
-       * 实测基线 2026-09-03（17 文件 / 131 测试，已排除生成产物），vite 8.2.2：
-       *   statements 87.25 / branches 81.97 / functions 83.65 / lines 88.05
-       * 同一份代码在 vite 7.3.6 下量到 87.31 / 82.43 / 83.65 / 87.95——**分母随转译器变**
-       * （vite 8 换 Oxc/Rolldown，转译出的语句/分支形状与 esbuild 不同），所以阈值按两者
-       * 较低的一侧定。为什么 vite 8 下 functions 分母多了 3 个、以及那 3 个是怎么补上的，
-       * 见 CHANGELOG 里 vite 8 那条。
+       * 实测基线 2026-09-04（23 文件 / 262 测试，已排除生成产物），vite 8.2.2：
+       *   statements 90.56 / branches 86.28 / functions 87.85 / lines 91.18
+       * 留约一个点的余量：**分母随转译器变**——同一份代码在 vite 7.3.6 下的上一版基线量到
+       * branches 82.43 而 vite 8 量到 81.97（vite 8 换 Oxc/Rolldown，转译出的语句/分支形状
+       * 与 esbuild 不同）。贴着实测值定阈值会让一次无关的工具链升级把门禁弄红。
+       * 为什么 vite 8 下 functions 分母多了 3 个、以及那 3 个是怎么补上的，见 CHANGELOG 里
+       * vite 8 那条。
+       *
+       * 这一档是 T12a 第三片抬上来的（86/81/82/87 → 89/85/86/90）：事务入口与审计写入口
+       * 各自带了单元层用例，不抬棘轮的话，以后删掉其中一半仍然能过。
        */
       thresholds: {
-        statements: 86,
-        branches: 81,
-        functions: 82,
-        lines: 87,
+        statements: 89,
+        branches: 85,
+        functions: 86,
+        lines: 90,
       },
     },
   },
