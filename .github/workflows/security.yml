@@ -6,8 +6,11 @@
 #                     用 scripts/check-secrets.sh 直接调二进制，不用 gitleaks-action：
 #                     后者按事件名收窄扫描范围（push 上只扫本次推送的提交），并且在 PR 上
 #                     因缺 pull-requests 权限必红。
-#   pnpm audit        已装依赖有没有已知漏洞。critical 阻断，high 只报告：没有修复版本
+#   依赖漏洞          已装依赖有没有已知漏洞。critical 阻断，其余只报告：没有修复版本
 #                     的传递依赖告警会把所有 PR 堵死，那样的门禁最后一定被绕过。
+#                     数据源仍是 GitHub Advisory DB，只是不再经 `pnpm audit`——它打的
+#                     /security/audits/quick 正在被 npm 下线，端点耗时横跨 pnpm 那个改不动的
+#                     60s 超时，门禁变成抛硬币（见 scripts/check-npm-advisories.sh 头部）。
 #   dependency-review PR 里新引入的依赖及其许可证。供应链的入口在这一刻，不在事后。
 #
 # 本工作流同样不读取 repository secret，也不做付费云调用。
@@ -56,63 +59,24 @@ jobs:
         run: bash scripts/check-secrets.sh --strict
 
   deps-audit:
-    name: pnpm audit（critical 阻断 / high 报告）
+    name: 依赖漏洞（critical 阻断 / 其余报告）
     runs-on: ubuntu-24.04
-    # 20 而不是与其他 job 一致的 15：critical 那步最坏情况是三轮都网络不可达，而 pnpm 自己
-    # 每轮还要退避约 4 分钟（10s / 60s 两次），加上外层的 20s / 40s 退避约 13 分钟。留到 20
-    # 是为了让那一步自己给出「audit 端点三轮均不可达」的诊断，而不是被 job 超时截成一条
-    # 看不出原因的红。
-    timeout-minutes: 20
+    # 5 而不是原来的 20：那 20 分钟是给 pnpm audit 的三轮 ERR_SOCKET_TIMEOUT 加 pnpm 自己
+    # 的退避留的（实测这一步通过过一次 15m3s、失败过一次 10m26s）。换成 bulk 端点后整步是
+    # 一次 POST，也不再需要 pnpm/node/install——脚本只用 python3 标准库读 lockfile。
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - name: 自检（离线，桩 registry）
+        # 先证明解析守卫、严重度分档与 fail closed 都还在，再去信下一步的结论。
+        # 这个门禁最坏的失效方式不是红，是解析出 0 个包然后报「没有漏洞」。
+        run: bash scripts/check-npm-advisories.sh --self-test
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      - name: 冻结安装（不跑生命周期脚本）
-        # --ignore-scripts 是必须的：根 postinstall 会跑 prisma generate，而 Prisma 的
-        # config 解析要求 DATABASE_URL 存在（首跑就是这样红的：PrismaConfigEnvError:
-        # Cannot resolve environment variable: DATABASE_URL）。ci.yml 的 job 靠前置
-        # `cp .env.example .env` 绕开，但这个 job 只需要依赖图——pnpm audit 读的是
-        # lockfile，不需要生成出来的 Prisma Client。少造一份占位 .env，也少一次生成。
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: critical 漏洞（阻断）
-        # 显式指定官方 registry：本地开发常配 npmmirror，其 audit 端点不存在。
-        #
-        # 带重试，因为这一条是 required check 而它依赖活网络：audit 端点在 pnpm 自己那三次
-        # 退避（10s / 60s）之后仍然可能 ERR_SOCKET_TIMEOUT（2026-09-04 在 PR #28 上实测，
-        # 整步耗时 4 分钟后失败），一次 npm 侧抖动就把合并挡住，而它跟依赖安全毫无关系。
-        #
-        # 重试只针对「取不到数据」：真有 critical 通告时输出里没有网络错误码，立刻按原样失败，
-        # 不给自己留一条「多试几次就过了」的后门。三轮都不可达也仍然失败——审计跑不了不等于
-        # 没有漏洞，fail closed 与仓库其他门禁一致。
-        run: |
-          for attempt in 1 2 3; do
-            if out=$(pnpm audit --audit-level critical --registry https://registry.npmjs.org 2>&1); then
-              printf '%s\n' "${out}"
-              exit 0
-            fi
-            printf '%s\n' "${out}"
-            if ! printf '%s' "${out}" | grep -qE 'ERR_SOCKET_TIMEOUT|ERR_PNPM_FETCH|FetchError|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up'; then
-              echo "::error::pnpm audit 报告了 critical 通告（不是网络错误），不重试"
-              exit 1
-            fi
-            echo "::warning::第 ${attempt} 次 audit 因网络错误失败"
-            if [ "${attempt}" -lt 3 ]; then
-              sleep $((attempt * 20))
-            fi
-          done
-          echo "::error::audit 端点三轮均不可达：这不是「没有漏洞」，是取不到数据"
-          exit 1
-
-      - name: high 及以下（只报告，不阻断）
-        continue-on-error: true
-        run: pnpm audit --audit-level high --registry https://registry.npmjs.org
+      - name: critical 阻断 / 其余只报告
+        # 显式指定官方 registry 由脚本默认值完成：本地开发常配 npmmirror，其 audit 端点不存在。
+        # 取不到数据仍然失败——审计跑不了不等于没有漏洞，fail closed 与仓库其他门禁一致。
+        run: bash scripts/check-npm-advisories.sh --audit-level critical
 
   dependency-review:
     name: dependency-review（PR 新增依赖与许可证）

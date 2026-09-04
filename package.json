@@ -25,6 +25,8 @@
     "check:shell": "bash scripts/check-shell.sh",
     "check:workflows": "bash scripts/check-workflows.sh",
     "check:secrets": "bash scripts/check-secrets.sh",
+    "check:advisories": "bash scripts/check-npm-advisories.sh",
+    "check:advisories:self-test": "bash scripts/check-npm-advisories.sh --self-test",
     "check:diff-coverage": "bash scripts/check-diff-coverage.sh",
     "check:parser-image": "bash scripts/check-parser-image.sh",
     "smoke:api": "bash scripts/smoke-api.sh",
@@ -43,7 +45,7 @@
     "infra:reset": "docker compose --project-directory . -f infra/compose/compose.yml down -v",
     "compose:config": "docker compose --project-directory . -f infra/compose/compose.yml --profile parser --profile evaluation config -q",
     "bootstrap": "bash infra/compose/init/init-all.sh",
-    "verify": "pnpm run format && pnpm run lint && pnpm run check:shell && pnpm run check:workflows && pnpm run check:secrets && pnpm run check:links && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run db:validate && pnpm run py:sync && pnpm run py:test && pnpm run compose:config"
+    "verify": "pnpm run format && pnpm run lint && pnpm run check:shell && pnpm run check:workflows && pnpm run check:secrets && pnpm run check:advisories:self-test && pnpm run check:links && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run db:validate && pnpm run py:sync && pnpm run py:test && pnpm run compose:config"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

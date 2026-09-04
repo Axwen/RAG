@@ -16,7 +16,8 @@
     与容器日志尾部，`infra:down` 在 `always()`。
   - `security.yml`（新）：gitleaks 密钥扫描（配置 `.gitleaks.toml`；**2026-09-02 起**
     才真的扫全历史，见下方 Fixed）、
-    `pnpm audit`（critical 阻断 / high 只报告，避免无修复版本的传递告警堵死所有 PR）、
+    依赖漏洞门禁（`scripts/check-npm-advisories.sh`，critical 阻断 / 其余只报告，避免
+    无修复版本的传递告警堵死所有 PR；2026-09-04 前是 `pnpm audit`，见下方 Fixed）、
     PR 依赖变更审查（high 阻断，拒绝 AGPL/SSPL）。
   - `codeql.yml`（新）：TS + Python 双语言 `security-and-quality`，每周定时；
     暂不设为 required check。
@@ -103,6 +104,40 @@
   [报告](docs/engineering/plan-devex-review-20260901-boomerang.md)，DX 6/10 → 8/10。
 
 ### Fixed
+
+- **依赖漏洞门禁是在抛硬币：`pnpm audit` 打的端点正在被 npm 下线**（`security.yml`
+  `deps-audit`，详见 [ci-cd.md §6.8](docs/engineering/ci-cd.md)）。日志里是 npm 自己的通告
+  `This endpoint is being retired. Use the bulk advisory endpoint instead.`——`pnpm audit`
+  把整张依赖图 POST 给 `/-/npm/v1/security/audits/quick`，该端点耗时已横跨 pnpm 那个改不动的
+  60 秒超时：同一条检查在 PR #28 上 15m3s 通过，在 PR #27 上 10m26s 三轮 `ERR_SOCKET_TIMEOUT`
+  失败，重跑仍失败。超时旋钮拧不动（`--fetch-timeout` 报 `Unknown options`；
+  `npm_config_fetch_timeout` 与 userconfig `.npmrc` 均被无视），所以 §6.7 那轮加的"只对网络
+  错误重试三轮"治不了根因。`--ignore-registry-errors` 能让它变绿，但那是把"取不到数据"当成
+  "没有漏洞"，恰好废掉这条门禁唯一还剩的价值。
+  - **换接口不换数据源**：新增 `scripts/check-npm-advisories.sh`（`pnpm run check:advisories`），
+    读 `pnpm-lock.yaml` 直接 POST `/-/npm/v1/security/advisories/bulk`。同一份 GitHub Advisory
+    DB、同一个官方 registry、同一套 critical 阻断 / 其余只报告、同一条"取不到数据不等于没有
+    漏洞"（fail closed，exit 2）。npm 自己的 CLI 也是这个顺序：`@npmcli/arborist` 先打 bulk，
+    失败才回落到 quick。
+  - **不引 `semver`、不做本地区间匹配**：bulk 端点按 POST 进去的版本过滤，漏只会漏在服务端
+    （`pnpm audit` 本来担着同一份风险），多返回只会让门禁更严。误差方向只有一边，不值得为它
+    引一个手写区间解析器。同名多版本时逐版本再问一次，报告才说得出是哪个版本中招。
+  - **job 从 5 步变 3 步**：不再需要 `pnpm/action-setup`、`setup-node` 与
+    `pnpm install --frozen-lockfile --ignore-scripts`（脚本只用 python3 标准库），
+    `timeout-minutes` 20 → 5。不用 PyYAML：`check-workflows.sh` 在 `import yaml` 失败时降级成
+    警告，runner 上并不保证有它。
+  - **解析要么对要么响**：断言 `lockfileVersion` 是 9.x、断言 `packages:` 键数等于
+    `resolution:` 行数（当前 548 == 548）、断言每个键切得出"包名 + 数字开头版本"，任一不成立
+    exit 3。未见过的 severity 枚举值按 critical 处理。这个门禁最坏的失效方式不是红，是解析出
+    0 个包然后报"没有漏洞"。
+  - **自检进 `verify`，真调网络的那条不进**：`pnpm run check:advisories:self-test` 起桩
+    registry 跑 11 条断言（三条解析守卫、参数校验、干净放行、critical 阻断、低于阈值只报告、
+    阈值下调后阻断、多版本定位、未知严重度、503 时 fail closed），全离线约 1 秒；植入三个缺陷
+    验证过断言会红（未知严重度回退成 low、去掉键数守卫、把取不到数据当成没有漏洞）。
+    `check:advisories` 要活网络，而 `verify` 至今是完全离线的一批检查，所以不进。
+  - **两点说明**：`deps-audit` 从来不在 main 的六条 required checks 里，它红挡住的是"PR 页面
+    是否全绿"而不是 merge 按钮；本机代理会让到这两个端点的 POST 一律卡死（GET 秒级），所以
+    网络分支只能由 CI 首跑验证，本地测出的耗时全部作废。
 
 - **Codex 外部评审（2026-09-04，范围 `main...c214812`）照出两个能静默关掉预算门禁的缺陷**。
   评审自身的结论是"可作为 T12a/T11a 的配置 + 表结构切片验收，不可作为 T12a/T11a 完成验收"；

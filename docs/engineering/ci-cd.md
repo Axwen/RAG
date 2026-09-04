@@ -85,7 +85,7 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 | 检查 | 阻断阈值 | 为什么这样定 |
 |---|---|---|
 | gitleaks（所有引用可达的提交） | 任何命中 | `.env` 被 gitignore 与"从没被提交过"是两件事，只有扫全历史能确认。**2026-09-02 起才真的在扫全历史**——此前用的 `gitleaks/gitleaks-action` 按事件名自行收窄范围，见 §6.5 |
-| `pnpm audit` | critical 阻断，high 只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过。它依赖活网络，所以**只对网络错误**重试三轮（20s / 40s，末轮不睡）；匹配不到网络错误码就立刻失败，三轮都不可达也失败——审计跑不了不等于没有漏洞，见 §6.7 |
+| 依赖漏洞（[`scripts/check-npm-advisories.sh`](../../scripts/check-npm-advisories.sh)） | critical 阻断，其余只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过。数据源仍是 GitHub Advisory DB，但 2026-09-04 起**不再经 `pnpm audit`**：它打的 `/security/audits/quick` 正在被 npm 下线，实测耗时横跨 pnpm 那个改不动的 60s 超时，门禁成了抛硬币（§6.8）。改直连 `/advisories/bulk`：一次 POST，不装依赖也不要 node。取不到数据仍然失败——审计跑不了不等于没有漏洞 |
 | dependency-review（仅 PR） | high；拒绝 AGPL / SSPL | 供应链的入口在引入那一刻，不在事后。**当前 skip**：private repo 上这个 action 同样要 Code Security，见 §3.3 |
 | CodeQL | 不阻断，进 Security 页签 | 先看全（`security-and-quality`），要当门禁再加进 required checks。**private repo 需先有 Code Security 才能开 code scanning**，否则上传 SARIF 必然失败，见 §3.3 |
 
@@ -166,8 +166,9 @@ main 走 rebase 保持线性、没有人工解决的合并提交，所以实际�
      - `gitleaks（全历史密钥扫描）`
 
    其余几个 job **不**设为 required，理由 2026-09-03 起有变化：
-   - `pnpm audit（critical 阻断 / high 报告）`：按设计对 high 只报告（critical 才阻断，
-     它自己会红）。理由未变。
+   - `依赖漏洞（critical 阻断 / 其余报告）`：按设计只让 critical 阻断（真有 critical 时它
+     自己会红）。理由未变；job 名 2026-09-04 从 `pnpm audit（critical 阻断 / high 报告）`
+     改成现在这个，见 §6.8。
    - `analyze（javascript-typescript）` / `analyze（python）`（CodeQL）：**转公开后已经
      真跑并 `success`**，不再是永远 skip（实测 `abbaf85`）。所以"设成 required 只是假的
      安全感"这个旧理由已经失效，但仍先不设——CodeQL 除 push 外还挂每周定时，且单次耗时
@@ -263,8 +264,12 @@ CI 里带 `--strict`，两层都跑。
 `typecheck` 步骤就是 `tsc -b`，会顺手 emit。真忘了也不会踩坑，`vitest.config.ts` 会先
 报出缺哪些产物。
 
-`pnpm audit` 在本地常因 registry 指向 npmmirror 而报 `AUDIT_ENDPOINT_NOT_EXISTS`；
-CI 里显式带 `--registry https://registry.npmjs.org`，并对网络错误重试三轮（§6.7）。
+`pnpm run check:advisories` 本地可直接跑，脚本自带官方 registry 默认值、不读 npm/pnpm 的
+本地配置，所以不会像旧的 `pnpm audit` 那样在 registry 指向 npmmirror 时报
+`AUDIT_ENDPOINT_NOT_EXISTS`。它**不在 `verify` 里**：verify 是可离线跑的本地检查，而这一条
+要活网络。进 verify 的是它的离线自检 `pnpm run check:advisories:self-test`（桩 registry、
+11 条断言、约 1 秒）——这个门禁最坏的失效方式不是红，是解析出 0 个包然后报「没有漏洞」，
+所以解析守卫、严重度分档与 fail closed 都要有可复跑的断言（§6.8）。
 
 `pnpm run check:commits` **不在 `verify` 里**（它要 `origin/main..HEAD` 这个范围，而 verify
 是可离线跑的本地检查），所以提交完、推之前要单独跑一次，否则 CI 的 `quality` 会因为提交
@@ -300,7 +305,7 @@ CI 里显式带 `--registry https://registry.npmjs.org`，并对网络错误重�
   **PR 标题**很长，但**提交主题**是缩写过的（如
   `chore(deps): bump python in /services/parser`，44 列）。
 
-## 6. 真跑记录（2026-09-02 起）：三轮修到全绿，四轮主动审计与真回归
+## 6. 真跑记录（2026-09-02 起）：三轮修到全绿，五轮主动审计、真回归与假红
 
 ### 6.1 第一轮：五条工作流全红
 
@@ -312,7 +317,7 @@ CI 里显式带 `--registry https://registry.npmjs.org`，并对网络错误重�
 |---|---|---|---|
 | `python` | `Unable to resolve action astral-sh/setup-uv@v10`，连 Set up job 都没过 | 这个 action 自 v8 起不再发浮动大版本标签，`v10` 是 404（只有 `v10.0.1` / `v10.0.0`） | 钉 `@v10.0.1`；`python-version` 从 `3.12.3` 放宽到 `3.12`，与 `requires-python = "==3.12.*"` 同口径 |
 | `quality` | `check:links` 报 `PROJECT_STATE.md:214` 两个目标不存在 | 文档用相对链接指向 `references/ragent/`、`references/ragflow/`，而 `/references/` 是 gitignore 的本地工作副本——本地能点开，克隆下来是死链 | 改成上游 URL，并写明它只在本地存在 |
-| `deps-audit` | `pnpm install --frozen-lockfile` 失败：`PrismaConfigEnvError: Cannot resolve environment variable: DATABASE_URL` | 根 `postinstall` 会跑 `prisma generate`，它要求 `DATABASE_URL` 存在；`ci.yml` 的 job 有前置 `cp .env.example .env`，这个 job 没有 | 该 job 改 `--ignore-scripts`：审计只需要依赖图，不需要生成的 Prisma Client |
+| `deps-audit` | `pnpm install --frozen-lockfile` 失败：`PrismaConfigEnvError: Cannot resolve environment variable: DATABASE_URL` | 根 `postinstall` 会跑 `prisma generate`，它要求 `DATABASE_URL` 存在；`ci.yml` 的 job 有前置 `cp .env.example .env`，这个 job 没有 | 当时改 `--ignore-scripts`：审计只需要依赖图。**2026-09-04 起该 job 不再安装依赖**（脚本只用 python3 读 lockfile，§6.8），这条留着是给任何想往这个 job 加回 install 的人看的 |
 | `smoke` | `bootstrap` 死在 seed：`Cannot find module '.../@rag/contracts/dist/index.js'` | **README 黄金路径在全新克隆上是坏的**。`seed.ts` import 工作区包的编译产物，而 `pnpm install` 的 postinstall 只跑 `prisma generate`、不构建；本地一直不复现只因为 `dist` 是历次 build 的残留 | `init-database.sh` 在 seed 前 `pnpm --filter "@rag/database..." run build`。让 bootstrap 自给自足，而不是往 README 里加一步——它对外的承诺就是"一条命令、可重复执行"。**当时 `...` 写成了前置（方向反了），2026-09-04 才在 PR #28 上露馅，见 §6.7** |
 | `analyze`（×2） | `Code scanning is not enabled for this repository` | private repo 的 code scanning 需要付费的 Code Security；个人账号 free plan 开不了 | job 加 `if: vars.ADVANCED_SECURITY_ENABLED == 'true'`（当时叫 `CODE_SCANNING_ENABLED`，§6.3 改名），skip 是灰色而不是红色（见 §3.3） |
 
@@ -787,12 +792,83 @@ pnpm 自己那三次退避（10s / 60s）之后仍然 `ERR_SOCKET_TIMEOUT`，整
 / `ERR_PNPM_FETCH` / `FetchError` / `ETIMEDOUT` / `ECONNRESET` / `EAI_AGAIN` / `socket hang up`
 才退避（20s / 40s，末轮不睡），否则立刻按原样失败——不给自己留一条"多试几次就过了"的后门；
 三轮都不可达仍然失败，审计跑不了不等于没有漏洞。三种情形都用桩 `pnpm` 验过：网络错误重试两次
-后 exit 1、真通告零重试 exit 1、干净 exit 0。
+后 exit 1、真通告零重试 exit 1、干净 exit 0。**这个修法后来被证明不够**——它治的是抖动，而
+根因是那个端点正在被 npm 下线，见 §6.8。
 
 **③ `quality` 红 = 门禁抓到了我自己。** `check:commits` 报「主题行过长（显示宽度 73 > 72）」
 ——修 ① 的那条提交主题按 CJK 双宽算多了一列。`check:commits` **不在 `pnpm run verify` 里**
 （见 §4 末段），所以本地 verify 全绿也可能在 CI 的 `quality` 上因为提交信息红。提交完、推
 之前单独跑一次。
+
+### 6.8 第八轮（2026-09-04）：假红修一次不够——`pnpm audit` 打的端点正在被 npm 下线
+
+§6.7 ② 给 `pnpm audit` 加了三轮"只对网络错误"的重试。**不够。** 同一条门禁又红了，而这次
+翻日志翻出了根因，不是抖动：
+
+```
+npm notice This endpoint is being retired. Use the bulk advisory endpoint instead.
+See the following docs for more info: https://api-docs.npmjs.com/#tag/Audit
+```
+
+这句是 npm 自己打在日志里的。`pnpm audit`（pnpm 10.34.5）把整张依赖图 POST 给
+`/-/npm/v1/security/audits/quick`，而那个端点正在退役，耗时已经横跨 pnpm 那个**改不动的
+60 秒**超时：
+
+| 证据 | 数字 |
+|---|---|
+| PR #28 上这一步通过 | 15m3s（20 分钟上限） |
+| PR #27 上这一步失败 | 10m26s，三轮全是 `ERR_SOCKET_TIMEOUT` |
+| 重跑 #27 的失败 job | 仍然失败 |
+
+**超时那个旋钮拧不动，试过三种写法**：`pnpm audit --fetch-timeout 5000 --fetch-retries 0`
+直接 `ERROR Unknown options`；`npm_config_fetch_timeout=2000` 被无视（那次跑到 55 秒才成功）；
+userconfig `.npmrc` 里写 `fetch-timeout=2000` 同样无视。所以唯一的旋钮是重试预算，而重试预算
+已经用尽——15 分钟通过 vs 10 分钟失败，这就是抛硬币，不是门禁。
+
+**`--ignore-registry-errors` 看着能解，但不能用**：它在 registry 出错时 exit 0，等于把"取不到
+数据"变成绿。这条门禁如今唯一还剩的价值就是 fail closed，把它换掉等于把门禁换成装饰。
+
+于是换实现，**不换数据源**：[`scripts/check-npm-advisories.sh`](../../scripts/check-npm-advisories.sh)
+读 `pnpm-lock.yaml`，直接 POST `/-/npm/v1/security/advisories/bulk`。同一份 GitHub Advisory DB、
+同一个官方 registry、同一套 critical 阻断 / 其余只报告、同一条"取不到数据不等于没有漏洞"。
+换的是接口，不是信任对象——npm 自己的 CLI 也是这个顺序：`@npmcli/arborist` 的
+`audit-report.js` 先 `prepareBulkData` 打 bulk，失败才回落到 quick。
+
+四个实现决定，都是刻意的：
+
+- **不做本地 semver 匹配，也就不需要 `semver` 依赖。** bulk 端点按 POST 进去的版本过滤，漏
+  只会漏在服务端（`pnpm audit` 本来就担着同一份风险），多返回只会让门禁更严，不会更松。方向
+  只有一边，所以不值得为它引一个手写的区间解析器。
+- **不要 node、不要 `pnpm install`。** 脚本只用 python3 标准库解析 lockfile，job 从
+  checkout + pnpm + setup-node + install + audit 变成 checkout + 两条 `bash`，`timeout-minutes`
+  从 20 降到 5。顺带说明 §5 那条 `--ignore-scripts` 为什么还留着：现在这个 job 根本不装依赖。
+- **lockfile 解析要么对要么响。** 断言 `lockfileVersion: '9.` ，断言 `packages:` 段的键数等于
+  `resolution:` 行数（当前 548 == 548），断言每个键都能切成"包名 + 数字开头的版本"，任何一条
+  不成立就 exit 3。将来 pnpm 改 lockfile 格式，得到的是一条红，不是一句静悄悄的"没有漏洞"。
+  不用 PyYAML：`scripts/check-workflows.sh` 在 `import yaml` 失败时降级成警告，runner 上并不
+  保证有它，一条门禁不能建在这种依赖上。
+- **未见过的 severity 枚举值按 critical 处理。** 宁可多挡一条，也不因为一个没见过的字符串放行。
+
+**自检进 `verify`，实测这一条不在网上。** `bash scripts/check-npm-advisories.sh --self-test`
+起一个 `node:http` 级别的桩 registry（python `ThreadingHTTPServer`），跑 11 条断言：三条解析
+守卫、参数校验、干净放行、critical 阻断、低于阈值只报告、阈值下调后阻断、同名多版本定位到中招
+的那个版本、未知严重度阻断、端点 503 时 fail closed。断言不是摆设——故意植入三个缺陷验证过它
+会红：未知严重度回退成 `low`、去掉键数守卫、把取不到数据改成"当没有漏洞"，三个都被抓住。
+自检离线，所以它进 `verify`；真调网络的那条不进（verify 至今是完全离线的一批检查）。
+
+**两件要说清的事**：
+
+- **这条 job 从来不是 required check。** main 的六条是 node / quality / python / compose /
+  smoke / gitleaks，`deps-audit` 不在其中。所以它红的时候挡住的是"PR 页面上是不是全绿"，不是
+  merge 按钮。修它的理由是"抛硬币的门禁等于没有门禁"，不是"它卡住了合并"。
+- **网络路径只能在 CI 上验。** 本机走 `HTTP_PROXY=127.0.0.1:7897`，GET registry.npmjs.org
+  是秒级（`/-/ping` 0.99s），POST 到这两个端点一律卡死 40 秒以上，绕开代理也一样。所以本地
+  测出来的 quick/bulk 耗时全部作废，本轮的诊断只采信 runner 侧证据；脚本的网络分支由 CI 首跑
+  验证。
+
+**还有一个缺口，单开票据不塞这里**：`services/parser` 的 Python 依赖至今没有任何漏洞扫描
+（`uv.lock` 没人扫）。它跟 npm 侧这条门禁是两套生态、两套数据源，混在一次解阻断里做只会让
+两件事都做不干净。
 
 ## 7. 明确不做的事（阶段 1）
 
