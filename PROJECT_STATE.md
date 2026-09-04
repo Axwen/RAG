@@ -133,8 +133,10 @@
   `--strict`、工作流 YAML 静态检查、Markdown 链接、提交信息规范、覆盖率棘轮 86/81/82/86
   与增量覆盖率 80%；compose 含 Parser 镜像构建并真起一次）、`integration.yml`
   （真起六容器 → `bootstrap` 跑两遍验幂等 → 编译产物起进程 → `smoke:api`）、
-  `security.yml`（gitleaks 扫所有引用可达的提交 + `pnpm audit` critical 阻断 + PR 依赖/
-  许可证审查；**"全历史"这句话 2026-09-02 之前不成立**，见下）、
+  `security.yml`（gitleaks 扫所有引用可达的提交 + 依赖漏洞 critical 阻断
+  （`scripts/check-npm-advisories.sh`，2026-09-04 起从 `pnpm audit` 换成直连 npm bulk
+  advisory 端点，理由见 ci-cd.md §6.8）+ PR 依赖/许可证审查；**"全历史"这句话
+  2026-09-02 之前不成立**，见下）、
   `codeql.yml`（TS+Python，暂不设 required）、`release.yml`（`v*` 标签 → 重跑 verify +
   标签↔CHANGELOG 对齐 → Parser 镜像进 GHCR 带 provenance/SBOM → GitHub Release）。
   配套 `dependabot.yml`（uv 生态显式忽略 `xgboost >=3.1`，理由是 PROBE-002 的二进制模型）、
@@ -168,6 +170,10 @@
 
 - T0 工程骨架与 T1a 切片（Manifest/Release 领域模型、内容寻址、兼容矩阵、领域命令端点）已提交于 `bc99b0a`；同一批次的 T14 身份与授权未开始；T12a 三片已落齐：配置切片（价目、汇率与五项配额的启动期 schema）、两张表（`model_budget_ledger`、`domain_audit_event`，同一次迁移）、`packages/database/src/budget/` 的五条事务入口与 `packages/database/src/audit/` 的 `writeAuditEvent`（原因码注册表在 `packages/contracts/src/audit/`，随 T11a 一并落地）。**库层能力齐了，调用方还没有**：模型调用侧（供应商方言、`usage.cost` 读取、429 退避、流式取消触发结算）归 T15，API 侧没有任何路径调这五个函数，所以运行时仍然没有真实请求在预扣、结算、拒绝或写审计——门禁的库层不变量已可证，端到端门禁未通。`tenantId` 目前由请求体携带，只能在本地开发环境使用。T14 的计划已按 [ADR-0039](docs/adr/0039-business-identity-and-unified-authorization.md) 明确为“Keycloak/OIDC 身份 + 自有 BusinessUser/租户/Workspace/角色/能力权限 + 资源 ACL”，后续客服、研发、普通员工三个角色工作台复用该身份上下文，不复制用户体系。T1b 分块、Release 状态迁移（`BUILDING` 及之后属 T5）、消息、检索、回答和 UI 仍未开始。
 - Node 的格式、Lint、类型检查、构建、Prisma schema 校验、Python uv/pytest、Compose 配置解析和初始化脚本语法检查已在当前环境执行；六个 core 容器 healthy 与 `/health/ready` 已在 T0/T1a 真实实测通过，容器级集成测试（Testcontainers）、Playwright 和部署仍未验证。
+- **`services/parser` 的 Python 依赖至今没有任何漏洞扫描**：`uv.lock` 没人扫。npm 侧的门禁
+  2026-09-04 已换成 `scripts/check-npm-advisories.sh`（直连 npm bulk advisory 端点，critical
+  阻断），但那是另一套生态、另一套数据源，覆盖不到 Python。这条单独开票据，不塞进 npm 侧那次
+  解阻断里。在它落地之前，"依赖漏洞门禁已生效"这句话只对 Node 侧成立。
 - 尚无真实业务语料的完整混合检索、Rerank 后质量、生产 ACL/有效期/删除过滤链和 50 题业务回归基线；1024 维相对原生 4096 维也没有同语料对照，不能宣称无召回损失。
 - `rerankInputSize` 正式值尚未拍板；T1a 开发种子使用 N=64，T6 必须用真实业务语料比较质量、延迟和成本后再冻结。
 - ModelAdapter 数据分级门禁和 PostgreSQL Budget Ledger、Parser/Worker 生命周期、AMQP Publisher Confirm/prefetch 仍是实现集成条件，不能把探针结论当成业务实现证据。
