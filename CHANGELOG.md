@@ -104,6 +104,18 @@
 
 ### Fixed
 
+- **一次 npm 侧网络抖动就把合并挡住：`pnpm audit（critical 阻断）` 是 required check，却依赖
+  活网络**（PR #28）。`POST /-/npm/v1/security/audits/quick` 在 pnpm 自己那三次退避（10s /
+  60s）之后仍然 `ERR_SOCKET_TIMEOUT`，整步跑了 4 分钟才失败，红得和"真有 critical 通告"
+  一模一样。（同一份日志里那句 `found 0 vulnerabilities` 来自 pnpm 自装时的 npm 运行，不是
+  本次 audit 的结论，别拿它当"其实是绿的"。）`.github/workflows/security.yml` 改成三轮重试，
+  **只对「取不到数据」重试**：输出里匹配到 `ERR_SOCKET_TIMEOUT` / `ERR_PNPM_FETCH` /
+  `FetchError` / `ETIMEDOUT` / `ECONNRESET` / `EAI_AGAIN` / `socket hang up` 才退避
+  （20s / 40s，末轮不睡），否则立刻按原样失败——不给自己留一条"多试几次就过了"的后门。
+  三轮都不可达也仍然失败：审计跑不了不等于没有漏洞，与仓库其他门禁同一套 fail closed。
+  相邻的 `high 及以下（只报告）` 那步不动，它本来就 `continue-on-error`。三种情形都用桩
+  `pnpm` 验过：网络错误重试两次后 exit 1、真通告零重试 exit 1、干净 exit 0。
+
 - **`bootstrap` 的 seed 前置构建把半个仓库都构进去，PR #28 上 CI 当场红**：
   `infra/compose/init/init-database.sh` 那条 `pnpm --filter "...@rag/database" run build`
   把 `...` 写在了前面。pnpm 的方向约定是**后置** `...` 取「该包及其工作区依赖」、**前置**

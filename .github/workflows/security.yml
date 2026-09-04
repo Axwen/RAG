@@ -78,8 +78,33 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: critical 漏洞（阻断）
-        # 显式指定官方 registry：本地开发常配 npmmirror，其 audit 端点不存在
-        run: pnpm audit --audit-level critical --registry https://registry.npmjs.org
+        # 显式指定官方 registry：本地开发常配 npmmirror，其 audit 端点不存在。
+        #
+        # 带重试，因为这一条是 required check 而它依赖活网络：audit 端点在 pnpm 自己那三次
+        # 退避（10s / 60s）之后仍然可能 ERR_SOCKET_TIMEOUT（2026-09-04 在 PR #28 上实测，
+        # 整步耗时 4 分钟后失败），一次 npm 侧抖动就把合并挡住，而它跟依赖安全毫无关系。
+        #
+        # 重试只针对「取不到数据」：真有 critical 通告时输出里没有网络错误码，立刻按原样失败，
+        # 不给自己留一条「多试几次就过了」的后门。三轮都不可达也仍然失败——审计跑不了不等于
+        # 没有漏洞，fail closed 与仓库其他门禁一致。
+        run: |
+          for attempt in 1 2 3; do
+            if out=$(pnpm audit --audit-level critical --registry https://registry.npmjs.org 2>&1); then
+              printf '%s\n' "${out}"
+              exit 0
+            fi
+            printf '%s\n' "${out}"
+            if ! printf '%s' "${out}" | grep -qE 'ERR_SOCKET_TIMEOUT|ERR_PNPM_FETCH|FetchError|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up'; then
+              echo "::error::pnpm audit 报告了 critical 通告（不是网络错误），不重试"
+              exit 1
+            fi
+            echo "::warning::第 ${attempt} 次 audit 因网络错误失败"
+            if [ "${attempt}" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "::error::audit 端点三轮均不可达：这不是「没有漏洞」，是取不到数据"
+          exit 1
 
       - name: high 及以下（只报告，不阻断）
         continue-on-error: true
