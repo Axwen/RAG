@@ -85,7 +85,7 @@ functions 83.16 / lines 87.83，阈值设 86 / 81 / 82 / 86。它拦的是"新�
 | 检查 | 阻断阈值 | 为什么这样定 |
 |---|---|---|
 | gitleaks（所有引用可达的提交） | 任何命中 | `.env` 被 gitignore 与"从没被提交过"是两件事，只有扫全历史能确认。**2026-09-02 起才真的在扫全历史**——此前用的 `gitleaks/gitleaks-action` 按事件名自行收窄范围，见 §6.5 |
-| `pnpm audit` | critical 阻断，high 只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过 |
+| `pnpm audit` | critical 阻断，high 只报告 | 没有修复版本的传递依赖告警会把所有 PR 堵死，那样的门禁最终一定被绕过。它依赖活网络，所以**只对网络错误**重试三轮（20s / 40s，末轮不睡）；匹配不到网络错误码就立刻失败，三轮都不可达也失败——审计跑不了不等于没有漏洞，见 §6.7 |
 | dependency-review（仅 PR） | high；拒绝 AGPL / SSPL | 供应链的入口在引入那一刻，不在事后。**当前 skip**：private repo 上这个 action 同样要 Code Security，见 §3.3 |
 | CodeQL | 不阻断，进 Security 页签 | 先看全（`security-and-quality`），要当门禁再加进 required checks。**private repo 需先有 Code Security 才能开 code scanning**，否则上传 SARIF 必然失败，见 §3.3 |
 
@@ -264,7 +264,11 @@ CI 里带 `--strict`，两层都跑。
 报出缺哪些产物。
 
 `pnpm audit` 在本地常因 registry 指向 npmmirror 而报 `AUDIT_ENDPOINT_NOT_EXISTS`；
-CI 里显式带 `--registry https://registry.npmjs.org`。
+CI 里显式带 `--registry https://registry.npmjs.org`，并对网络错误重试三轮（§6.7）。
+
+`pnpm run check:commits` **不在 `verify` 里**（它要 `origin/main..HEAD` 这个范围，而 verify
+是可离线跑的本地检查），所以提交完、推之前要单独跑一次，否则 CI 的 `quality` 会因为提交
+信息红——本地 verify 全绿并不覆盖它。
 
 ## 5. 已知的运维注意点
 
@@ -296,7 +300,7 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
   **PR 标题**很长，但**提交主题**是缩写过的（如
   `chore(deps): bump python in /services/parser`，44 列）。
 
-## 6. 真跑记录（2026-09-02）：三轮修到全绿，两轮主动审计
+## 6. 真跑记录（2026-09-02 起）：三轮修到全绿，四轮主动审计与真回归
 
 ### 6.1 第一轮：五条工作流全红
 
@@ -309,7 +313,7 @@ CI 里显式带 `--registry https://registry.npmjs.org`。
 | `python` | `Unable to resolve action astral-sh/setup-uv@v10`，连 Set up job 都没过 | 这个 action 自 v8 起不再发浮动大版本标签，`v10` 是 404（只有 `v10.0.1` / `v10.0.0`） | 钉 `@v10.0.1`；`python-version` 从 `3.12.3` 放宽到 `3.12`，与 `requires-python = "==3.12.*"` 同口径 |
 | `quality` | `check:links` 报 `PROJECT_STATE.md:214` 两个目标不存在 | 文档用相对链接指向 `references/ragent/`、`references/ragflow/`，而 `/references/` 是 gitignore 的本地工作副本——本地能点开，克隆下来是死链 | 改成上游 URL，并写明它只在本地存在 |
 | `deps-audit` | `pnpm install --frozen-lockfile` 失败：`PrismaConfigEnvError: Cannot resolve environment variable: DATABASE_URL` | 根 `postinstall` 会跑 `prisma generate`，它要求 `DATABASE_URL` 存在；`ci.yml` 的 job 有前置 `cp .env.example .env`，这个 job 没有 | 该 job 改 `--ignore-scripts`：审计只需要依赖图，不需要生成的 Prisma Client |
-| `smoke` | `bootstrap` 死在 seed：`Cannot find module '.../@rag/contracts/dist/index.js'` | **README 黄金路径在全新克隆上是坏的**。`seed.ts` import 工作区包的编译产物，而 `pnpm install` 的 postinstall 只跑 `prisma generate`、不构建；本地一直不复现只因为 `dist` 是历次 build 的残留 | `init-database.sh` 在 seed 前 `pnpm --filter "...@rag/database" run build`。让 bootstrap 自给自足，而不是往 README 里加一步——它对外的承诺就是"一条命令、可重复执行" |
+| `smoke` | `bootstrap` 死在 seed：`Cannot find module '.../@rag/contracts/dist/index.js'` | **README 黄金路径在全新克隆上是坏的**。`seed.ts` import 工作区包的编译产物，而 `pnpm install` 的 postinstall 只跑 `prisma generate`、不构建；本地一直不复现只因为 `dist` 是历次 build 的残留 | `init-database.sh` 在 seed 前 `pnpm --filter "@rag/database..." run build`。让 bootstrap 自给自足，而不是往 README 里加一步——它对外的承诺就是"一条命令、可重复执行"。**当时 `...` 写成了前置（方向反了），2026-09-04 才在 PR #28 上露馅，见 §6.7** |
 | `analyze`（×2） | `Code scanning is not enabled for this repository` | private repo 的 code scanning 需要付费的 Code Security；个人账号 free plan 开不了 | job 加 `if: vars.ADVANCED_SECURITY_ENABLED == 'true'`（当时叫 `CODE_SCANNING_ENABLED`，§6.3 改名），skip 是灰色而不是红色（见 §3.3） |
 
 `gitleaks（全历史密钥扫描）`、`node`、`compose` 三个 job 首跑即绿。其中 gitleaks 那个绿
@@ -747,6 +751,48 @@ alerts 面板才是这类告警的归口，两者互补而不是互为替代。
 **成本口径也变了**：公开仓库 Actions 分钟数无限，第五轮算出来的"11 分钟/push、22 分钟/PR、
 免费档约 180 次 push/月"不再是约束，之前设计的三项省钱优化随之降级为**可选**——其中给
 smoke 加路径过滤仍然值得做，但理由从"省钱"换成了"缩短反馈时间"。
+
+### 6.7 第七轮（2026-09-04）：required check 第一次拦下真回归，同一天也第一次假红
+
+T12a 第三片（PR #28）推上去之后三个 required check 红。三条各自代表一类，分开记。
+
+**① `smoke` 红 = 真回归，而且是从 §5 那条修法起就埋着的。** `bootstrap` 死在 seed 前置
+构建里：`init-database.sh` 那条 `pnpm --filter "...@rag/database" run build` 把 `...` 写在了
+前面。pnpm 的方向约定是**后置** `...` 取「该包及其工作区依赖」、**前置** `...` 取「依赖方」。
+定案只用两条本地命令，不必读代码猜：
+
+```bash
+$ pnpm --filter "...@rag/database" ls --depth -1   # 前置 = 依赖方
+@rag/database  rag-monorepo  @rag/api  @rag/worker  # ← 正是 CI 日志里的 Scope: 4 of 9
+$ pnpm --filter "@rag/database..." ls --depth -1    # 后置 = 依赖
+@rag/database  @rag/config  @rag/contracts  @rag/observability
+```
+
+**触发者与陷阱是两件事，要修的是陷阱。** 陷阱（方向反了）一直没露馅，只因为 api/worker 的
+`build` 也是 `tsc -b`，靠 project references 顺带把 `packages/*/dist` 构了出来，seed 要的产物
+恰好都在。触发者是这一片给根 `package.json` 加了 `@rag/config`/`@rag/database`（集成层是这
+两个包的外部消费者），根于此成了依赖方，而根的 `build` 是 `pnpm --recursive --stream run build`，
+于是 bootstrap 递归进 `apps/web` 的 `next build`，在 bootstrap 导出的 `NODE_ENV=development`
+下预渲染 `/_global-error` 崩掉（`Cannot read properties of null (reading 'useContext')`；Next
+不支持以 development 构建）。同一个 PR 的 `node` job 里 `pnpm run build` 是绿的——`next build`
+本身没坏，坏的是它被谁、以什么环境调起来。改成后置后 scope 收敛成那四个包，根永远进不来：
+根是 database 的依赖方，不是它的依赖。**教训：`...` 的方向不要靠记忆，`pnpm --filter … ls`
+一次就能证。**
+
+**② `pnpm audit（critical 阻断）` 红 = 假红。** `POST /-/npm/v1/security/audits/quick` 在
+pnpm 自己那三次退避（10s / 60s）之后仍然 `ERR_SOCKET_TIMEOUT`，整步跑了 4 分钟才失败。这
+一条是 required check 而它依赖活网络，一次 npm 侧抖动就挡住合并，跟依赖安全毫无关系。（日志
+里那句 `found 0 vulnerabilities` 来自 pnpm 自装时的 npm 运行，不是本次 audit 的结论，别拿它
+当"其实是绿的"。）改成三轮重试，**但只对「取不到数据」重试**：输出匹配到 `ERR_SOCKET_TIMEOUT`
+/ `ERR_PNPM_FETCH` / `FetchError` / `ETIMEDOUT` / `ECONNRESET` / `EAI_AGAIN` / `socket hang up`
+才退避（20s / 40s，末轮不睡），否则立刻按原样失败——不给自己留一条"多试几次就过了"的后门；
+三轮都不可达仍然失败，审计跑不了不等于没有漏洞。三种情形都用桩 `pnpm` 验过：网络错误重试两次
+后 exit 1、真通告零重试 exit 1、干净 exit 0。
+
+**③ `quality` 红 = 门禁抓到了我自己。** `check:commits` 报「主题行过长（显示宽度 73 > 72）」
+——修 ① 的那条提交主题按 CJK 双宽算多了一列。`check:commits` **不在 `pnpm run verify` 里**
+（见 §4 末段），所以本地 verify 全绿也可能在 CI 的 `quality` 上因为提交信息红。提交完、推
+之前单独跑一次。
 
 ## 7. 明确不做的事（阶段 1）
 
