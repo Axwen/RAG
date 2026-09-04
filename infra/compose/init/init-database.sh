@@ -24,11 +24,17 @@ if [[ -d "${migration_dir}" ]] && compgen -G "${migration_dir}/*/migration.sql" 
   #
   # 修法是让 bootstrap 自给自足，而不是往 README 里加一步 build：bootstrap 对外的承诺
   # 就是"一条命令、可重复执行"，把前置条件推给读者等于把这个坑留给下一个新人。
-  # --filter "...@rag/database"：前置 ... 是"该包及其工作区依赖"（后置 ... 才是依赖方），
-  # 这里选中 database + contracts + observability 三个，不碰 apps/web。
+  # --filter "@rag/database..."：**后置** ... 是"该包及其工作区依赖"，选中 database + config +
+  # contracts + observability 四个，不碰 apps/*。前置 ...（`...@rag/database`）是反方向的
+  # "依赖方"，这里曾经写错成前置：一路只因为 api/worker 的 build 也是 tsc -b、顺带把
+  # packages/*/dist 构出来才没露馅。集成层给 root package.json 加上 @rag/database 之后 root
+  # 成了依赖方，它的 build 是 `pnpm --recursive --stream run build`，于是 bootstrap 递归到
+  # apps/web 的 next build，在 bootstrap 导出的 NODE_ENV=development 下预渲染 /_global-error
+  # 直接崩（Next 不支持以 development 构建）。方向反过来后 root 不可能再进 scope：root 是
+  # database 的依赖方，永远不是它的依赖。
   # tsc -b 增量，已构建时接近零成本，重复执行安全。
   log "构建 seed 依赖的工作区包（tsc -b 增量）"
-  pnpm --filter "...@rag/database" run build || die "工作区包构建失败；seed 依赖 packages/*/dist"
+  pnpm --filter "@rag/database..." run build || die "工作区包构建失败；seed 依赖 packages/*/dist"
 
   log "开发种子：领域种子随对应票据加入，当前按已有迁移执行 seed 脚本（如有）"
   if pnpm --filter @rag/database run --if-present seed; then

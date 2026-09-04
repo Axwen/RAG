@@ -50,17 +50,20 @@ vite 那句指向 exports 字段的错误；缺 `DATABASE_URL` 时 `tests/setup.
 
 ## 清理是不对称的，这是不变量的结果
 
-`tests/helpers/integration-db.ts` 只删账本行，不删审计行也不删租户：
+`tests/helpers/integration-db.ts` 删账本行与没写过审计的租户，审计行和它们引用的租户留下：
 
 - **账本行必须删**——`expireBudgetLeases` 不带 `tenantId`（回收是全局任务），残留的
   `RESERVED` 行会混进下一轮批次。删除本身允许：状态机触发器是 `BEFORE UPDATE`。
 - **审计行删不掉**——`domain_audit_event_append_only` 对行级 UPDATE/DELETE 抛
   `check_violation`（ADR-0040 决策 5）。迁移里留了 TRUNCATE 通路，但那是清库不是清租户，
   测试不该有应用代码没有的后门。
-- **租户跟着删不掉**——审计行到 `tenants` 的外键是 `ON DELETE RESTRICT`。
+- **写过审计的租户跟着删不掉**，其余的删得掉——外键是 `ON DELETE RESTRICT`，所以
+  「留着审计行就留着租户」只对真写了审计的那几个成立。一次运行里绝大多数租户只做预扣与回收，
+  没有审计行；全留下的话每跑一次就多积几十个死租户。按「有没有审计行」筛，不用 try/catch 吞
+  `RESTRICT`——吞异常会连「外键动作被改了」这类真实回归一起吞掉。
 
-于是本机的开发库会累积几行两列的残留（名字都带 `integration-` 前缀），只能靠
-`pnpm run infra:reset` 清；CI 每次都是全新容器，不受影响。用例前的
+于是本机的开发库每跑一次会留下少数几个写过审计的租户和它们的审计行（名字都带
+`integration-` 前缀），只能靠 `pnpm run infra:reset` 清；CI 每次都是全新容器，不受影响。用例前的
 `assertNoForeignReservedRows` 管的是另一件事：别人留下的 `RESERVED` 行会污染全局回收批次，
 与其让断言偶发失败，不如开跑就说「库不干净」。
 
