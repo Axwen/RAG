@@ -55,8 +55,9 @@ vite 那句指向 exports 字段的错误；缺 `DATABASE_URL` 时 `tests/setup.
 - **账本行必须删**——`expireBudgetLeases` 不带 `tenantId`（回收是全局任务），残留的
   `RESERVED` 行会混进下一轮批次。删除本身允许：状态机触发器是 `BEFORE UPDATE`。
 - **审计行删不掉**——`domain_audit_event_append_only` 对行级 UPDATE/DELETE 抛
-  `check_violation`（ADR-0040 决策 5）。迁移里留了 TRUNCATE 通路，但那是清库不是清租户，
-  测试不该有应用代码没有的后门。
+  `check_violation`（ADR-0040 决策 5）。TRUNCATE 曾能绕过它，迁移 `20260904133000` 的语句级
+  触发器把这条也堵了（含 `TRUNCATE tenants CASCADE`），所以清库后门不再存在：整库重来只有
+  `pnpm run infra:reset`。
 - **写过审计的租户跟着删不掉**，其余的删得掉——外键是 `ON DELETE RESTRICT`，所以
   「留着审计行就留着租户」只对真写了审计的那几个成立。一次运行里绝大多数租户只做预扣与回收，
   没有审计行；全留下的话每跑一次就多积几十个死租户。按「有没有审计行」筛，不用 try/catch 吞
