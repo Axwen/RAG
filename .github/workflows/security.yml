@@ -58,7 +58,11 @@ jobs:
   deps-audit:
     name: pnpm audit（critical 阻断 / high 报告）
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # 20 而不是与其他 job 一致的 15：critical 那步最坏情况是三轮都网络不可达，而 pnpm 自己
+    # 每轮还要退避约 4 分钟（10s / 60s 两次），加上外层的 20s / 40s 退避约 13 分钟。留到 20
+    # 是为了让那一步自己给出「audit 端点三轮均不可达」的诊断，而不是被 job 超时截成一条
+    # 看不出原因的红。
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
