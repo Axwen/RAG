@@ -37,10 +37,13 @@
 - **`pnpm run check:commits`**、**`pnpm run test:coverage`**、
   **`scripts/release-notes.sh`**（从 CHANGELOG 抽取指定版本段落，标签与 CHANGELOG
   不对齐即失败）。
-- **覆盖率阈值**（`vitest.config.ts`）：statements 86 / branches 81 / functions 82 /
-  lines 87。取自 2026-09-03 实测（vite 8.2.2 下 87.25 / 81.97 / 83.65 / 88.05，已排除
-  Prisma 生成产物、`apps/web`、种子脚本；lines 由 86 抬到 87 即此轮棘轮）。这是棘轮值
-  而非理想值，只上调。分母会随转译器变化，见下方 vite 8 那条。
+- **覆盖率阈值**（`vitest.config.ts`）：statements 89 / branches 85 / functions 86 /
+  lines 90。取自 2026-09-04 实测（vite 8.2.2 下 90.56 / 86.28 / 87.85 / 91.18，已排除
+  Prisma 生成产物、`apps/web`、种子脚本）。首版是 2026-09-03 的 86/81/82/87（实测
+  87.25 / 81.97 / 83.65 / 88.05，lines 由 86 抬到 87 即那一轮棘轮）；T12a 第三片的事务
+  入口与审计写入口各带单元层用例，把四项都抬了一档（86/81/82/87 → 89/85/86/90），
+  不抬的话以后删掉其中一半仍然能过。这是棘轮值而非理想值，只上调。分母会随转译器
+  变化，所以留了约一个点的余量，见下方 vite 8 那条。
 - **三条新增门禁**（第四轮审计产出，见 ci-cd.md §6.4）：
   - **`pnpm run check:workflows`**（`scripts/check-workflows.sh` + `scripts/lib/lint-workflows.py`）：
     工作流 YAML 的静态检查，两层。基线层只用 PyYAML、永远跑——YAML 可解析、`needs` 指向
