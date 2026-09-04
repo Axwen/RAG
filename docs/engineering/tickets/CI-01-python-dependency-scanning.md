@@ -6,9 +6,13 @@ CI 系列票据编号与 `T*` 产品票据分开：这类工作不改产品行�
 ## 目的
 
 依赖漏洞门禁目前只覆盖 Node 侧。2026-09-04 换掉 `pnpm audit` 之后（新门禁
-[`scripts/check-npm-advisories.sh`](../../../scripts/check-npm-advisories.sh)，直连 npm 的
-bulk advisory 端点，见 [ci-cd.md §6.8](../ci-cd.md)），**`services/parser` 的 `uv.lock`
-仍然没有任何东西在扫**。
+[`scripts/check-npm-advisories.sh`](../../../scripts/check-npm-advisories.sh)，问 OSV.dev 的
+`POST /v1/querybatch`，见 [ci-cd.md §6.8-§6.10](../ci-cd.md)），**`services/parser` 的
+`uv.lock` 仍然没有任何东西在扫**。
+
+OSV 同时有 `PyPI` 生态，查询形状与 npm 侧完全一样（只换 `ecosystem`），所以这条票据大概能
+复用那个脚本的骨架——但 `uv.lock` 的解析口径、以及"哪个严重度阻断"要按下面的量测另定，
+不要直接抄 npm 侧的 `critical`。
 
 这不是"顺手也扫一下"的锦上添花：Parser 是唯一处理不可信输入的服务（ADR-0032 把解析入口
 列为三处注入检测点之一），它的依赖树里有 OCR、图像、XML/Office 解析这一类历史上漏洞密度

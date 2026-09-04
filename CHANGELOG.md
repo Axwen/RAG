@@ -155,7 +155,34 @@
     单次超时重试用尽 fail closed、总预算不够再退避一轮 fail closed、预算已耗尽不再发请求），
     四个植入缺陷都被抓住。本机在无代理、只放 1 个包时 POST 仍然 90s 超时，所以延迟数字只有
     runner 侧那一份。**下一步不是再调超时**：若这四个数仍不够，换的是数据源（OSV.dev
-    `POST /v1/querybatch`），那会换掉信任对象，要先问过再做。
+    `POST /v1/querybatch`），那会换掉信任对象，要先问过再做。**这四个数当天就被验掉了，于是
+    下一条就是换数据源。**
+  - **第三次红换了数据源：npm 的通告服务对这张依赖图就是不可用，改问 OSV.dev**（`deps-audit`
+    在 `2671522` 与 `041ad30` 上以同一种方式失败，7m05s，退出码是脚本自己的 exit 2 而不是被
+    runner 掐掉）。上一条留下的那行耗时分布正是判据：`bulk 请求 4 次成功：最快 0.4s / 中位
+    39.4s / 最慢 74.0s，墙钟 420.1s`——**同一个 64 包载荷有一次 0.4s 就回、多数过 120s 不回，
+    上一条押的两种假设（延迟随包数涨 / 固定开销）一起被否掉**，四路并发下首批请求还整齐挂住，
+    更像按客户端排队或限流（没有 429）。这种服务上超时、分片、并发怎么调都是赌。
+    **真正的问题是反馈回路**：本机到 npm 这两个端点的 POST 一律卡死（只放 1 个包也 90s 超时），
+    所以每验一次假设要花一轮 7 分钟的 runner，三轮全红几乎都花在等 CI 上。教训落在 ci-cd.md
+    §6.10：**门禁只能在 CI 上被验证时，第一件事是把它变成本机能验证的，而不是继续调参。**
+    OSV.dev 本机实测：真 lockfile 的 548 个 `name@version` 一次 `POST /v1/querybatch` **1.58s**、
+    命中 0；掺 `lodash@4.17.15`/`minimist@1.2.0`/`axios@0.21.0` 后 551 条 1.63s **恰好命中这 3 个**
+    （所以那个 0 是真阴性）；`minimist@1.2.0` 对 `1.2.8` 是 2 条对 0 条（版本区间在服务端匹配，
+    本地照旧不需要 semver）；`POST /v1/query` 的 `database_specific.severity` 直接给 GHSA 四档。
+    **换的是数据源不是判定口径**：npm 生态的条目在 OSV 里同样来自 GitHub Advisory DB，
+    `--audit-level critical` 含义一字未变，也无需鉴权（CI 依然不读任何 secret）。
+    脚本删掉 `--chunk`、`--workers` 与 `concurrent.futures`（548 条一次就够，三个旋钮跟着消失），
+    `--registry` 改 `--api`（默认 `https://api.osv.dev`），`--request-timeout` 120 → 30、
+    `--budget-seconds` 420 → 120、job `timeout-minutes` 10 → 5；新增四条结构守卫：`results`
+    条数必须等于 `queries` 条数（OSV 按查询顺序一一对应，错位后任何"没命中"都不可信）、任何
+    `next_page_token` 一律响、批量命中而详情为空视为两端点矛盾、`withdrawn` 的通告只报告不阻断
+    并打印`（已撤回）`（撤回意味着判定依据被上游作废，用它卡住所有人是拿一条作废的事实收费）。
+    **自检 16 → 27 条，且断言本身被植入缺陷验证过**：未知 severity 回退成 `low` → #5/#6 红、
+    不校验 `results` 条数 → #24 红、已撤回的也阻断 → #7 红、0 个包不报错 → #12 红、取不到数据
+    返回空结果 → #20/#23 红且输出里出现了那句绝不该出现的 `✅ 无 critical 及以上依赖漏洞`。
+    **这一轮先在本机跑绿再推**：真 lockfile 1.4s 绿，掺两个有洞包的桩 lockfile 2.9s 红
+    （8 条里 1 条 critical 阻断 `GHSA-xvch-5gv4-984h`，其余只报告，exit 1），离线自检 3.8s。
   - **Python 侧的缺口单开票据，不塞进这次解阻断**：`services/parser` 的 `uv.lock` 至今没有任何
     东西在扫，Dependabot 的 uv 升级 PR 不是漏洞门禁（它按"有没有新版本"提 PR，不按"当前锁定版本
     有没有已知漏洞"阻断）。新增 [CI-01](docs/engineering/tickets/CI-01-python-dependency-scanning.md)
