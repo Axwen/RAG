@@ -71,7 +71,8 @@ export class IntegrationDb {
   }
 
   /**
-   * 只删账本行，不删审计行也不删租户。这个不对称是库层不变量的直接结果，不是偷懒：
+   * 删账本行与**没写过审计的**租户；审计行和它们引用的租户留下。这个不对称是库层不变量的
+   * 直接结果，不是偷懒：
    *
    * - **账本行必须删。** `expireBudgetLeases` 不带 `tenantId`（回收是全局任务），上一轮留下的
    *   `RESERVED` 行会混进下一轮的回收批次，把「按 leaseExpiresAt 升序、被 limit 截断」变成
@@ -79,14 +80,36 @@ export class IntegrationDb {
    * - **审计行删不掉。** 触发器 `domain_audit_event_append_only` 对行级 UPDATE/DELETE 直接
    *   抛 `check_violation`（ADR-0040 决策 5）。迁移里写着 TRUNCATE 不触发行级触发器，所以清库
    *   路径「仍然通畅」——但那是清库，不是清一个租户；这里不用它，测试不该有应用代码没有的后门。
-   * - **租户跟着删不掉。** 审计行到 `tenants` 的外键是 `ON DELETE RESTRICT`，留着审计行就留着
-   *   租户。代价是几行两列的残留（CI 里每次都是全新容器），换来的是审计不可变这条不变量在
-   *   测试路径上也成立。
+   * - **写过审计的租户跟着删不掉**，其余的删得掉。审计行到 `tenants` 的外键是
+   *   `ON DELETE RESTRICT`，所以「留着审计行就留着租户」只对那些真写了审计的租户成立——
+   *   一次运行里绝大多数租户只做预扣与回收，没有审计行，删得掉就该删。不筛一遍全留下的话，
+   *   每跑一次本机开发库多积几十行死租户（实测跑了二十来轮攒下 1096 个），而 `tenants` 是
+   *   T14 之后所有身份查询的起点，让它长成一堆测试垃圾没有任何好处。
+   *   这里按「有没有审计行」筛而不是 try/catch 吞 `RESTRICT`：吞异常会把「外键换了动作」
+   *   这类真实回归也一起吞掉。
    */
   async cleanup(): Promise<void> {
     await this.clearLedger()
+    await this.deleteUnauditedTenants()
     this.tenantIds.length = 0
     await this.prisma.$disconnect()
+  }
+
+  /** 删掉本文件创建的、没有审计行的租户。有审计行的留下（外键 `ON DELETE RESTRICT`）。 */
+  private async deleteUnauditedTenants(): Promise<void> {
+    if (this.tenantIds.length === 0) {
+      return
+    }
+    const audited = await this.prisma.domainAuditEvent.findMany({
+      where: { tenantId: { in: this.tenantIds } },
+      select: { tenantId: true },
+      distinct: ['tenantId'],
+    })
+    const keep = new Set(audited.map((row) => row.tenantId))
+    const deletable = this.tenantIds.filter((id) => !keep.has(id))
+    if (deletable.length > 0) {
+      await this.prisma.tenant.deleteMany({ where: { id: { in: deletable } } })
+    }
   }
 
   /**

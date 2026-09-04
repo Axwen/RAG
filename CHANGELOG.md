@@ -104,6 +104,22 @@
 
 ### Fixed
 
+- **`bootstrap` 的 seed 前置构建把半个仓库都构进去，PR #28 上 CI 当场红**：
+  `infra/compose/init/init-database.sh` 那条 `pnpm --filter "...@rag/database" run build`
+  把 `...` 写在了前面。pnpm 的方向约定是**后置** `...` 取「该包及其工作区依赖」、**前置**
+  `...` 取「依赖方」，所以这条命令实际选中的是 database 的依赖方：`apps/api`、`apps/worker`
+  与仓库根。从 T0 起就是错的，一直没露馅只因为 api/worker 的 `build` 也是 `tsc -b`，靠
+  project references 顺带把 `packages/*/dist` 构了出来，seed 要的产物恰好都在。T12a 第三片
+  给根 `package.json` 加上 `@rag/config`/`@rag/database`（集成层是这两个包的外部消费者）
+  之后，根也成了依赖方，而根的 `build` 是 `pnpm --recursive --stream run build`，于是
+  bootstrap 递归进 `apps/web` 的 `next build`，在 bootstrap 导出的 `NODE_ENV=development`
+  下预渲染 `/_global-error` 直接崩（`Cannot read properties of null (reading 'useContext')`；
+  Next 不支持以 development 构建，同一条日志里就有它那句 non-standard `NODE_ENV` 警告）。
+  同一个 PR 的 `node` job 里 `pnpm run build` 是绿的，正说明 `next build` 本身没坏，坏的是
+  它被谁、以什么环境调起来。改成后置 `@rag/database...` 后 scope 收敛成 database + config +
+  contracts + observability 四个，根永远不可能再进来——根是 database 的依赖方，不是它的依赖。
+  本机连跑两遍 `pnpm run bootstrap` 均退出 0，`Scope: 4 of 9` 里正是这四个包。
+
 - **vite 8 照出一个从建立起就存在的覆盖率盲点：`apps/api/src/database/prisma.service.ts`
   从来没进过覆盖率报告**（Dependabot PR #9 `vite 7.3.6 → 8.2.2` 的红）。表面症状是
   `quality` job 报 `functions (80.76%) does not meet global threshold (82%)`，看着像
