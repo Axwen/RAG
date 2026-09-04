@@ -183,6 +183,8 @@
     返回空结果 → #20/#23 红且输出里出现了那句绝不该出现的 `✅ 无 critical 及以上依赖漏洞`。
     **这一轮先在本机跑绿再推**：真 lockfile 1.4s 绿，掺两个有洞包的桩 lockfile 2.9s 红
     （8 条里 1 条 critical 阻断 `GHSA-xvch-5gv4-984h`，其余只报告，exit 1），离线自检 3.8s。
+    runner 上确认（`dd5d9bd`）：自检 27/27，`OSV 请求 1 次成功：最快 0.8s / 中位 0.8s / 最慢 0.8s，
+    墙钟 0.8s`，整个 job **9 秒**——对照前两轮的 10m29s 与 7m05s。
   - **Python 侧的缺口单开票据，不塞进这次解阻断**：`services/parser` 的 `uv.lock` 至今没有任何
     东西在扫，Dependabot 的 uv 升级 PR 不是漏洞门禁（它按"有没有新版本"提 PR，不按"当前锁定版本
     有没有已知漏洞"阻断）。新增 [CI-01](docs/engineering/tickets/CI-01-python-dependency-scanning.md)

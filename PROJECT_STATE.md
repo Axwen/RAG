@@ -137,7 +137,7 @@
   （`scripts/check-npm-advisories.sh`，2026-09-04 起不再经 `pnpm audit`：先换直连 npm 的
   bulk advisory 端点（§6.8），三次全红后换数据源到 OSV.dev 的 `POST /v1/querybatch`
   ——同一份 GitHub Advisory DB、同一套 GHSA 四档口径，548 个 `name@version` 一次 1.4s，
-  且本机可复现，理由见 ci-cd.md §6.8-§6.10）
+  且本机可复现；runner 上整个 job 9 秒，对照前两轮的 10m29s 与 7m05s，理由见 ci-cd.md §6.8-§6.10）
   + PR 依赖/许可证审查；**"全历史"这句话
   2026-09-02 之前不成立**，见下）、
   `codeql.yml`（TS+Python，暂不设 required）、`release.yml`（`v*` 标签 → 重跑 verify +
