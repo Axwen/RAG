@@ -268,8 +268,8 @@ CI 里带 `--strict`，两层都跑。
 本地配置，所以不会像旧的 `pnpm audit` 那样在 registry 指向 npmmirror 时报
 `AUDIT_ENDPOINT_NOT_EXISTS`。它**不在 `verify` 里**：verify 是可离线跑的本地检查，而这一条
 要活网络。进 verify 的是它的离线自检 `pnpm run check:advisories:self-test`（桩 registry、
-11 条断言、约 1 秒）——这个门禁最坏的失效方式不是红，是解析出 0 个包然后报「没有漏洞」，
-所以解析守卫、严重度分档与 fail closed 都要有可复跑的断言（§6.8）。
+16 条断言、约 1 秒）——这个门禁最坏的失效方式不是红，是解析出 0 个包然后报「没有漏洞」，
+所以解析守卫、严重度分档、超时与预算耗尽时的 fail closed 都要有可复跑的断言（§6.8、§6.9）。
 
 `pnpm run check:commits` **不在 `verify` 里**（它要 `origin/main..HEAD` 这个范围，而 verify
 是可离线跑的本地检查），所以提交完、推之前要单独跑一次，否则 CI 的 `quality` 会因为提交
