@@ -996,6 +996,18 @@ LOW/MODERATE/HIGH/CRITICAL，所以 `--audit-level critical` 的含义一个字�
 （`GHSA-xvch-5gv4-984h`），其余 7 条只报告，退出码 1。离线自检 3.8s。CI 这次的角色是确认，
 不是实验——这正是前三轮缺的那一步。
 
+runner 上的确认（`dd5d9bd`，job `100979393715`）：
+
+```
+✅ 自检 27/27 条断言全通过（离线桩 registry）
+扫描 524 个包 / 548 个 name@version（pnpm-lock.yaml），数据源 https://api.osv.dev
+OSV 请求 1 次成功：最快 0.8s / 中位 0.8s / 最慢 0.8s，墙钟 0.8s（单次上限 30s、总预算 120s）
+✅ 无 critical 及以上依赖漏洞
+```
+
+整个 job **9 秒**（含 checkout），对照 §6.8 的 10m29s 与 §6.9 的 7m05s。runner 上的 0.8s 比本机的
+1.4s 还快，说明前三轮的墙钟从来不是依赖图大小的问题。
+
 ## 7. 明确不做的事（阶段 1）
 
 写在这里是为了避免把"没做"读成"漏了"：
