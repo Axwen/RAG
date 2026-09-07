@@ -71,14 +71,15 @@ export default defineConfig({
        * 为什么 vite 8 下 functions 分母多了 3 个、以及那 3 个是怎么补上的，见 CHANGELOG 里
        * vite 8 那条。
        *
-       * 这一档是 T12a 第三片抬上来的（86/81/82/87 → 89/85/86/90）：事务入口与审计写入口
-       * 各自带了单元层用例，不抬棘轮的话，以后删掉其中一半仍然能过。
+       * 这一档先由 T12a 第三片抬上来（86/81/82/87 → 89/85/86/90），再由 T17 V0a
+       * 按 2026-09-07 实测 92.27 / 89.85 / 91.50 / 93.81 的 floor(x)-1 规则抬到
+       * 91/88/90/92；新增 Locator、Citation 和纯逻辑测试后仍保留约一个点余量。
        */
       thresholds: {
-        statements: 89,
-        branches: 85,
-        functions: 86,
-        lines: 90,
+        statements: 91,
+        branches: 88,
+        functions: 90,
+        lines: 92,
       },
     },
   },

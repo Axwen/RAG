@@ -1,23 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
-  EMBEDDING_DIMENSIONS,
+  DOCUMENT_CHUNKING_MANIFEST_ID,
   FROZEN_CHUNKING_MANIFEST_ID,
   RAG_CORE_PACKAGE,
   RERANK_OUTPUT_TOP_K,
   SUPPORTED_CONTRACTS_SCHEMA_VERSION,
 } from '../src/index'
 
-describe('冻结常量', () => {
+describe('核心常量', () => {
   it('包名可用于诊断', () => {
     expect(RAG_CORE_PACKAGE).toBe('@rag/rag-core')
   })
 
-  it('分块清单标识为 PROBE-006 定档值', () => {
-    expect(FROZEN_CHUNKING_MANIFEST_ID).toBe('wide-1024')
-  })
-
-  it('Embedding 维度为 1024', () => {
-    expect(EMBEDDING_DIMENSIONS).toBe(1024)
+  it('wide-1024 明确只属于文档分块', () => {
+    expect(DOCUMENT_CHUNKING_MANIFEST_ID).toBe('wide-1024')
+    expect(FROZEN_CHUNKING_MANIFEST_ID).toBe(DOCUMENT_CHUNKING_MANIFEST_ID)
   })
 
   it('Rerank 输出上限为 5', () => {
