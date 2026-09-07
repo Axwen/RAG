@@ -8,6 +8,7 @@
  * - T11a：领域审计的唯一写入口（`writeAuditEvent`）
  * - T12a：模型预算账本的五条事务入口
  * - T14：ACL 主体、授权判定与审计
+ * - T14a：身份装配入口（`loadIdentityContext`）
  *
  * 事务入口只从这里导出：调用方拿到的是 `reserveBudget`/`writeAuditEvent` 这样的函数，
  * 拿不到 `PrismaClient` 也拿不到表结构。业务模块自己拼 SQL 改账本或补审计都是缺陷。
@@ -19,4 +20,5 @@ export * from './budget'
 export * from './client'
 export * from './env'
 export * from './health'
+export * from './identity'
 export * from './tx'
