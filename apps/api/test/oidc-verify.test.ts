@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { parseAuthConfig } from '../src/auth/auth.config'
@@ -17,20 +17,26 @@ const PORT = 38_933
 const ISSUER = `http://127.0.0.1:${PORT}/realms/rag-local`
 const AUDIENCE = 'rag-api'
 
-const { publicKey, privateKey } = await generateKeyPair('RS256')
-const jwk = await exportJWK(publicKey)
-const jwksBody = JSON.stringify({ keys: [{ ...jwk, kid: 'test-key', use: 'sig', alg: 'RS256' }] })
+/** 密钥对与桩服务器在 beforeAll 里建：CJS 测试文件不允许顶层 await。 */
+let privateKey: CryptoKey
+let server: Server
 
-const server: Server = createServer((req, res) => {
-  if (req.url?.includes('/protocol/openid-connect/certs') === true) {
-    res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(jwksBody)
-    return
-  }
-  res.writeHead(404)
-  res.end()
+beforeAll(async () => {
+  const pair = await generateKeyPair('RS256')
+  privateKey = pair.privateKey
+  const jwk = await exportJWK(pair.publicKey)
+  const jwksBody = JSON.stringify({ keys: [{ ...jwk, kid: 'test-key', use: 'sig', alg: 'RS256' }] })
+  server = createServer((req, res) => {
+    if (req.url?.includes('/protocol/openid-connect/certs') === true) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(jwksBody)
+      return
+    }
+    res.writeHead(404)
+    res.end()
+  })
+  await new Promise<void>((resolve) => server.listen(PORT, '127.0.0.1', resolve))
 })
-await new Promise<void>((resolve) => server.listen(PORT, '127.0.0.1', resolve))
 afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))
 
 const config = parseAuthConfig({
@@ -76,8 +82,8 @@ describe('OidcClient.verifyIdToken', () => {
   })
 
   it('过期 token 拒绝（401 语义，不是 503）', async () => {
-    await expect(
-      client.verifyIdToken(await signIdToken({ exp: 1 })),
-    ).rejects.toThrow(/ID token 校验失败/)
+    await expect(client.verifyIdToken(await signIdToken({ exp: 1 }))).rejects.toThrow(
+      /ID token 校验失败/,
+    )
   })
 })
