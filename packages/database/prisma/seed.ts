@@ -36,6 +36,46 @@ const ANSWER_ID = '018f0000-0000-7000-8000-000000000032'
 const PIPELINE_ID = '018f0000-0000-7000-8000-000000000033'
 const PARTITION_ID = '018f0000-0000-7000-8000-000000000020'
 
+// ─── T14a 业务身份种子（ADR-0039）───────────────────────────────────
+// issuer 是本地 Keycloak 的 realm 地址（compose 默认 KEYCLOAK_BASE_URL + realm）；
+// subject 与 init-keycloak.sh 的 DEV_USER_ID 同源——那个脚本按固定 UUID 建 realm 用户，
+// 这边按同一个 UUID 预置 BusinessUser 映射，两边改一处另一处必须跟着改（有 schema-boundary
+// 之外的口径一致性，改动时同步 init-keycloak.sh）。
+const IDENTITY_ISSUER = 'http://localhost:8080/realms/rag-local'
+const DEV_USER_SUBJECT = '018f0000-0000-7000-8000-00000000a001'
+const BUSINESS_USER_ID = '018f0000-0000-7000-8000-0000000000a1'
+const TENANT_ADMIN_ROLE_ID = '018f0000-0000-7000-8000-0000000000a2'
+const AGENT_ROLE_ID = '018f0000-0000-7000-8000-0000000000a3'
+const ENGINEER_ROLE_ID = '018f0000-0000-7000-8000-0000000000a4'
+const STAFF_ROLE_ID = '018f0000-0000-7000-8000-0000000000a5'
+const AGENT_DESK_ID = '018f0000-0000-7000-8000-0000000000a6'
+const ENG_DESK_ID = '018f0000-0000-7000-8000-0000000000a7'
+const STAFF_DESK_ID = '018f0000-0000-7000-8000-0000000000a8'
+
+/**
+ * 能力权限码的初始目录。T14b 统一授权入口消费这些码；新增码走种子增量，
+ * 不改已发布码的含义（能力码是稳定契约，改名等于新码）。
+ */
+const PERMISSION_CATALOG: ReadonlyArray<{ id: string; code: string; name: string }> = [
+  { id: '018f0000-0000-7000-8000-0000000000b1', code: 'document.upload', name: '上传文档与提交候选' },
+  { id: '018f0000-0000-7000-8000-0000000000b2', code: 'document.review', name: '审核候选与批准 Manifest' },
+  { id: '018f0000-0000-7000-8000-0000000000b3', code: 'answer.run', name: '发起检索与回答' },
+  { id: '018f0000-0000-7000-8000-0000000000b4', code: 'release.approve', name: '批准 Release' },
+  { id: '018f0000-0000-7000-8000-0000000000b5', code: 'admin.users.manage', name: '管理业务用户与成员关系' },
+]
+
+/** dev 用户跨三个 Workspace 承担不同角色（ADR-0039 决策 3 的多 Workspace 事实）。 */
+const DEV_WORKSPACE_MEMBERSHIPS: ReadonlyArray<{
+  workspaceId: string
+  slug: string
+  name: string
+  roleId: string
+}> = [
+  { workspaceId: AGENT_DESK_ID, slug: 'agent-desk', name: '客服工作台', roleId: AGENT_ROLE_ID },
+  { workspaceId: ENG_DESK_ID, slug: 'eng-desk', name: '研发工作台', roleId: ENGINEER_ROLE_ID },
+  { workspaceId: STAFF_DESK_ID, slug: 'staff-desk', name: '员工工作台', roleId: STAFF_ROLE_ID },
+]
+
 const ingestionContent: IngestionManifestContent = {
   kind: 'ingestion',
   tenantId: TENANT_ID,
@@ -211,8 +251,136 @@ async function seed(): Promise<void> {
       update: {},
     })
 
+    // ─── T14a 业务身份（ADR-0039）───────────────────────────────────
+    // 全部 upsert 幂等；dev 用户的多 Workspace 成员关系展示「同一主体在不同
+    // Workspace 不同角色」，供 HG-01a 验收时看真实链路与表结构。
+    for (const permission of PERMISSION_CATALOG) {
+      await prisma.permission.upsert({
+        where: { id: permission.id },
+        create: permission,
+        update: {},
+      })
+    }
+
+    const roleSeeds: ReadonlyArray<{
+      id: string
+      scope: 'TENANT' | 'WORKSPACE'
+      code: string
+      name: string
+      permissionIds: readonly string[]
+    }> = [
+      {
+        id: TENANT_ADMIN_ROLE_ID,
+        scope: 'TENANT',
+        code: 'tenant-admin',
+        name: '租户管理员',
+        permissionIds: PERMISSION_CATALOG.map((p) => p.id),
+      },
+      {
+        id: AGENT_ROLE_ID,
+        scope: 'WORKSPACE',
+        code: 'agent',
+        name: '客服',
+        permissionIds: [
+          PERMISSION_CATALOG[2]!.id, // answer.run
+        ],
+      },
+      {
+        id: ENGINEER_ROLE_ID,
+        scope: 'WORKSPACE',
+        code: 'engineer',
+        name: '研发',
+        permissionIds: [
+          PERMISSION_CATALOG[0]!.id, // document.upload
+          PERMISSION_CATALOG[2]!.id, // answer.run
+        ],
+      },
+      {
+        id: STAFF_ROLE_ID,
+        scope: 'WORKSPACE',
+        code: 'staff',
+        name: '普通员工',
+        permissionIds: [
+          PERMISSION_CATALOG[2]!.id, // answer.run
+        ],
+      },
+    ]
+    for (const role of roleSeeds) {
+      await prisma.role.upsert({
+        where: { id: role.id },
+        create: {
+          id: role.id,
+          tenantId: TENANT_ID,
+          scope: role.scope,
+          code: role.code,
+          name: role.name,
+        },
+        update: {},
+      })
+      for (const permissionId of role.permissionIds) {
+        await prisma.rolePermission.upsert({
+          where: { roleId_permissionId: { roleId: role.id, permissionId } },
+          create: { roleId: role.id, permissionId },
+          update: {},
+        })
+      }
+    }
+
+    await prisma.businessUser.upsert({
+      where: { id: BUSINESS_USER_ID },
+      create: {
+        id: BUSINESS_USER_ID,
+        issuer: IDENTITY_ISSUER,
+        subject: DEV_USER_SUBJECT,
+        displayName: 'Dev User',
+        email: 'dev@example.invalid',
+      },
+      update: {},
+    })
+
+    await prisma.tenantMembership.upsert({
+      where: { tenantId_businessUserId: { tenantId: TENANT_ID, businessUserId: BUSINESS_USER_ID } },
+      create: {
+        tenantId: TENANT_ID,
+        businessUserId: BUSINESS_USER_ID,
+        tenantRoleId: TENANT_ADMIN_ROLE_ID,
+      },
+      update: {},
+    })
+
+    for (const desk of DEV_WORKSPACE_MEMBERSHIPS) {
+      await prisma.workspace.upsert({
+        where: { id: desk.workspaceId },
+        create: {
+          id: desk.workspaceId,
+          tenantId: TENANT_ID,
+          slug: desk.slug,
+          name: desk.name,
+        },
+        update: {},
+      })
+      await prisma.workspaceMembership.upsert({
+        where: {
+          workspaceId_businessUserId: {
+            workspaceId: desk.workspaceId,
+            businessUserId: BUSINESS_USER_ID,
+          },
+        },
+        create: {
+          tenantId: TENANT_ID,
+          workspaceId: desk.workspaceId,
+          businessUserId: BUSINESS_USER_ID,
+          roleId: desk.roleId,
+        },
+        update: {},
+      })
+    }
+
     console.warn(
       '[seed] T1a 开发种子完成：租户 local-dev、知识空间 default、三份 APPROVED Manifest、一个 APPROVED Pipeline、一个 IndexPartition',
+    )
+    console.warn(
+      '[seed] T14a 身份种子完成：BusinessUser dev、租户管理员、三个 Workspace（客服/研发/员工）与能力权限码初始目录',
     )
   } finally {
     await prisma.$disconnect()
