@@ -60,7 +60,9 @@ done
 
 # 开发用户：固定 UUID 创建——业务库种子（prisma/seed.ts 的 BusinessUser.subject）按这个
 # id 预置映射，随机 id 会让「realm 用户 ↔ BusinessUser」对不上。
-# 老版本脚本建的 dev 用户是随机 id：删掉重建（本地开发 realm，用户身上无可保留数据）。
+# 落地方式是 partialImport 而不是 POST /users：Keycloak 26 的用户创建端点忽略请求体
+# 里的 id 字段（实测每次都生成随机 UUID），只有 partialImport 尊重传入 id。
+# 老脚本版本创建的 dev 用户是随机 id：删掉重建（本地开发 realm，用户身上无可保留数据）。
 DEV_USER_ID="018f0000-0000-7000-8000-00000000a001"
 user_id="$(curl -sf "${auth[@]}" \
   "${api}/${KEYCLOAK_REALM}/users?username=${DEV_USER_NAME}&exact=true" | jq -r '.[0].id // empty')"
@@ -71,10 +73,10 @@ if [[ -n "${user_id}" && "${user_id}" != "${DEV_USER_ID}" ]]; then
   user_id=""
 fi
 if [[ -z "${user_id}" ]]; then
-  log "创建开发用户 ${DEV_USER_NAME}（固定 id ${DEV_USER_ID}）"
+  log "创建开发用户 ${DEV_USER_NAME}（固定 id ${DEV_USER_ID}，partialImport）"
   curl -sf -X POST "${auth[@]}" -H 'content-type: application/json' \
-    -d "{\"id\":\"${DEV_USER_ID}\",\"username\":\"${DEV_USER_NAME}\",\"enabled\":true,\"emailVerified\":true,\"email\":\"${DEV_USER_NAME}@example.invalid\",\"firstName\":\"Dev\",\"lastName\":\"User\"}" \
-    "${api}/${KEYCLOAK_REALM}/users" >/dev/null || die "创建开发用户失败"
+    -d "{\"ifResourceExists\":\"FAIL\",\"users\":[{\"id\":\"${DEV_USER_ID}\",\"username\":\"${DEV_USER_NAME}\",\"enabled\":true,\"emailVerified\":true,\"email\":\"${DEV_USER_NAME}@example.invalid\",\"firstName\":\"Dev\",\"lastName\":\"User\"}]}" \
+    "${api}/${KEYCLOAK_REALM}/partialImport" >/dev/null || die "创建开发用户失败"
   user_id="${DEV_USER_ID}"
 else
   log "开发用户 ${DEV_USER_NAME} 已存在，复用"
