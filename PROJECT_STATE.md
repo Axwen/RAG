@@ -2,7 +2,7 @@
 
 > 这是本项目的会话无关状态入口。新会话先读本文件，再按“事实源层级”读取详细文档；不要把聊天上下文当作唯一事实来源。
 >
-> 最近更新：2026-09-03
+> 最近更新：2026-09-07
 
 ## 一句话结论
 
@@ -46,6 +46,25 @@
 - 模型：通过内部 `ModelAdapter` 接入云侧 Chat、Embedding、Reranker 和引用验证；供应商基线见 [ADR-0017](docs/adr/0017-mvp-cloud-model-and-budget.md)（Embedding = OpenRouter `qwen/qwen3-embedding-8b` `dimensions=1024`；Chat / 高风险蕴含 = fluxionai `gpt-5.6-terra`，OpenAI **Responses** 协议；Reranker = OpenRouter `qwen/qwen3-reranker-8b`，`POST {base}/rerank`）。阶段 1 不部署独立 Model Gateway。阿里云百炼已不再是 MVP 云模型供应商。
 - 本地环境：32 GiB 主机，WSL2 日常上限 22 GiB；DeepDOC/批量评测可显式使用 24 GiB profile。
 - 对象存储：阶段 1 本地 MinIO；阿里云 OSS 保留未来适配，不进入当前本地主链。
+
+### Video RAG 公共基座增量（2026-09-04）
+
+- 本分支已完成 Video RAG 公共基座的 Phase 1 冲突审查和架构 Review，结论与正式文档见 [Video RAG 公共基座架构 Review](docs/design/video-rag-foundation-architecture-review.md) 和 [冲突矩阵](docs/engineering/video-rag-foundation-conflict-matrix.md)。
+- 公共共享范围固定为 Evidence/Locator/Provenance、Provider/Artifact/JobEvent、EmbeddingChannel、RetrievalCandidate、Citation、Evaluation、`rag-core` 纯逻辑和评测格式；不共享数据库、消息队列、对象存储或部署拓扑。
+- 文档 RAG 的 PostgreSQL、OpenSearch、RabbitMQ、MinIO、Keycloak、ACL 和 `wide-1024`/1024 维文档基线继续有效；`wide-1024` 仅是文档分块标识，Embedding 维度属于 Channel。
+- 本地 Video RAG 后续使用独立 SQLite WAL、本地文件 Artifact Store 和本地 Worker Adapter；当前不实现 FFmpeg、ASR、OCR、VLM、Tauri、视频 Worker 或独立 Video RAG 服务。
+- T17 是跨切面公共基座 Ticket，不阻塞 T0～T16 的文档 RAG Web 主线；真实视频能力必须经过 [Video RAG readiness gate](docs/engineering/video-rag-readiness-gate.md)。
+- 当前公共基座状态为 CONTRACT_READY_WITH_ACTIONS：V0a 首版契约和纯逻辑已落地，V0b 的运行时校验、版本化 Envelope、跨语言 conformance、候选/评测身份和 Adapter 恢复测试仍待完成；该状态不等于真实 Video RAG 可用。
+- T17 V0a 已将 `EMBEDDING_DIMENSIONS` 的全局语义改为 `@rag/contracts` 的 `DOCUMENT_EMBEDDING_DIMENSION`，并将文档分块常量正式命名为 `DOCUMENT_CHUNKING_MANIFEST_ID`（旧名仅保留 deprecated 源码兼容）；T5/T6 不得按旧全局常量名接入。
+
+### 三仓库与共享媒体引擎（2026-09-04）
+
+- 三仓库规划已确认：当前 Web RAG 仓库、独立 `scene-core` 和独立 `scene-seek`。当前不创建第四个 `rag-foundation`/`ai-runtime` 仓库，也不创建独立 `video-rag-service`。
+- `scene-core` 作为共享 Rust 媒体平面，负责 FFmpeg/FFprobe 周边调用、probe、音频/帧 Artifact、时间戳、Manifest、取消、超时、错误和资源统计；不负责数据库、队列、对象存储、权限、RAG 查询或 AI SDK。
+- Web RAG 通过 Node Worker 的 `MediaEngineAdapter` 调用固定版本的引擎；浏览器不直连引擎。Web 继续拥有 PostgreSQL、OpenSearch、RabbitMQ、MinIO/object storage adapter、Keycloak、ACL、任务事实、Evidence/索引/Release 和服务端 AI Adapter。
+- Desktop 通过 Tauri/本地 Worker 消费固定 tag 或 commit SHA 的引擎，拥有本地 SQLite WAL、本地 Artifact Store、本地索引、时间线和本地 AI Adapter。两个平台共享协议、纯逻辑、测试向量和评测格式，不共享数据库、消息队列、对象存储、文件布局或部署拓扑。
+- 向量化、关键字查询、dense 查询、Rerank 和 Evaluation 可以共享语义协议、`rag-core` 纯逻辑和评测格式；索引执行、模型进程、存储、资源策略和 Runner 由平台 Adapter 各自实现。
+- 三仓库规划资料见 [Video RAG 三仓库规划包](docs/architecture/repositories/README.md)；`scene-core` 的规划资料已落到独立目录但其 git 仓库尚未初始化，`scene-seek` 的规划资料已增量迁移至既存仓库但当前尚无提交。当前 Web RAG 的 `packages/contracts`、`packages/rag-core` 和 `evals/video` 仍是公共语义与评测事实源，目标仓库只消费协议快照。
 
 ### 核心架构不变量
 
@@ -102,6 +121,10 @@
 - 性能必须拆分 presign/complete、作用域预过滤 + Snapshot、BM25/向量、ACL 候选权威复核、融合/Rerank（**云 rerank 已实测独立计时：64 候选 0.95 s、1024 候选 3.4-6.6 s，必须单列且按上界设超时**）、TTFT、生成和引用验证（常规 2.0 s 与高风险 3.5 s 分列）。
 
 ## 已完成内容
+
+- 已完成 Video RAG 公共基座 Phase 1/2 Review，并落盘冲突矩阵、事实/推断/提案边界、ADR-0041～0044、契约 Spec、`rag-core` Spec、readiness gate、实施路线和评测计划。
+- 已在 `@rag/contracts` 加入模态无关 Evidence/Locator/Provenance、Provider/Artifact/JobEvent、EmbeddingChannel、Retrieval/Citation 和 Evaluation 类型契约；运行时边界校验与存储无关的融合、去重、时间关系、上下文、引用、评测和旧结果写回门禁位于 `@rag/rag-core`。
+- 已建立 [T17 Video RAG 公共基座](docs/engineering/tickets/T17-video-rag-public-foundation.md)；T17 V0 不新增 Prisma/Compose/Parser/Video Worker，不改变文档 RAG Web 运行时。
 
 - 已阅读并结合当前项目 PDF、固定快照的 ragent 和 RAGFlow 参考代码。
 - 已完成 CEO/产品范围审查、独立对抗性审查和工程评审。
@@ -170,6 +193,9 @@
   同一条命令。详见 ci-cd.md §6.4 / §6.5。
 
 ## 尚未完成且不能假装完成
+
+- Video RAG readiness gate 尚未通过：真实媒体导入、FFprobe/FFmpeg、字幕/ASR、shot/scene、OCR、视觉 Embedding、文字/图片搜画面、时间线跳转、取消/恢复和资源基准均尚未在本分支实测。
+- T17 的文档 Chunk → Evidence Adapter、本地 SQLite/Artifact/Worker Adapter 和真实视频评测留待后续路线；当前不得把协议实现描述成 Video RAG 运行时完成。
 
 - T0 工程骨架与 T1a 切片（Manifest/Release 领域模型、内容寻址、兼容矩阵、领域命令端点）已提交于 `bc99b0a`；同一批次的 T14 身份与授权未开始；T12a 三片已落齐：配置切片（价目、汇率与五项配额的启动期 schema）、两张表（`model_budget_ledger`、`domain_audit_event`，同一次迁移）、`packages/database/src/budget/` 的五条事务入口与 `packages/database/src/audit/` 的 `writeAuditEvent`（原因码注册表在 `packages/contracts/src/audit/`，随 T11a 一并落地）。**库层能力齐了，调用方还没有**：模型调用侧（供应商方言、`usage.cost` 读取、429 退避、流式取消触发结算）归 T15，API 侧没有任何路径调这五个函数，所以运行时仍然没有真实请求在预扣、结算、拒绝或写审计——门禁的库层不变量已可证，端到端门禁未通。`tenantId` 目前由请求体携带，只能在本地开发环境使用。T14 的计划已按 [ADR-0039](docs/adr/0039-business-identity-and-unified-authorization.md) 明确为“Keycloak/OIDC 身份 + 自有 BusinessUser/租户/Workspace/角色/能力权限 + 资源 ACL”，后续客服、研发、普通员工三个角色工作台复用该身份上下文，不复制用户体系。T1b 分块、Release 状态迁移（`BUILDING` 及之后属 T5）、消息、检索、回答和 UI 仍未开始。
 - Node 的格式、Lint、类型检查、构建、Prisma schema 校验、Python uv/pytest、Compose 配置解析和初始化脚本语法检查已在当前环境执行；六个 core 容器 healthy 与 `/health/ready` 已在 T0/T1a 真实实测通过，容器级集成测试（Testcontainers）、Playwright 和部署仍未验证。
@@ -275,6 +301,17 @@ PROBE-000 是门禁而不是架构假设验证，不计入六个探针。资源 
 
 ## 详细文档入口
 
+- Video RAG 公共基座架构 Review：[docs/design/video-rag-foundation-architecture-review.md](docs/design/video-rag-foundation-architecture-review.md)
+- Video RAG Phase 1 冲突矩阵：[docs/engineering/video-rag-foundation-conflict-matrix.md](docs/engineering/video-rag-foundation-conflict-matrix.md)
+- Video RAG 公共契约 Spec：[docs/engineering/video-rag-public-contract-spec.md](docs/engineering/video-rag-public-contract-spec.md)
+- Video RAG `rag-core` 纯逻辑 Spec：[docs/engineering/video-rag-rag-core-spec.md](docs/engineering/video-rag-rag-core-spec.md)
+- Video RAG readiness gate：[docs/engineering/video-rag-readiness-gate.md](docs/engineering/video-rag-readiness-gate.md)
+- Video RAG 实施路线：[docs/engineering/video-rag-implementation-plan.md](docs/engineering/video-rag-implementation-plan.md)
+- Video RAG 评测计划：[docs/engineering/video-rag-evaluation-plan.md](docs/engineering/video-rag-evaluation-plan.md)
+- 共享 Rust Media Engine 与三仓库边界 ADR：[docs/adr/0045-shared-media-engine-and-three-repository-boundary.md](docs/adr/0045-shared-media-engine-and-three-repository-boundary.md)
+- Video RAG 三仓库规划包：[docs/architecture/repositories/README.md](docs/architecture/repositories/README.md)
+- T17 Video RAG 公共基座票据：[docs/engineering/tickets/T17-video-rag-public-foundation.md](docs/engineering/tickets/T17-video-rag-public-foundation.md)
+- Video RAG 公共基座实施任务：[docs/engineering/video-rag-implementation-tasks.md](docs/engineering/video-rag-implementation-tasks.md)
 - 领域术语：[CONTEXT.md](CONTEXT.md)
 - 产品与架构边界：[docs/design/企业级可信RAG基础MVP-产品与架构边界.md](docs/design/企业级可信RAG基础MVP-产品与架构边界.md)
 - 工程评审闭合记录：[docs/engineering/plan-eng-review-closure.md](docs/engineering/plan-eng-review-closure.md)

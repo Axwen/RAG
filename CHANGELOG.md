@@ -6,6 +6,8 @@
 
 ### Added
 
+- **T17 Video RAG 公共基座 V0a**：新增模态无关 Evidence/Locator/Provider/Embedding Channel/Retrieval/Citation/Evaluation 契约与 `rag-core` 纯逻辑；保留文档 RAG 的 PostgreSQL/OpenSearch/RabbitMQ/MinIO/Keycloak 主线，不引入真实媒体运行时。
+
 - **CI/CD 与质量·日志检测流水线**（五条工作流，见
   [docs/engineering/ci-cd.md](docs/engineering/ci-cd.md)）：
   - `ci.yml` 扩为四个 job——`node`（lint/typecheck/test/prisma/build）、
@@ -38,12 +40,12 @@
 - **`pnpm run check:commits`**、**`pnpm run test:coverage`**、
   **`scripts/release-notes.sh`**（从 CHANGELOG 抽取指定版本段落，标签与 CHANGELOG
   不对齐即失败）。
-- **覆盖率阈值**（`vitest.config.ts`）：statements 89 / branches 85 / functions 86 /
-  lines 90。取自 2026-09-04 实测（vite 8.2.2 下 90.56 / 86.28 / 87.85 / 91.18，已排除
-  Prisma 生成产物、`apps/web`、种子脚本）。首版是 2026-09-03 的 86/81/82/87（实测
-  87.25 / 81.97 / 83.65 / 88.05，lines 由 86 抬到 87 即那一轮棘轮）；T12a 第三片的事务
-  入口与审计写入口各带单元层用例，把四项都抬了一档（86/81/82/87 → 89/85/86/90），
-  不抬的话以后删掉其中一半仍然能过。这是棘轮值而非理想值，只上调。分母会随转译器
+- **覆盖率阈值**（`vitest.config.ts`）：statements 91 / branches 88 / functions 90 /
+  lines 92。取自 2026-09-07 实测（vite 8.2.2 下 92.27 / 89.85 / 91.50 / 93.81，已排除
+  Prisma 生成产物、`apps/web`、种子脚本）。上一档是 2026-09-04 的 89/85/86/90（实测
+  90.56 / 86.28 / 87.85 / 91.18），再上一档是 2026-09-03 的 86/81/82/87（实测
+  87.25 / 81.97 / 83.65 / 88.05）；T17 V0a 的 Locator、Citation 和纯逻辑测试让四项
+  按 `floor(x)-1` 规则抬到当前阈值。这是棘轮值而非理想值，只上调。分母会随转译器
   变化，所以留了约一个点的余量，见下方 vite 8 那条。
 - **三条新增门禁**（第四轮审计产出，见 ci-cd.md §6.4）：
   - **`pnpm run check:workflows`**（`scripts/check-workflows.sh` + `scripts/lib/lint-workflows.py`）：
