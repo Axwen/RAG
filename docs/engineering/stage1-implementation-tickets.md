@@ -44,6 +44,9 @@
 | [T14](tickets/T14-identity-authorization.md) Identity/Business User/Authorization | Keycloak OIDC 只负责身份；自有 BusinessUser、租户/Workspace 成员、角色/能力权限、资源授权、作用域编译和 fail-closed | T0、T1a；拆为 T14a 身份接入与 7 张业务身份表、T14b 统一授权入口，两批之间设临时门禁 [HG-01a](manual-acceptance-gate.md#阶段-1-门禁点)；T14b 依赖 T11a 的审计原因码注册表；在 T6 和所有 Web 路由前完成；为客服、研发、普通员工等后续域提供统一身份上下文，不复制用户系统（ADR-0039）|
 | [T15](tickets/T15-model-adapter.md) ModelAdapter | Chat、Embedding、Reranker、引用验证统一准入层及供应商方言 | T1a、T12 Ledger；在 T5 Embedding、T6 Rerank、T7 Chat/Citation 前完成 |
 | [T16](tickets/T16-web-admin-surfaces.md) Web/Admin Surfaces | 登录、知识上传/审核、入库状态、Chat 和三个管理控制台 | 页面开工前执行 Design Review；按后端 Ticket 纵向交付，不单独等待最后集成；拆为 T16a 用户主链与 T16b 管理控制台两批 |
+| [T17](tickets/T17-video-rag-public-foundation.md) Video RAG 公共基座（跨切面） | 模态无关 Evidence/Locator/Provider/Embedding Channel/Retrieval/Citation/Evaluation 与 `rag-core` 纯逻辑 | 与 T0～T16 Web 主线并行；V0 不实现媒体处理、本地运行时或独立服务；V0a/V0b 按 T17 自有 DoD 和 readiness gate 分批，不纳入 HG-01～HG-07 |
+
+> T17 是独立的 Video RAG 公共基座路线，不纳入下方文档 RAG 阶段 1 的 Web 工作量合计和 HG-01～HG-07 门禁；它有自己的 V0a/V0b DoD 和纯净性、覆盖率、复用边界验收，不改变 T0～T16 的依赖。
 
 ## 工作量估算
 

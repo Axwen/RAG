@@ -24,6 +24,14 @@
 | MongoDB、独立向量数据库、Kafka/NATS | 后置 | PostgreSQL/OpenSearch/RabbitMQ 已足够覆盖阶段 1，减少第二事实源 |
 | 完整运营报表和自动知识编译 | 后置 | 先交付反馈事件、指标和最小收件箱入口 |
 
+## Video RAG 公共基座增量 Review（2026-09-04）
+
+本次增量不覆盖原有 Web RAG 的完整评审结论，只检查未来 Video RAG 对公共语义层和部署边界提出的新约束。结果为 `CLEARED_WITH_REQUIRED_FOUNDATION_CHANGES`：已新增 [Video RAG 公共基座架构 Review](../design/video-rag-foundation-architecture-review.md)、[冲突矩阵](video-rag-foundation-conflict-matrix.md)、[ADR-0041～0044](../adr/README.md)、公共契约、`rag-core` 纯逻辑和 readiness gate。Web 的 PostgreSQL/OpenSearch/RabbitMQ/MinIO/Keycloak 设计保持不变；本地 Video RAG 的 SQLite/Artifact/Worker 只通过 Adapter 进入后续路线。
+
+### Video RAG V0b 硬化任务
+
+V0a 首版公共契约和纯逻辑已落地，但评审仍要求完成运行时校验、版本化 Envelope、Artifact/JobEvent 原子与幂等语义、Candidate/Query/Evaluation 身份、确定性排序和跨语言 fixtures。任务已平面化登记在 [Video RAG 公共基座实施任务](video-rag-implementation-tasks.md)，不改变 T0～T16 Web 主线的执行顺序，也不把 FFmpeg、ASR、OCR、VLM、Tauri 或 SQLite 引入当前公共核心。
+
 ## 2. 已存在的能力与复用边界
 
 参考仓库只作为固定快照和行为参考，不作为本项目运行时依赖或测试替代品。
@@ -614,6 +622,11 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
   - 计划文件：`apps/web/src/app/`、`apps/web/src/features/`、`tests/e2e/`。
   - 范围补充：见 [T16 Ticket](tickets/T16-web-admin-surfaces.md)。按执行顺序拆为 T16a 用户主链（~6d / ~1.5d）和 T16b 管理控制台（~4d / ~1d）两批，纵向跟随后端 Ticket 交付，不等后端全部完成后一次性搭空壳页面；页面开工前完成 Design Review。其中约 1.5d 由 T7/T8/T9/T12 转移而来。
   - 验证：Playwright 覆盖登录、上传到发布、Chat/SSE/续读、撤权后引用回跳、高风险缓冲、删除证明、评测门禁和预算熔断；无障碍、错误恢复、加载/空状态按 Design Review 结果验收。
+- [ ] **T17（跨切面，V0 human: ~4d / CC: ~1d）** — Video RAG 公共基座 — 固化模态无关 Evidence、Locator、ProviderRun、EmbeddingChannel、RetrievalCandidate、Citation、Evaluation 和 `rag-core` 纯逻辑。
+  - 来源：2026-09-04 Video RAG 公共基座增量 Review；现有公共层以文档 Chunk、页码和全局 1024 维为默认假设，不能直接承载时间化多模态 Evidence。
+  - 计划文件：`packages/contracts/src/{evidence,providers,embedding,retrieval,evaluation}/`、`packages/rag-core/src/`、`docs/engineering/video-rag-*.md`、`evals/video/README.md`。
+  - 范围补充：见 [T17 Ticket](tickets/T17-video-rag-public-foundation.md)。V0 只实现协议、边界校验、融合/去重/时间关系/引用/评测纯逻辑和 readiness gate；文档 RAG 继续 PostgreSQL/OpenSearch/RabbitMQ/MinIO/Keycloak，本地 Video RAG 后续采用 SQLite WAL/本地 Artifact Store/本地 Worker Adapter；不创建独立服务。V0b 前置必须按票据写明 T6/T7/T8 对 `rag-core` 现有函数的直接复用、另写及原因或待定边界，不把 `acl_scope_key`、预算、审计或 Prisma 逻辑塞进公共核心。
+  - 验证：`pnpm run check:links`、`pnpm run typecheck`、`pnpm run test`；有环境时 `pnpm run verify`。V0a 另有纯净性、覆盖率棘轮余量和复用边界 DoD；V1/V2 另按 readiness gate 验证真实媒体、时间定位、恢复和资源基准。T17 不计入下方 Web 阶段 1 工作量合计。
 
 ### 16.1 工作量合计与周期换算
 
