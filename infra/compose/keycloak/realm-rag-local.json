@@ -11,10 +11,22 @@
   "ssoSessionMaxLifespan": 36000,
   "roles": {
     "realm": [
-      { "name": "knowledge-viewer", "description": "只读检索与提问" },
-      { "name": "knowledge-editor", "description": "上传与提交候选" },
-      { "name": "knowledge-reviewer", "description": "审核与发布 Release" },
-      { "name": "platform-admin", "description": "用户、删除、评测与运维控制台" }
+      {
+        "name": "knowledge-viewer",
+        "description": "只读检索与提问"
+      },
+      {
+        "name": "knowledge-editor",
+        "description": "上传与提交候选"
+      },
+      {
+        "name": "knowledge-reviewer",
+        "description": "审核与发布 Release"
+      },
+      {
+        "name": "platform-admin",
+        "description": "用户、删除、评测与运维控制台"
+      }
     ]
   },
   "clients": [
@@ -29,14 +41,46 @@
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://localhost:3000/*"],
-      "webOrigins": ["http://localhost:3000"],
+      "redirectUris": [
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:3000/*"
       },
-      "defaultClientScopes": ["openid", "profile", "email", "roles", "web-origins"]
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "roles",
+        "web-origins"
+      ]
+    },
+    {
+      "clientId": "rag-api",
+      "name": "RAG API（服务端 OIDC 会话，T14a）",
+      "description": "API 侧 Authorization Code + PKCE 回调客户端；不持有 secret，PKCE 即客户端证明",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3001/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:3001",
+        "http://localhost:3000"
+      ]
     }
   ],
-  "defaultDefaultClientScopes": ["openid", "profile", "email", "roles", "web-origins"]
+  "defaultDefaultClientScopes": [
+    "openid",
+    "profile",
+    "email",
+    "roles",
+    "web-origins"
+  ]
 }
