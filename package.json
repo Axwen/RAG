@@ -55,6 +55,7 @@
     "@vitest/coverage-v8": "4.1.11",
     "eslint": "10.9.1",
     "eslint-config-prettier": "10.1.8",
+    "jose": "6.2.12",
     "prettier": "3.9.6",
     "typescript": "6.0.3",
     "typescript-eslint": "8.69.0",

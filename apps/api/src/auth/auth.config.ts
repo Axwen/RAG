@@ -18,6 +18,12 @@ const authEnvSchema = z.object({
   AUTH_API_BASE_URL: z.url().default('http://localhost:3001'),
   /** OIDC client_id；rag-api 是 init-keycloak.sh 预建的公共客户端（PKCE）。 */
   AUTH_CLIENT_ID: z.string().min(1).default('rag-api'),
+  /**
+   * 对 Keycloak 的单次 HTTP 超时（毫秒）。不可用有两种形态：连接被拒
+   * （立即失败）和网络黑洞（SYN 被丢，fetch 默认要挂 10 秒以上）——
+   * 后者必须有显式超时，否则登录请求长时间悬而不决。
+   */
+  AUTH_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().max(30_000).default(5_000),
   KEYCLOAK_BASE_URL: z.url().default('http://localhost:8080'),
   KEYCLOAK_REALM: z.string().min(1).default('rag-local'),
 })
@@ -30,6 +36,8 @@ export interface AuthConfig {
   readonly clientId: string
   readonly keycloakBaseUrl: string
   readonly keycloakRealm: string
+  /** 对 Keycloak 的单次 HTTP 超时（毫秒）。 */
+  readonly requestTimeoutMs: number
   /** ID token 的期望 issuer（iss 声明）。 */
   readonly issuer: string
   /** Authorization 端点与 token 端点（OIDC discovery 的标准路径）。 */
@@ -47,6 +55,7 @@ export function parseAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfi
     AUTH_SESSION_TTL_SECONDS: env.AUTH_SESSION_TTL_SECONDS ?? 3600,
     AUTH_API_BASE_URL: env.AUTH_API_BASE_URL ?? 'http://localhost:3001',
     AUTH_CLIENT_ID: env.AUTH_CLIENT_ID ?? 'rag-api',
+    AUTH_REQUEST_TIMEOUT_MS: env.AUTH_REQUEST_TIMEOUT_MS ?? 5_000,
     KEYCLOAK_BASE_URL: env.KEYCLOAK_BASE_URL ?? 'http://localhost:8080',
     KEYCLOAK_REALM: env.KEYCLOAK_REALM ?? 'rag-local',
   })
@@ -59,6 +68,7 @@ export function parseAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfi
     clientId: parsed.AUTH_CLIENT_ID,
     keycloakBaseUrl: base,
     keycloakRealm: realm,
+    requestTimeoutMs: parsed.AUTH_REQUEST_TIMEOUT_MS,
     issuer: `${base}/realms/${realm}`,
     authorizeUrl: `${base}/realms/${realm}/protocol/openid-connect/auth`,
     tokenUrl: `${base}/realms/${realm}/protocol/openid-connect/token`,
