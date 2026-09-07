@@ -37,11 +37,16 @@ interface FakeBusinessUser {
 function fakeTx(users: readonly FakeBusinessUser[]): Tx {
   return {
     businessUser: {
-      async findUnique({ where }: { where: { issuer_subject: { issuer: string; subject: string } } }) {
+      async findUnique({
+        where,
+      }: {
+        where: { issuer_subject: { issuer: string; subject: string } }
+      }) {
         return (
           users.find(
             (u) =>
-              u.issuer === where.issuer_subject.issuer && u.subject === where.issuer_subject.subject,
+              u.issuer === where.issuer_subject.issuer &&
+              u.subject === where.issuer_subject.subject,
           ) ?? null
         )
       },
@@ -62,7 +67,11 @@ describe('loadIdentityContext', () => {
         email: 'agent@example.test',
         status: 'ACTIVE',
         tenantMemberships: [
-          { tenantId: 't1', status: 'ACTIVE', tenantRole: { id: 'r0', code: 'tenant-admin', name: '租户管理员' } },
+          {
+            tenantId: 't1',
+            status: 'ACTIVE',
+            tenantRole: { id: 'r0', code: 'tenant-admin', name: '租户管理员' },
+          },
         ],
         workspaceMemberships: [
           {
@@ -133,9 +142,7 @@ describe('loadIdentityContext', () => {
         displayName: '部分撤权用户',
         email: null,
         status: 'ACTIVE',
-        tenantMemberships: [
-          { tenantId: 't1', status: 'REVOKED', tenantRole: null },
-        ],
+        tenantMemberships: [{ tenantId: 't1', status: 'REVOKED', tenantRole: null }],
         workspaceMemberships: [
           {
             workspaceId: 'w1',

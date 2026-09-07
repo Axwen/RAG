@@ -52,7 +52,7 @@ describe('Prisma schema 边界', () => {
   })
 
   it('T1a 领域模型已加入且所有业务表都带 tenantId（§4.1 最高隔离域）', () => {
-    const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((m) => m[1])
+    const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((m) => m[1]!)
     expect(models).toEqual(
       expect.arrayContaining([
         'Tenant',

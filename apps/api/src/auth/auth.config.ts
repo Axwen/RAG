@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { parsePort } from '@rag/config'
 
 /**
  * auth 模块配置（T14a）：启动时一次解析、fail-fast，运行时不从环境热改

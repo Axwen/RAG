@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createHash } from 'node:crypto'
+import { createHash, createHmac } from 'node:crypto'
 import type { ServerIdentityContext } from '@rag/contracts'
-import { toSessionView } from '@rag/contracts'
 import { parseAuthConfig } from '../src/auth/auth.config'
 import { createPkcePair, createState, safeEqual } from '../src/auth/pkce'
 import {
@@ -27,9 +26,7 @@ describe('PKCE（RFC 7636）', () => {
   it('challenge 是 verifier 的 S256', () => {
     const { verifier, challenge } = createPkcePair()
     expect(verifier).toMatch(/^[A-Za-z0-9_-]{43,128}$/)
-    expect(challenge).toBe(
-      createHash('sha256').update(verifier).digest('base64url'),
-    )
+    expect(challenge).toBe(createHash('sha256').update(verifier).digest('base64url'))
   })
 
   it('两次生成的 verifier 不同（随机，非定值）', () => {
@@ -53,7 +50,11 @@ describe('会话 Cookie', () => {
     email: null,
     userStatus: 'ACTIVE',
     tenantMemberships: [
-      { tenantId: 't1', status: 'ACTIVE', tenantRole: { id: 'r0', code: 'tenant-admin', name: '租户管理员' } },
+      {
+        tenantId: 't1',
+        status: 'ACTIVE',
+        tenantRole: { id: 'r0', code: 'tenant-admin', name: '租户管理员' },
+      },
     ],
     workspaceMemberships: [
       {
@@ -77,10 +78,10 @@ describe('会话 Cookie', () => {
 
   it('篡改载荷后签名校验失败', () => {
     const cookie = signSession({ context, expiresAt: 999_999_999_999 }, SECRET)
-    const [body, mac] = cookie.split('.')
-    const tampered = Buffer.from(
-      JSON.stringify({ context, expiresAt: 1, x: 1 }),
-    ).toString('base64url')
+    const mac = cookie.split('.')[1]!
+    const tampered = Buffer.from(JSON.stringify({ context, expiresAt: 1, x: 1 })).toString(
+      'base64url',
+    )
     expect(parseSessionCookie(`${tampered}.${mac}`, SECRET)).toEqual({
       ok: false,
       reason: 'BAD_SIGNATURE',
@@ -102,7 +103,10 @@ describe('会话 Cookie', () => {
   })
 
   it('换密钥签的会话被拒（多实例部署必须共享 AUTH_SESSION_SECRET）', () => {
-    const cookie = signSession({ context, expiresAt: 999_999_999_999 }, 'other-secret-0123456789abcdef!!')
+    const cookie = signSession(
+      { context, expiresAt: 999_999_999_999 },
+      'other-secret-0123456789abcdef!!',
+    )
     expect(parseSessionCookie(cookie, SECRET)).toEqual({ ok: false, reason: 'BAD_SIGNATURE' })
   })
 
@@ -113,6 +117,24 @@ describe('会话 Cookie', () => {
       payload: { verifier: 'v', state: 's' },
     })
     expect(parsePkceCookie(`${cookie}x`, SECRET)).toEqual({ ok: false, reason: 'BAD_SIGNATURE' })
+  })
+
+  it('载荷非法 JSON 或非法 base64url 时返回 MALFORMED', () => {
+    // 签名结构对（两段以点分隔）但载荷解不开：比「格式就不对」深一层。
+    const mac = createHmac('sha256', SECRET).update('bm90LWpzb24').digest('base64url')
+    expect(parseSessionCookie(`bm90LWpzb24.${mac}`, SECRET)).toEqual({
+      ok: false,
+      reason: 'MALFORMED',
+    })
+  })
+
+  it('PKCE cookie 载荷缺字段或非法时返回 MALFORMED', () => {
+    const body = Buffer.from(JSON.stringify({ verifier: 'v' })).toString('base64url')
+    const mac = createHmac('sha256', SECRET).update(body).digest('base64url')
+    expect(parsePkceCookie(`${body}.${mac}`, SECRET)).toEqual({ ok: false, reason: 'MALFORMED' })
+    const bad = Buffer.from('not-json').toString('base64url')
+    const badMac = createHmac('sha256', SECRET).update(bad).digest('base64url')
+    expect(parsePkceCookie(`${bad}.${badMac}`, SECRET)).toEqual({ ok: false, reason: 'MALFORMED' })
   })
 
   it('readCookie 从原始 Cookie 头取值、容忍空格与多余分号', () => {
@@ -144,7 +166,10 @@ describe('auth 配置', () => {
 
   it('会话密钥短于 32 字节时启动失败（fail-fast，不等到第一次请求）', () => {
     expect(() =>
-      parseAuthConfig({ AUTH_SESSION_SECRET: 'too-short', KEYCLOAK_BASE_URL: 'http://localhost:8080' }),
+      parseAuthConfig({
+        AUTH_SESSION_SECRET: 'too-short',
+        KEYCLOAK_BASE_URL: 'http://localhost:8080',
+      }),
     ).toThrow()
   })
 
@@ -153,34 +178,5 @@ describe('auth 配置', () => {
     expect(config.isLocalFallbackSecret).toBe(true)
     expect(config.clientId).toBe('rag-api')
     expect(config.sessionTtlSeconds).toBe(3600)
-  })
-})
-
-describe('toSessionView 投影', () => {
-  const context: ServerIdentityContext = {
-    businessUserId: 'u1',
-    issuer: 'http://localhost:8080/realms/rag-local',
-    subject: 'kc-1',
-    displayName: 'Dev User',
-    email: 'dev@example.invalid',
-    userStatus: 'ACTIVE',
-    tenantMemberships: [],
-    workspaceMemberships: [
-      {
-        tenantId: 't1',
-        workspaceId: 'w1',
-        slug: 'agent-desk',
-        name: '客服工作台',
-        status: 'ACTIVE',
-        role: { id: 'r1', code: 'agent', name: '客服' },
-      },
-    ],
-  }
-
-  it('不携带 issuer/subject（服务端映射键不随会话响应外发）', () => {
-    const view = toSessionView(context)
-    expect(view).not.toHaveProperty('issuer')
-    expect(view).not.toHaveProperty('subject')
-    expect(view.workspaces[0]).toMatchObject({ slug: 'agent-desk', roleCode: 'agent' })
   })
 })

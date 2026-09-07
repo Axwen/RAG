@@ -12,10 +12,7 @@ import { parseAuthConfig } from './auth.config'
  * PrismaService 来自全局 PrismaModule。
  */
 @Module({
-  providers: [
-    { provide: AUTH_CONFIG, useFactory: parseAuthConfig },
-    AuthService,
-  ],
+  providers: [{ provide: AUTH_CONFIG, useFactory: parseAuthConfig }, AuthService],
   controllers: [AuthController],
 })
 export class AuthModule {}

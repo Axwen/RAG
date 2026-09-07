@@ -67,10 +67,7 @@ export async function loadIdentityContext(
         slug: m.workspace.slug,
         name: m.workspace.name,
         status: m.status,
-        role:
-          m.role === null
-            ? null
-            : { id: m.role.id, code: m.role.code, name: m.role.name },
+        role: m.role === null ? null : { id: m.role.id, code: m.role.code, name: m.role.name },
       })),
     },
   }

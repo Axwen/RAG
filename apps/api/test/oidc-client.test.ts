@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { parseAuthConfig } from '../src/auth/auth.config'
 import { KeycloakUnavailableError, OidcClient } from '../src/auth/oidc-client'
