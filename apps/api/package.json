@@ -21,6 +21,7 @@
     "@rag/database": "workspace:*",
     "@rag/observability": "workspace:*",
     "@rag/rag-core": "workspace:*",
+    "jose": "^6.2.12",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "zod": "4.5.4"
