@@ -3,7 +3,7 @@ import type { ServerIdentityContext } from '@rag/contracts'
 import { loadIdentityContext } from '@rag/database'
 import { parseAuthConfig } from '../src/auth/auth.config'
 import { AuthService } from '../src/auth/auth.service'
-import type { OidcClient } from '../src/auth/oidc-client'
+import { KeycloakUnavailableError, type OidcClient } from '../src/auth/oidc-client'
 
 /**
  * AuthService 的编排逻辑（T14a）。
@@ -14,7 +14,7 @@ import type { OidcClient } from '../src/auth/oidc-client'
  */
 
 vi.mock('@rag/database', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@rag/database')>()
+  const actual = await importOriginal<Record<string, unknown>>()
   return { ...actual, loadIdentityContext: vi.fn() }
 })
 
@@ -71,6 +71,15 @@ describe('AuthService.buildLoginRequest', () => {
   })
 })
 
+describe('AuthService.sessionView', () => {
+  it('返回契约的会话投影', () => {
+    const service = makeService({})
+    const view = service.sessionView(context)
+    expect(view.businessUserId).toBe('u1')
+    expect(view).not.toHaveProperty('issuer')
+  })
+})
+
 describe('AuthService.establishIdentity', () => {
   it('state 不匹配时拒绝（CSRF 防线在进 Keycloak 之前）', async () => {
     const service = makeService({
@@ -91,31 +100,31 @@ describe('AuthService.establishIdentity', () => {
     const service = makeService({})
     const result = await service.establishIdentity('code', 'verifier', 'st', 'st')
     expect(result).toEqual(context)
-    expect(loadIdentityMock).toHaveBeenCalledWith(
-      expect.anything(),
-      { issuer: config.issuer, subject: 'kc-1' },
-    )
+    expect(loadIdentityMock).toHaveBeenCalledWith(expect.anything(), {
+      issuer: config.issuer,
+      subject: 'kc-1',
+    })
   })
 
   it('身份被拒（未建档/禁用）抛 IdentityRejectedError', async () => {
     loadIdentityMock.mockResolvedValue({ ok: false, reason: 'USER_DISABLED' })
     const service = makeService({})
-    await expect(
-      service.establishIdentity('code', 'verifier', 'st', 'st'),
-    ).rejects.toMatchObject({ name: 'IdentityRejectedError', reason: 'USER_DISABLED' })
+    await expect(service.establishIdentity('code', 'verifier', 'st', 'st')).rejects.toMatchObject({
+      name: 'IdentityRejectedError',
+      reason: 'USER_DISABLED',
+    })
   })
 
   it('Keycloak 不可用原样传播（由控制器映射 503）', async () => {
-    const { KeycloakUnavailableError } = await import('../src/auth/oidc-client')
     const service = makeService({
       exchangeCode: vi.fn(async () => {
         throw new KeycloakUnavailableError(new Error('ECONNREFUSED'))
       }),
     })
     loadIdentityMock.mockResolvedValue({ ok: true, context })
-    await expect(
-      service.establishIdentity('code', 'verifier', 'st', 'st'),
-    ).rejects.toBeInstanceOf(KeycloakUnavailableError)
+    await expect(service.establishIdentity('code', 'verifier', 'st', 'st')).rejects.toBeInstanceOf(
+      KeycloakUnavailableError,
+    )
     // 不可用发生在身份装配之前。
     expect(loadIdentityMock).not.toHaveBeenCalled()
   })

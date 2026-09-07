@@ -41,23 +41,13 @@
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": [
-        "http://localhost:3000/*"
-      ],
-      "webOrigins": [
-        "http://localhost:3000"
-      ],
+      "redirectUris": ["http://localhost:3000/*"],
+      "webOrigins": ["http://localhost:3000"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:3000/*"
       },
-      "defaultClientScopes": [
-        "openid",
-        "profile",
-        "email",
-        "roles",
-        "web-origins"
-      ]
+      "defaultClientScopes": ["openid", "profile", "email", "roles", "web-origins"]
     },
     {
       "clientId": "rag-api",
@@ -67,20 +57,9 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": [
-        "http://localhost:3001/auth/callback"
-      ],
-      "webOrigins": [
-        "http://localhost:3001",
-        "http://localhost:3000"
-      ]
+      "redirectUris": ["http://localhost:3001/auth/callback"],
+      "webOrigins": ["http://localhost:3001", "http://localhost:3000"]
     }
   ],
-  "defaultDefaultClientScopes": [
-    "openid",
-    "profile",
-    "email",
-    "roles",
-    "web-origins"
-  ]
+  "defaultDefaultClientScopes": ["openid", "profile", "email", "roles", "web-origins"]
 }

@@ -11,11 +11,7 @@ import {
 } from '@nestjs/common'
 import type { CookieOptions, Request, Response } from 'express'
 import { ApiErrorException } from '../common/api-error.exception'
-import {
-  AuthService,
-  IdentityRejectedError,
-  InvalidStateException,
-} from './auth.service'
+import { AuthService, IdentityRejectedError, InvalidStateException } from './auth.service'
 import { KeycloakUnavailableError } from './oidc-client'
 import type { AuthConfig } from './auth.config'
 import { AUTH_CONFIG } from './auth.providers'
@@ -100,7 +96,12 @@ export class AuthController {
       throw new ApiErrorException('UNAUTHORIZED', '登录会话不存在或已过期')
     }
     try {
-      const context = await this.auth.establishIdentity(code, pkce.payload.verifier, pkce.payload.state, state)
+      const context = await this.auth.establishIdentity(
+        code,
+        pkce.payload.verifier,
+        pkce.payload.state,
+        state,
+      )
       const expiresAt = Math.floor(Date.now() / 1000) + this.config.sessionTtlSeconds
       res.cookie(
         SESSION_COOKIE_NAME,

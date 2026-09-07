@@ -62,11 +62,23 @@ const STAFF_DESK_ID = '018f0000-0000-7000-8000-0000000000a8'
  * 不改已发布码的含义（能力码是稳定契约，改名等于新码）。
  */
 const PERMISSION_CATALOG: ReadonlyArray<{ id: string; code: string; name: string }> = [
-  { id: '018f0000-0000-7000-8000-0000000000b1', code: 'document.upload', name: '上传文档与提交候选' },
-  { id: '018f0000-0000-7000-8000-0000000000b2', code: 'document.review', name: '审核候选与批准 Manifest' },
+  {
+    id: '018f0000-0000-7000-8000-0000000000b1',
+    code: 'document.upload',
+    name: '上传文档与提交候选',
+  },
+  {
+    id: '018f0000-0000-7000-8000-0000000000b2',
+    code: 'document.review',
+    name: '审核候选与批准 Manifest',
+  },
   { id: '018f0000-0000-7000-8000-0000000000b3', code: 'answer.run', name: '发起检索与回答' },
   { id: '018f0000-0000-7000-8000-0000000000b4', code: 'release.approve', name: '批准 Release' },
-  { id: '018f0000-0000-7000-8000-0000000000b5', code: 'admin.users.manage', name: '管理业务用户与成员关系' },
+  {
+    id: '018f0000-0000-7000-8000-0000000000b5',
+    code: 'admin.users.manage',
+    name: '管理业务用户与成员关系',
+  },
 ]
 
 /** dev 用户跨三个 Workspace 承担不同角色（ADR-0039 决策 3 的多 Workspace 事实）。 */

@@ -25,10 +25,7 @@ export interface SessionPayload {
 export const SESSION_COOKIE_NAME = 'rag_session'
 export const PKCE_COOKIE_NAME = 'rag_pkce'
 
-export function signSession(
-  payload: SessionPayload,
-  secret: string,
-): string {
+export function signSession(payload: SessionPayload, secret: string): string {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url')
   const mac = createHmac('sha256', secret).update(body).digest('base64url')
   return `${body}.${mac}`
@@ -60,7 +57,10 @@ export function parseSessionCookie(
   } catch {
     return { ok: false, reason: 'MALFORMED' }
   }
-  if (typeof payload.expiresAt !== 'number' || Math.floor(now.getTime() / 1000) >= payload.expiresAt) {
+  if (
+    typeof payload.expiresAt !== 'number' ||
+    Math.floor(now.getTime() / 1000) >= payload.expiresAt
+  ) {
     return { ok: false, reason: 'EXPIRED' }
   }
   return { ok: true, payload }
@@ -98,10 +98,7 @@ export type PkceCookieParseResult =
   | { readonly ok: true; readonly payload: PkceCookiePayload }
   | { readonly ok: false; readonly reason: 'MALFORMED' | 'BAD_SIGNATURE' }
 
-export function parsePkceCookie(
-  cookie: string | undefined,
-  secret: string,
-): PkceCookieParseResult {
+export function parsePkceCookie(cookie: string | undefined, secret: string): PkceCookieParseResult {
   if (cookie === undefined || cookie.length === 0) return { ok: false, reason: 'MALFORMED' }
   const dot = cookie.lastIndexOf('.')
   if (dot <= 0) return { ok: false, reason: 'MALFORMED' }

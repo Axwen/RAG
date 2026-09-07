@@ -91,9 +91,7 @@ export class InvalidStateException extends Error {
 }
 
 export class IdentityRejectedError extends Error {
-  constructor(
-    readonly reason: 'USER_NOT_FOUND' | 'USER_DISABLED',
-  ) {
+  constructor(readonly reason: 'USER_NOT_FOUND' | 'USER_DISABLED') {
     super('身份校验未通过')
     this.name = 'IdentityRejectedError'
   }

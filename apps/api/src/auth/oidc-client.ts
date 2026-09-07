@@ -18,9 +18,7 @@ export const KEYCLOAK_UNAVAILABLE = 'KEYCLOAK_UNAVAILABLE' as const
 export class KeycloakUnavailableError extends Error {
   readonly code = KEYCLOAK_UNAVAILABLE
   constructor(cause: unknown) {
-    super(
-      `Keycloak 不可用：${cause instanceof Error ? cause.message : String(cause)}`,
-    )
+    super(`Keycloak 不可用：${cause instanceof Error ? cause.message : String(cause)}`)
     this.name = 'KeycloakUnavailableError'
     this.cause = cause
   }
@@ -112,7 +110,10 @@ export class OidcClient {
       claims = verified.payload
     } catch (cause) {
       if (cause instanceof KeycloakUnavailableError) throw cause
-      throw new Error(`ID token 校验失败：${cause instanceof Error ? cause.message : String(cause)}`)
+      throw new Error(
+        `ID token 校验失败：${cause instanceof Error ? cause.message : String(cause)}`,
+        { cause },
+      )
     }
     if (typeof claims.iss !== 'string' || typeof claims.sub !== 'string') {
       throw new Error('ID token 缺少 iss 或 sub 声明')

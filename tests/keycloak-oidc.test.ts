@@ -19,10 +19,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
  * 是同一组 HTTP 往返，验证的是协议而不是页面。
  */
 
-const baseUrl = (process.env['KEYCLOAK_BASE_URL'] ?? 'http://localhost:8080').replace(
-  /\/+$/,
-  '',
-)
+const baseUrl = (process.env['KEYCLOAK_BASE_URL'] ?? 'http://localhost:8080').replace(/\/+$/, '')
 const realm = process.env['KEYCLOAK_REALM'] ?? 'rag-local'
 const issuer = `${baseUrl}/realms/${realm}`
 const adminUser = process.env['KEYCLOAK_ADMIN'] ?? 'admin'
@@ -92,7 +89,10 @@ async function adminApi(): Promise<AdminToken> {
     },
     setAccessTokenLifespan: async (seconds) => {
       // 读-改-写整个 realm 表示：PATCH 不被 Admin API 接受。
-      const current = await (await fetch(`${api}`, { headers: auth })).json()
+      const current = (await (await fetch(`${api}`, { headers: auth })).json()) as Record<
+        string,
+        unknown
+      >
       const res = await fetch(`${api}`, {
         method: 'PUT',
         headers: { ...auth, 'content-type': 'application/json' },
@@ -106,9 +106,8 @@ async function adminApi(): Promise<AdminToken> {
       // parentId 必须是 realm 的**内部 id**（UUID），不是 realm 名：这个
       // realm 由 Admin API 创建，内部 id 与名字不一致；给错爹的组件会被
       // 静默接受（201）但密钥永远不进 realm 的密钥集。
-      const realmId = ((await (
-        await fetch(`${api}`, { headers: auth })
-      ).json()) as { id: string }).id
+      const realmId = ((await (await fetch(`${api}`, { headers: auth })).json()) as { id: string })
+        .id
       const res = await fetch(`${api}/components`, {
         method: 'POST',
         headers: { ...auth, 'content-type': 'application/json' },
@@ -137,7 +136,10 @@ async function adminApi(): Promise<AdminToken> {
 }
 
 /** 走登录表单完成 Authorization Code + PKCE，返回授权码。 */
-async function authorizeWithPkce(username: string, password: string): Promise<{
+async function authorizeWithPkce(
+  username: string,
+  password: string,
+): Promise<{
   code: string
   verifier: string
 }> {
@@ -180,7 +182,10 @@ async function authorizeWithPkce(username: string, password: string): Promise<{
   return { code, verifier }
 }
 
-async function exchangeCode(code: string, verifier: string): Promise<{
+async function exchangeCode(
+  code: string,
+  verifier: string,
+): Promise<{
   idToken: string
   refreshToken: string
 }> {
@@ -265,9 +270,11 @@ describe('Keycloak OIDC 集成（T14a 七类场景之五）', () => {
   it('JWKS 轮换：新增高优先级密钥后，同一 JWKS 客户端自动重取并验签新 token', async () => {
     // kid 在 JWT 第一段（header）；payload 里没有它。
     const kidOf = (idToken: string): string =>
-      (JSON.parse(Buffer.from(idToken.split('.')[0]!, 'base64url').toString()) as {
-        kid: string
-      }).kid
+      (
+        JSON.parse(Buffer.from(idToken.split('.')[0]!, 'base64url').toString()) as {
+          kid: string
+        }
+      ).kid
 
     // 先取一把旧 token，建 JWKS 客户端（缓存初始密钥集）。
     const before = await authorizeWithPkce(
@@ -280,10 +287,7 @@ describe('Keycloak OIDC 集成（T14a 七类场景之五）', () => {
 
     await admin.addGeneratedRsaKey(keyName)
 
-    const after = await authorizeWithPkce(
-      devUsername,
-      requireEnv('DEV_USER_PASSWORD', devPassword),
-    )
+    const after = await authorizeWithPkce(devUsername, requireEnv('DEV_USER_PASSWORD', devPassword))
     const afterTokens = await exchangeCode(after.code, after.verifier)
     const afterKid = kidOf(afterTokens.idToken)
 
@@ -304,16 +308,11 @@ describe('Keycloak OIDC 集成（T14a 七类场景之五）', () => {
     const { idToken } = await exchangeCode(code, verifier)
     await new Promise((resolve) => setTimeout(resolve, 2_500))
     const jwks = createRemoteJWKSet(new URL(`${issuer}/protocol/openid-connect/certs`))
-    await expect(
-      jwtVerify(idToken, jwks, { issuer, audience: clientId }),
-    ).rejects.toThrow(/exp/)
+    await expect(jwtVerify(idToken, jwks, { issuer, audience: clientId })).rejects.toThrow(/exp/)
   })
 
   it('用户禁用：refresh 被拒；恢复启用后可重新登录', async () => {
-    const first = await authorizeWithPkce(
-      devUsername,
-      requireEnv('DEV_USER_PASSWORD', devPassword),
-    )
+    const first = await authorizeWithPkce(devUsername, requireEnv('DEV_USER_PASSWORD', devPassword))
     const { refreshToken } = await exchangeCode(first.code, first.verifier)
 
     await admin.disableUser(devUserId)
