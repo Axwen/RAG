@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { ServerIdentityContext } from '@rag/contracts'
 import { parseAuthConfig } from '../src/auth/auth.config'
 import { AuthController } from '../src/auth/auth.controller'
-import { AuthService, IdentityRejectedError, InvalidStateException } from '../src/auth/auth.service'
+import type { AuthService } from '../src/auth/auth.service'
+import { IdentityRejectedError, InvalidStateException } from '../src/auth/auth.service'
 import { KeycloakUnavailableError } from '../src/auth/oidc-client'
 import {
   PKCE_COOKIE_NAME,
@@ -46,11 +47,14 @@ interface Recorded {
 }
 
 /** 最小 Response 桩；initialCookie 会出现在 req.headers.cookie（回调读 PKCE 用）。 */
-function fakeResponse(initialCookie?: string): { res: Record<string, unknown>; recorded: Recorded } {
+function fakeResponse(initialCookie?: string): {
+  res: Record<string, unknown>
+  recorded: Recorded
+} {
   const recorded: Recorded = { cookies: [], cleared: [] }
   const res: Record<string, unknown> = {
     cookie(name: string, value: string, options?: Record<string, unknown>) {
-      recorded.cookies.push({ name, value, options })
+      recorded.cookies.push(options === undefined ? { name, value } : { name, value, options })
     },
     clearCookie(name: string) {
       recorded.cleared.push(name)
@@ -206,10 +210,7 @@ describe('AuthController.session / logout', () => {
   it('无会话 cookie 映射 UNAUTHORIZED', () => {
     const controller = makeController(async () => context)
     const { res } = fakeResponse()
-    expectApiError(
-      () => controller.session({ headers: {} } as never, res as never),
-      'UNAUTHORIZED',
-    )
+    expectApiError(() => controller.session({ headers: {} } as never, res as never), 'UNAUTHORIZED')
   })
 
   it('有效会话返回投影', () => {

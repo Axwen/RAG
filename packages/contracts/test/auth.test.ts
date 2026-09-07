@@ -64,7 +64,13 @@ describe('toSessionView', () => {
       { tenantId: 't2', tenantRoleCode: null },
     ])
     expect(view.workspaces).toEqual([
-      { tenantId: 't1', workspaceId: 'w1', slug: 'agent-desk', name: '客服工作台', roleCode: 'agent' },
+      {
+        tenantId: 't1',
+        workspaceId: 'w1',
+        slug: 'agent-desk',
+        name: '客服工作台',
+        roleCode: 'agent',
+      },
       { tenantId: 't1', workspaceId: 'w2', slug: 'eng-desk', name: '研发工作台', roleCode: null },
     ])
   })
