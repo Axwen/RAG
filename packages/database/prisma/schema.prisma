@@ -10,6 +10,8 @@
 // - T3：Outbox 与事件投递事实
 // - T12a：model_budget_ledger 模型预算账本（ADR-0029）
 // - T11a：domain_audit_event 同步领域审计（ADR-0040）
+// - T14a：业务身份 7 张表——BusinessUser/TenantMembership/Workspace/
+//   WorkspaceMembership/Role/Permission/RolePermission（ADR-0039）
 //
 // 边界约定（ADR-0036 §4）：
 // - 所有表都带 tenantId；租户是最高隔离域，即使阶段 1 只有一个租户。
@@ -138,6 +140,38 @@ enum AuditOutcome {
   RECLAIMED
 }
 
+// ─── 业务身份（ADR-0039 / T14a）─────────────────────────────────────
+// 身份层的两张跨租户表（business_users、permissions）不带 tenantId：
+// 同一 BusinessUser 可加入多个租户（ADR-0039 决策 3），主体表挂租户就
+// 表达不了这件事；能力权限码是全局稳定字典，也不按租户复制。
+// 这是身份层对「所有表都带 tenantId」（ADR-0036 §4）的唯一偏离，租户
+// 隔离由两张 membership 表的 (tenantId, …) 唯一约束与租户级外键承担。
+
+// BusinessUser 的业务状态：DISABLED 由业务库记录（ADR-0039 决策 1，
+// 不依赖 Keycloak 侧禁用）；禁用后所有成员关系失效，重新启用不恢复
+// 期间被撤销的成员关系。
+enum BusinessUserStatus {
+  ACTIVE
+  DISABLED
+}
+
+// 成员关系状态：SUSPENDED 是可恢复的暂停（保留关系，暂时无权），
+// REVOKED 是终态撤权（ADR-0039：撤权必须由业务库记录并审计）。
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+// 角色的作用域：TENANT 角色由 TenantMembership 引用（租户级管理），
+// WORKSPACE 角色由 WorkspaceMembership 引用（工作台角色）。引用侧的
+// 匹配由应用层校验并测试钉住——Prisma 不支持带条件的 FK，DB 层不强求。
+enum RoleScope {
+  TENANT
+  WORKSPACE
+}
+
+
 // ─── 租户与知识空间（§4.1）────────────────────────────────────────────
 
 model Tenant {
@@ -155,6 +189,9 @@ model Tenant {
   releaseManifests    ReleaseManifest[]
   budgetLedgerEntries ModelBudgetLedger[]
   domainAuditEvents   DomainAuditEvent[]
+  tenantMemberships   TenantMembership[]
+  workspaces          Workspace[]
+  roles               Role[]
 
   @@map("tenants")
 }
@@ -448,4 +485,133 @@ model DomainAuditEvent {
   @@index([tenantId, occurredAt])
   @@index([tenantId, category, occurredAt])
   @@map("domain_audit_event")
+}
+
+// ─── 业务身份（ADR-0039 / T14a）─────────────────────────────────────
+// OIDC 只证明主体是谁，业务身份事实全在本库（ADR-0039 决策 1）。
+// 7 张表：BusinessUser / TenantMembership / Workspace / WorkspaceMembership /
+// Role / Permission / RolePermission。成员→角色的绑定内嵌在两张 membership
+// 表上（多角色 = 多条成员关系，不存在全局唯一业务角色）；同 Workspace 多
+// 角色是扩展点，阶段 1 不建 UserRole 关联表。
+
+// 本系统的业务主体主表：以 (issuer, subject) 唯一映射 Keycloak 身份。
+// email 只作展示，可变且不参与任何键（ADR-0039 决策 1）；不保存密码。
+model BusinessUser {
+  id          String             @id @default(uuid(7)) @db.Uuid
+  // 外部身份映射键：Keycloak 的 iss + sub，两者都不可变。
+  issuer      String
+  subject     String
+  displayName String
+  email       String?
+  status      BusinessUserStatus @default(ACTIVE)
+  createdAt   DateTime           @default(now()) @db.Timestamptz(6)
+  tenantMemberships   TenantMembership[]
+  workspaceMemberships WorkspaceMembership[]
+
+  @@unique([issuer, subject])
+  @@map("business_users")
+}
+
+// 业务用户与租户的成员关系；tenantRoleId 指向 scope=TENANT 的角色
+// （租户级管理能力），普通成员可以为 null。
+model TenantMembership {
+  id              String           @id @default(uuid(7)) @db.Uuid
+  tenantId        String           @db.Uuid
+  businessUserId  String           @db.Uuid
+  status          MembershipStatus @default(ACTIVE)
+  tenantRoleId    String?          @db.Uuid
+  createdAt       DateTime         @default(now()) @db.Timestamptz(6)
+  revokedAt       DateTime?        @db.Timestamptz(6)
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  businessUser    BusinessUser     @relation(fields: [businessUserId], references: [id])
+  tenantRole      Role?            @relation("TenantMembershipsByRole", fields: [tenantRoleId], references: [id])
+
+  @@unique([tenantId, businessUserId])
+  @@unique([tenantId, id])
+  @@index([businessUserId])
+  @@map("tenant_memberships")
+}
+
+// 角色工作台（客服/研发/普通员工是不同的 Workspace，不是全局角色，
+// ADR-0002/0039）。Workspace 是租户内实体，走租户级外键口径。
+model Workspace {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @db.Uuid
+  slug      String
+  name      String
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  members   WorkspaceMembership[]
+
+  @@unique([tenantId, slug])
+  @@unique([tenantId, id])
+  @@map("workspaces")
+}
+
+// 业务用户与 Workspace 的成员关系；roleId 指向 scope=WORKSPACE 的角色。
+// 切换 Workspace 不继承上一 Workspace 的资源范围（ADR-0039 决策 3），
+// 所以身份上下文装配必须按 Workspace 分别取角色，不合并。
+model WorkspaceMembership {
+  id             String           @id @default(uuid(7)) @db.Uuid
+  tenantId       String           @db.Uuid
+  workspaceId    String           @db.Uuid
+  businessUserId String           @db.Uuid
+  status         MembershipStatus @default(ACTIVE)
+  roleId         String?          @db.Uuid
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+  revokedAt      DateTime?        @db.Timestamptz(6)
+  workspace      Workspace        @relation(fields: [tenantId, workspaceId], references: [tenantId, id])
+  businessUser   BusinessUser     @relation(fields: [businessUserId], references: [id])
+  role           Role?            @relation("WorkspaceMembershipsByRole", fields: [roleId], references: [id])
+
+  @@unique([workspaceId, businessUserId])
+  @@unique([tenantId, id])
+  @@index([businessUserId])
+  @@map("workspace_memberships")
+}
+
+// 功能角色。code 在租户内稳定（如 'tenant-admin' / 'agent' / 'engineer'）；
+// scope 决定它被哪张 membership 表引用（见 RoleScope 注释）。
+model Role {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  tenantId  String    @db.Uuid
+  scope     RoleScope
+  code      String
+  name      String
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenantMemberships   TenantMembership[]  @relation("TenantMembershipsByRole")
+  workspaceMemberships WorkspaceMembership[] @relation("WorkspaceMembershipsByRole")
+  permissions         RolePermission[]
+
+  @@unique([tenantId, scope, code])
+  @@unique([tenantId, id])
+  @@map("roles")
+}
+
+// 稳定能力权限码的全局字典（如 'document.upload'）。只判断「能否执行
+// 操作」，不参与 acl_scope_key 编译（ADR-0039 决策 2）。
+model Permission {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  code        String
+  name        String
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  roles       RolePermission[]
+
+  @@unique([code])
+  @@map("permissions")
+}
+
+// 角色→能力权限码绑定。能力权限的语义在 T14b 的统一授权入口生效，
+// 本批只落数据模型与种子。
+model RolePermission {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  roleId       String   @db.Uuid
+  permissionId String   @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  role         Role     @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
 }
