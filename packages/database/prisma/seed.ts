@@ -37,11 +37,16 @@ const PIPELINE_ID = '018f0000-0000-7000-8000-000000000033'
 const PARTITION_ID = '018f0000-0000-7000-8000-000000000020'
 
 // ─── T14a 业务身份种子（ADR-0039）───────────────────────────────────
-// issuer 是本地 Keycloak 的 realm 地址（compose 默认 KEYCLOAK_BASE_URL + realm）；
-// subject 与 init-keycloak.sh 的 DEV_USER_ID 同源——那个脚本按固定 UUID 建 realm 用户，
-// 这边按同一个 UUID 预置 BusinessUser 映射，两边改一处另一处必须跟着改（有 schema-boundary
-// 之外的口径一致性，改动时同步 init-keycloak.sh）。
-const IDENTITY_ISSUER = 'http://localhost:8080/realms/rag-local'
+// issuer 从 KEYCLOAK_BASE_URL/KEYCLOAK_REALM 推导（loadRootEnv 已在 seed() 开头
+// 载入 .env）——与 auth 模块 parseAuthConfig 的推导同一条规则，两边都不硬编码端口：
+// 本机 KEYCLOAK_PORT 可能是 8081 而不是默认 8080，种子写死任何一侧都会让
+// (issuer, subject) 映射键对不上。subject 与 init-keycloak.sh 的 DEV_USER_ID
+// 同源，改动时两边一起改。
+function identityIssuer(): string {
+  const base = (process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:8080').replace(/\/+$/, '')
+  const realm = process.env.KEYCLOAK_REALM ?? 'rag-local'
+  return `${base}/realms/${realm}`
+}
 const DEV_USER_SUBJECT = '018f0000-0000-7000-8000-00000000a001'
 const BUSINESS_USER_ID = '018f0000-0000-7000-8000-0000000000a1'
 const TENANT_ADMIN_ROLE_ID = '018f0000-0000-7000-8000-0000000000a2'
@@ -330,7 +335,7 @@ async function seed(): Promise<void> {
       where: { id: BUSINESS_USER_ID },
       create: {
         id: BUSINESS_USER_ID,
-        issuer: IDENTITY_ISSUER,
+        issuer: identityIssuer(),
         subject: DEV_USER_SUBJECT,
         displayName: 'Dev User',
         email: 'dev@example.invalid',
