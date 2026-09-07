@@ -44,3 +44,8 @@
 | [0038](0038-vlm-parser-backend-and-multimodal-scope.md) | accepted | 阶段 1 多模态解析范围重定：DeepDOC OCR 与 Office 库提取，VLM 后置 | - |
 | [0039](0039-business-identity-and-unified-authorization.md) | accepted | 业务身份体系与统一授权入口：外部身份与业务用户分离，能力权限与资源策略分层 | 细化 0002、0026；不改 0036、0037 |
 | [0040](0040-domain-audit-and-runtime-telemetry.md) | accepted | 领域审计与运行遥测分载体：审计同事务写 PostgreSQL，遥测走 Outbox，原因码中央注册 | 细化 0035 第 13 行；不改 0034 第 11 行 |
+| [0041](0041-modality-neutral-evidence-and-citation.md) | accepted | 模态无关 Evidence、Locator 与 Citation | 修订 0011、0021、0027、0030 |
+| [0042](0042-embedding-channel-and-index-identity.md) | accepted | Embedding Channel 属于索引身份，文档分块与视频分段分离 | 修订 0017、0028、0031、0037 |
+| [0043](0043-provider-run-and-runtime-adapter-boundary.md) | accepted | ProviderRun、JobEvent 与 Web/本地运行时适配边界 | 修订 0024、0038 |
+| [0044](0044-retrieval-evaluation-and-video-readiness.md) | accepted | Retrieval Candidate、Temporal Grounding 与 Video RAG 评测门禁 | 修订 0033、0035 |
+| [0045](0045-shared-media-engine-and-three-repository-boundary.md) | accepted | 共享 Rust Media Engine 与 Web/Desktop 三仓库边界 | 修订 0001、0014、0024、0043 |
