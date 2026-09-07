@@ -37,11 +37,17 @@ export interface TokenClaims {
 }
 
 /** 用 fetch 收敛网络错误：Keycloak 掉线时抛 KeycloakUnavailableError 而不是 TypeError。 */
-async function fetchOrUnavailable(url: string, init: RequestInit): Promise<Response> {
+async function fetchOrUnavailable(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
   let response: Response
   try {
-    response = await fetch(url, init)
+    response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
   } catch (cause) {
+    // 连接被拒、DNS 失败、超时（含网络黑洞——SYN 被丢时 fetch 会挂到默认
+    // 10 秒以上）都是「依赖不可用」，对调用方是同一个 503。
     throw new KeycloakUnavailableError(cause)
   }
   return response
@@ -69,11 +75,15 @@ export class OidcClient {
       redirect_uri: this.config.redirectUri,
       code_verifier: codeVerifier,
     })
-    const response = await fetchOrUnavailable(this.config.tokenUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body,
-    })
+    const response = await fetchOrUnavailable(
+      this.config.tokenUrl,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body,
+      },
+      this.config.requestTimeoutMs,
+    )
     if (!response.ok) {
       // 400 = code 过期/已用/verifier 不符：这是调用方可见的失败，不是依赖不可用。
       const detail = await response.text()
