@@ -67,8 +67,12 @@ describe('Prisma schema 边界', () => {
         'ReleaseManifest',
       ]),
     )
+    // 身份层的跨租户表（ADR-0039 决策 3，见「身份层只有两张跨租户表」那条）：
+    // Tenant 是租户本身，BusinessUser/Permission 是主体与全局权限字典；
+    // RolePermission 的租户谓词经 roleId → Role.tenantId，表上不重复租户列。
+    const crossTenant = new Set(['Tenant', 'BusinessUser', 'Permission', 'RolePermission'])
     for (const model of models) {
-      if (model === 'Tenant') {
+      if (crossTenant.has(model)) {
         continue
       }
       const body = schema.slice(schema.indexOf(`model ${model} {`))
@@ -171,6 +175,36 @@ describe('审计契约与库结构不漂移（ADR-0040 / T11a）', () => {
     expect(enumValues('BudgetPool')).toEqual(['INTERACTIVE', 'EVALUATION', 'RESERVE'])
     expect(enumValues('BudgetCostSource')).toEqual(['PROVIDER', 'ESTIMATED'])
     expect(enumValues('BudgetReleaseReason')).toEqual(['GATED', 'CANCELLED_BEFORE_DISPATCH'])
+  })
+
+  it('身份枚举与契约包的字面量逐值同序（ADR-0039 / T14a）', () => {
+    // 与 AuditCategory 同一原因：契约包不 import Prisma 生成类型，两处各写一份，
+    // 顺序即契约（enum 排序影响 ORDER BY 结果）。
+    expect(enumValues('BusinessUserStatus')).toEqual(['ACTIVE', 'DISABLED'])
+    expect(enumValues('MembershipStatus')).toEqual(['ACTIVE', 'SUSPENDED', 'REVOKED'])
+    expect(enumValues('RoleScope')).toEqual(['TENANT', 'WORKSPACE'])
+  })
+
+  it('身份层只有两张跨租户表，其余身份表都带租户谓词（ADR-0039 决策 3）', () => {
+    // business_users（主体可入多租户）与 permissions（全局权限字典）是仅有的例外，
+    // 出现第三张不带 tenantId 的身份表就必须先补 ADR。
+    // RolePermission 的租户谓词走 roleId → Role.tenantId，表上不重复租户列。
+    for (const name of ['TenantMembership', 'Workspace', 'WorkspaceMembership', 'Role']) {
+      const model = schema.slice(schema.indexOf(`model ${name} {`))
+      const body = model.slice(0, model.indexOf('\n}'))
+      expect(body, `model ${name} 缺少 tenantId`).toMatch(/tenantId\s+String\s+@db\.Uuid/)
+    }
+    // 跨租户表的存在性也钉住：删掉任何一张都会让映射或权限字典失去落点。
+    for (const name of ['BusinessUser', 'Permission', 'RolePermission']) {
+      expect(schema).toContain(`model ${name} {`)
+    }
+  })
+
+  it('成员→角色绑定内嵌在 membership 表上，没有 UserRole 关联表', () => {
+    // 7 张表是 ADR-0039 定下的最小模型；多出来的关联表说明「同 Workspace 多角色」
+    // 这个扩展点被顺手实现了，而它需要先改 ADR 再改估算。
+    expect(schema).not.toMatch(/^model UserRole\b/m)
+    expect(enumValues('RoleScope')).toEqual(['TENANT', 'WORKSPACE'])
   })
 
   it('回收任务要走的索引以 status 开头', () => {
