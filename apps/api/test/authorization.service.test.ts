@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AuthorizationDecision, AuthorizationRequest } from '@rag/contracts'
+import type { AuthorizationRequest } from '@rag/contracts'
 import {
   compileAllowedScopes,
   recheckCandidates,
@@ -33,7 +33,10 @@ const scopesMock = vi.mocked(compileAllowedScopes)
 const recheckMock = vi.mocked(recheckCandidates)
 const auditMock = vi.mocked(writeAuditEvent)
 
-function makeService(): { service: AuthorizationService; prisma: { $transaction: ReturnType<typeof vi.fn> } } {
+function makeService(): {
+  service: AuthorizationService
+  prisma: { $transaction: ReturnType<typeof vi.fn> }
+} {
   const prisma = { $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})) }
   return { service: new AuthorizationService(prisma as never), prisma }
 }
@@ -49,7 +52,7 @@ beforeEach(() => {
   scopesMock.mockReset()
   recheckMock.mockReset()
   auditMock.mockReset()
-  auditMock.mockResolvedValue(undefined)
+  auditMock.mockResolvedValue({ auditEventId: 'evt-1' })
 })
 
 describe('能力层', () => {
@@ -67,10 +70,16 @@ describe('能力层', () => {
   it('成员失效与能力缺失都拒绝 CAPABILITY_MISSING（对调用方同一个原因）', async () => {
     capabilitiesMock.mockResolvedValue({ ok: false, reason: 'NO_ACTIVE_TENANT_MEMBERSHIP' })
     const { service } = makeService()
-    expect(await service.authorize(request)).toEqual({ allowed: false, reason: 'CAPABILITY_MISSING' })
+    expect(await service.authorize(request)).toEqual({
+      allowed: false,
+      reason: 'CAPABILITY_MISSING',
+    })
 
     capabilitiesMock.mockResolvedValue({ ok: true, capabilities: new Set(['document.upload']) })
-    expect(await service.authorize(request)).toEqual({ allowed: false, reason: 'CAPABILITY_MISSING' })
+    expect(await service.authorize(request)).toEqual({
+      allowed: false,
+      reason: 'CAPABILITY_MISSING',
+    })
     expect(auditMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ reasonCode: 'authz.capability_denied', outcome: 'DENIED' }),
@@ -94,17 +103,29 @@ describe('资源层', () => {
     })
     const { service } = makeService()
     expect(await service.authorize(resourceRequest)).toEqual({ allowed: true })
-    expect(scopesMock).toHaveBeenCalledWith(expect.anything(), { businessUserId: 'u1', tenantId: 't1' })
+    expect(scopesMock).toHaveBeenCalledWith(expect.anything(), {
+      businessUserId: 'u1',
+      tenantId: 't1',
+    })
   })
 
   it('资源不在作用域 → SCOPE_DENIED，成员失效同样 SCOPE_DENIED（不区分泄漏存在性）', async () => {
     capabilitiesMock.mockResolvedValue({ ok: true, capabilities: new Set(['answer.run']) })
-    scopesMock.mockResolvedValue({ ok: true, scopes: { aclRevision: 3, scopeKeys: ['t:t1:ks:other'] } })
+    scopesMock.mockResolvedValue({
+      ok: true,
+      scopes: { aclRevision: 3, scopeKeys: ['t:t1:ks:other'] },
+    })
     const { service } = makeService()
-    expect(await service.authorize(resourceRequest)).toEqual({ allowed: false, reason: 'SCOPE_DENIED' })
+    expect(await service.authorize(resourceRequest)).toEqual({
+      allowed: false,
+      reason: 'SCOPE_DENIED',
+    })
 
     scopesMock.mockResolvedValue({ ok: false, reason: 'NO_ACTIVE_TENANT_MEMBERSHIP' })
-    expect(await service.authorize(resourceRequest)).toEqual({ allowed: false, reason: 'SCOPE_DENIED' })
+    expect(await service.authorize(resourceRequest)).toEqual({
+      allowed: false,
+      reason: 'SCOPE_DENIED',
+    })
     expect(auditMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ reasonCode: 'authz.scope_denied', outcome: 'DENIED' }),
@@ -152,7 +173,10 @@ describe('fail closed 纪律', () => {
     auditMock.mockRejectedValue(new Error('audit down'))
     const { service } = makeService()
     // 不抛：拒绝已成立。
-    expect(await service.authorize(request)).toEqual({ allowed: false, reason: 'CAPABILITY_MISSING' })
+    expect(await service.authorize(request)).toEqual({
+      allowed: false,
+      reason: 'CAPABILITY_MISSING',
+    })
   })
 
   it('允许路径的审计写失败必须不放行（向上抛，调用方得到 5xx）', async () => {

@@ -43,7 +43,11 @@ function fakeReader(world: FakeWorld): Tx {
       },
     },
     tenantMembership: {
-      async findUnique({ where }: { where: { tenantId_businessUserId: { tenantId: string; businessUserId: string } } }) {
+      async findUnique({
+        where,
+      }: {
+        where: { tenantId_businessUserId: { tenantId: string; businessUserId: string } }
+      }) {
         const found = world.tenantMemberships.find(
           (m) =>
             m.tenantId === where.tenantId_businessUserId.tenantId &&
@@ -63,7 +67,11 @@ function fakeReader(world: FakeWorld): Tx {
       },
     },
     workspaceMembership: {
-      async findUnique({ where }: { where: { workspaceId_businessUserId: { workspaceId: string; businessUserId: string } } }) {
+      async findUnique({
+        where,
+      }: {
+        where: { workspaceId_businessUserId: { workspaceId: string; businessUserId: string } }
+      }) {
         const found = world.workspaceMemberships.find(
           (m) =>
             m.workspaceId === where.workspaceId_businessUserId.workspaceId &&
@@ -72,16 +80,25 @@ function fakeReader(world: FakeWorld): Tx {
         // 返回 Prisma 的嵌套形状：代码读 workspace.tenantId，不是扁平字段。
         return found === null || found === undefined
           ? null
-          : { workspace: { tenantId: found.workspaceTenantId }, status: found.status, role: found.role }
+          : {
+              workspace: { tenantId: found.workspaceTenantId },
+              status: found.status,
+              role: found.role,
+            }
       },
     },
     documentVersion: {
-      async findMany({ where }: { where: { tenantId: string; id: { in: string[] }; document?: { knowledgeSpaceId: string } } }) {
+      async findMany({
+        where,
+      }: {
+        where: { tenantId: string; id: { in: string[] }; document?: { knowledgeSpaceId: string } }
+      }) {
         return world.documentVersions.filter(
           (v) =>
             v.tenantId === where.tenantId &&
             where.id.in.includes(v.id) &&
-            (where.document === undefined || v.knowledgeSpaceId === where.document.knowledgeSpaceId),
+            (where.document === undefined ||
+              v.knowledgeSpaceId === where.document.knowledgeSpaceId),
         )
       },
     },
@@ -148,9 +165,7 @@ describe('resolveCapabilities', () => {
     // 不指定 workspace：只看租户级（客服角色不叠加）。
     expect(plain.ok && [...plain.capabilities]).toEqual(['answer.run', 'document.upload'])
 
-    world.tenantMemberships = [
-      { ...world.tenantMemberships[0]!, tenantRole: null },
-    ]
+    world.tenantMemberships = [{ ...world.tenantMemberships[0]!, tenantRole: null }]
     const noRole = await resolveCapabilities(fakeReader(world), {
       businessUserId: USER,
       tenantId: TENANT,
@@ -163,15 +178,15 @@ describe('resolveCapabilities', () => {
     const reader = fakeReader(world)
 
     world.users = [{ id: USER, status: 'DISABLED' }]
-    expect(await resolveCapabilities(reader, { businessUserId: USER, tenantId: TENANT })).toMatchObject(
-      { ok: false, reason: 'USER_DISABLED' },
-    )
+    expect(
+      await resolveCapabilities(reader, { businessUserId: USER, tenantId: TENANT }),
+    ).toMatchObject({ ok: false, reason: 'USER_DISABLED' })
     world.users = [{ id: USER, status: 'ACTIVE' }]
 
     world.tenantMemberships = [{ ...world.tenantMemberships[0]!, status: 'REVOKED' }]
-    expect(await resolveCapabilities(reader, { businessUserId: USER, tenantId: TENANT })).toMatchObject(
-      { ok: false, reason: 'NO_ACTIVE_TENANT_MEMBERSHIP' },
-    )
+    expect(
+      await resolveCapabilities(reader, { businessUserId: USER, tenantId: TENANT }),
+    ).toMatchObject({ ok: false, reason: 'NO_ACTIVE_TENANT_MEMBERSHIP' })
     world.tenantMemberships = baseWorld().tenantMemberships
 
     // Workspace 属于另一个租户：WORKSPACE_NOT_FOUND（不泄漏它存在于别的租户）。
@@ -185,7 +200,11 @@ describe('resolveCapabilities', () => {
 
     world.workspaceMemberships = [{ ...world.workspaceMemberships[0]!, status: 'SUSPENDED' }]
     expect(
-      await resolveCapabilities(reader, { businessUserId: USER, tenantId: TENANT, workspaceId: 'w1' }),
+      await resolveCapabilities(reader, {
+        businessUserId: USER,
+        tenantId: TENANT,
+        workspaceId: 'w1',
+      }),
     ).toMatchObject({ ok: false, reason: 'NO_ACTIVE_WORKSPACE_MEMBERSHIP' })
   })
 
@@ -218,13 +237,15 @@ describe('compileAllowedScopes', () => {
     const world = baseWorld()
     const reader = fakeReader(world)
     world.tenantMemberships = [{ ...world.tenantMemberships[0]!, status: 'SUSPENDED' }]
-    expect(await compileAllowedScopes(reader, { businessUserId: USER, tenantId: TENANT })).toMatchObject(
-      { ok: false, reason: 'NO_ACTIVE_TENANT_MEMBERSHIP' },
-    )
-    world.tenantMemberships = [{ ...world.tenantMemberships[0]!, status: 'ACTIVE', businessUserStatus: 'DISABLED' }]
-    expect(await compileAllowedScopes(reader, { businessUserId: USER, tenantId: TENANT })).toMatchObject(
-      { ok: false, reason: 'USER_DISABLED' },
-    )
+    expect(
+      await compileAllowedScopes(reader, { businessUserId: USER, tenantId: TENANT }),
+    ).toMatchObject({ ok: false, reason: 'NO_ACTIVE_TENANT_MEMBERSHIP' })
+    world.tenantMemberships = [
+      { ...world.tenantMemberships[0]!, status: 'ACTIVE', businessUserStatus: 'DISABLED' },
+    ]
+    expect(
+      await compileAllowedScopes(reader, { businessUserId: USER, tenantId: TENANT }),
+    ).toMatchObject({ ok: false, reason: 'USER_DISABLED' })
   })
 })
 
@@ -249,7 +270,10 @@ describe('recheckCandidates', () => {
 
   it('指定知识空间时，其它空间的候选同租户也拒', async () => {
     const world = baseWorld()
-    world.documentVersions.push({ id: 'dv4', tenantId: TENANT, knowledgeSpaceId: 'ks2' })
+    world.documentVersions = [
+      ...world.documentVersions,
+      { id: 'dv4', tenantId: TENANT, knowledgeSpaceId: 'ks2' },
+    ]
     const result = await recheckCandidates(fakeReader(world), {
       tenantId: TENANT,
       knowledgeSpaceId: 'ks2',

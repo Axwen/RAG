@@ -5,8 +5,10 @@
 # 500"这类回归（T0 遗留缺陷正是这样溜过去的）。这个脚本用编译产物真起进程、打真实
 # HTTP、再对进程输出做日志断言，是 CI 里唯一覆盖"跑起来对不对"的一环。
 #
-# 三类断言：
-#   1. HTTP 契约：T1a 领域端点的状态码、错误信封五字段、内容寻址幂等
+# 四类断言：
+#   1. HTTP 契约：T1a 领域端点的状态码、错误信封五字段、内容寻址幂等；
+#      T14b 起领域端点受 IdentityGuard 保护——先走 OIDC 登录拿会话 cookie，
+#      无会话请求必须 401，请求体 tenantId 已退场
 #   2. 日志结构：每行都是 JSON、带 level/time/service，框架日志也走 pino
 #      （响应体与日志行共享 trace_id 由 apps/api/test/global-exception-filter.test.ts 断言，
 #       冒烟里无法在不加故障注入路由的前提下触发 500）
@@ -107,17 +109,128 @@ expect() {
   if [[ "${got}" == "${want}" ]]; then pass "${what}"; else fail "${what}（期望 ${want}，实得 ${got}）"; fi
 }
 
+# ── 0. 会话：OIDC 登录拿 cookie（T14b 起 manifests 全部受保护） ──────────────
+echo "▶ 会话（OIDC 授权码 + PKCE，devuser）"
+
+# 无会话先验一条：领域端点必须 401 信封（守卫在 HTTP 层的证据）。
+# 用裸 curl：带会话 cookie 的 req() 要等登录完成后才定义。
+NOSESSION_STATUS="$(curl -sS -X POST -o "${BODY}" -w '%{http_code}' \
+  -H 'content-type: application/json' --data-binary '{"version": 1}' \
+  "${BASE}/manifests/ingestion" || echo 000)"
+expect "无会话请求领域端点 -> 401" "${NOSESSION_STATUS}" 401
+expect "无会话错误码 UNAUTHORIZED" "$(jget code)" UNAUTHORIZED
+
+# 走 API 的 /auth/login：PKCE 的 verifier/challenge 由 API 生成并种在自己的
+# pkce cookie 里——脚本不自己碰 PKCE，模拟的就是浏览器行为。
+#   /auth/login（API_JAR 收 pkce cookie）→ Keycloak 登录表单 → POST 凭据
+#   → 302 带 code → /auth/callback（携 pkce cookie）→ 会话 cookie 落 API_JAR
+DEV_USER_NAME="$(sed -nE 's/^DEV_USER_NAME=(.+)$/\1/p' .env | tail -1)"
+DEV_USER_NAME="${DEV_USER_NAME:-dev}"
+DEV_USER_PASSWORD="$(sed -nE 's/^DEV_USER_PASSWORD=(.+)$/\1/p' .env | tail -1)"
+
+KC_JAR="${TMP}/kc-jar.txt"
+API_JAR="${TMP}/api-jar.txt"
+LOGIN_HTML="${TMP}/kc-login.html"
+
+AUTHORIZE_URL="$(curl -sS -c "${API_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' "${BASE}/auth/login")"
+if [[ "${AUTHORIZE_URL}" != *"protocol/openid-connect/auth"* ]]; then
+  echo "❌ /auth/login 未重定向到 Keycloak（实得 ${AUTHORIZE_URL:0:120}）" >&2
+  exit 1
+fi
+pass "/auth/login 302 到 Keycloak authorize"
+
+curl -sS -c "${KC_JAR}" --max-time 15 "${AUTHORIZE_URL}" -o "${LOGIN_HTML}"
+LOGIN_ACTION="$(python3 -c '
+import html, re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"action=\"([^\"]+)\"", text)
+print(html.unescape(m.group(1)) if m else "")
+' "${LOGIN_HTML}")"
+if [[ -z "${LOGIN_ACTION}" ]]; then
+  echo "❌ Keycloak 登录页解析失败（authorize 页无 form action）" >&2
+  exit 1
+fi
+
+CALLBACK_LOCATION="$(curl -sS -b "${KC_JAR}" -c "${KC_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  --data-urlencode "username=${DEV_USER_NAME}" \
+  --data-urlencode "password=${DEV_USER_PASSWORD}" \
+  --data-urlencode 'credentialId=' \
+  "${LOGIN_ACTION}")"
+CALLBACK_CODE="$(python3 -c '
+import sys, urllib.parse
+q = urllib.parse.urlparse(sys.argv[1]).query
+print(urllib.parse.parse_qs(q).get("code", [""])[0])
+' "${CALLBACK_LOCATION}")"
+if [[ -z "${CALLBACK_CODE}" ]]; then
+  echo "❌ 授权码获取失败（location=${CALLBACK_LOCATION:0:120}）" >&2
+  exit 1
+fi
+
+CB1_STATUS="$(curl -sS -b "${API_JAR}" -c "${API_JAR}" -o "${BODY}" -w '%{http_code}' \
+  "${BASE}/auth/callback?code=${CALLBACK_CODE}" || echo 000)"
+expect "OIDC 回调 -> 200 会话视图" "${CB1_STATUS}" 200
+if python3 -c "import json,sys; sys.exit(0 if 'workspaces' in json.load(open('${BODY}')) else 1)"; then
+  pass "会话视图含 Workspace 投影"
+else
+  fail "会话视图缺少 Workspace 投影"
+fi
+if python3 -c "import json,sys; sys.exit(0 if 'issuer' not in json.load(open('${BODY}')) else 1)"; then
+  pass "会话视图不外发 issuer/subject"
+else
+  fail "会话视图泄漏 issuer/subject"
+fi
+
+# req() 已消费 code（一次性）。再走一遍完整 login 流程，把会话 cookie 落进
+# API_JAR 供后续领域请求使用——second pass 的 code 是新的，合法。
+AUTHORIZE_URL2="$(curl -sS -c "${API_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' "${BASE}/auth/login")"
+curl -sS -c "${KC_JAR}" --max-time 15 "${AUTHORIZE_URL2}" -o "${LOGIN_HTML}"
+LOGIN_ACTION2="$(python3 -c '
+import html, re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"action=\"([^\"]+)\"", text)
+print(html.unescape(m.group(1)) if m else "")
+' "${LOGIN_HTML}")"
+CALLBACK_LOCATION2="$(curl -sS -b "${KC_JAR}" -c "${KC_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  --data-urlencode "username=${DEV_USER_NAME}" \
+  --data-urlencode "password=${DEV_USER_PASSWORD}" \
+  --data-urlencode 'credentialId=' \
+  "${LOGIN_ACTION2}")"
+CALLBACK_CODE2="$(python3 -c '
+import sys, urllib.parse
+q = urllib.parse.urlparse(sys.argv[1]).query
+print(urllib.parse.parse_qs(q).get("code", [""])[0])
+' "${CALLBACK_LOCATION2}")"
+CB_STATUS="$(curl -sS -c "${API_JAR}" --max-time 15 -o /dev/null -w '%{http_code}' \
+  "${BASE}/auth/callback?code=${CALLBACK_CODE2}")"
+expect "第二次回调（取会话 cookie）-> 200" "${CB_STATUS}" 200
+
+# req() 从此带上会话 cookie（登录完成，覆盖前面的无 cookie 定义）
+req() {
+  local method="$1" path="$2" data="${3-}" ; shift 3 || shift $#
+  local args=(-sS -X "${method}" -o "${BODY}" -w '%{http_code}' -b "${API_JAR}" "${BASE}${path}")
+  if [[ -n "${data}" ]]; then
+    args+=(-H 'content-type: application/json' --data-binary "${data}")
+  fi
+  args+=("$@")
+  STATUS="$(curl "${args[@]}" || echo 000)"
+}
+
+# 会话自检：领域请求从此可用
+req GET /auth/session ''
+expect "GET /auth/session -> 200" "${STATUS}" 200
+expect "会话视图租户管理员" "$(python3 -c "import json; print(json.load(open('${BODY}'))['tenants'][0]['tenantRoleCode'])")" tenant-admin
+
 # ── 1. HTTP 契约断言 ─────────────────────────────────────────────────────────
 echo "▶ HTTP 契约"
 
-TENANT='018f0000-0000-7000-8000-000000000001'   # 开发种子租户（packages/database/prisma/seed.ts）
 STAMP="$(date +%s)"
 
 # 内容寻址幂等：同一份 body 两次写入必须拿到同一个 id
 ING_BODY="$(python3 -c '
 import json, sys
 print(json.dumps({
-  "tenantId": sys.argv[1],
   "version": int(sys.argv[2]) % 2000000000,
   "parserRef": "deepdoc@1.0.0",
   "chunkerRef": "wide-1024@1.0.0",
@@ -125,13 +238,14 @@ print(json.dumps({
   "indexSchemaRef": "rag-chunk@1.0.0",
   "parseBackend": "deepdoc",
   "sourceFormats": ["pdf", "md"],
-}))' "${TENANT}" "${STAMP}")"
+}))' "${STAMP}")"
 
 req POST /manifests/ingestion "${ING_BODY}"
 expect "POST /manifests/ingestion -> 201" "${STATUS}" 201
 ING_ID="$(jget id)"
 ING_STATUS="$(jget status)"
 expect "新建 Manifest 初始态 DRAFT" "${ING_STATUS}" DRAFT
+expect "租户来自服务端身份（种子租户）" "$(jget tenantId)" '018f0000-0000-7000-8000-000000000001'
 
 req POST /manifests/ingestion "${ING_BODY}"
 ING_ID_2="$(jget id)"
@@ -148,12 +262,12 @@ expect "重复 approve 幂等 200（不是 500 check_violation）" "${STATUS}" 2
 req POST /manifests/retrieval "$(python3 -c '
 import json, sys
 print(json.dumps({
-  "tenantId": sys.argv[1], "version": 1,
+  "version": 1,
   "sparsePolicy": {"bm25": True},
   "vectorPolicy": {"channels": [{"name": "dense", "embeddingRef": "e@1.0.0", "dimension": 1024}]},
   "fusionPolicy": {"rrf": True}, "rerankerRef": "r@1.0.0",
   "candidateBudget": 2048,
-}))' "${TENANT}")"
+}))')"
 expect "candidateBudget=2048 -> 400" "${STATUS}" 400
 expect "错误码 VALIDATION_ERROR" "$(jget code)" VALIDATION_ERROR
 expect "param 指向 candidateBudget" "$(jget param)" candidateBudget
@@ -173,7 +287,7 @@ req GET /this-route-does-not-exist ''
 expect "未定义路由 -> 404" "${STATUS}" 404
 expect "未定义路由走信封而非 Nest 默认" "$(jget code)" NOT_FOUND
 
-req POST /manifests/ingestion '{"tenantId": "oops"'
+req POST /manifests/ingestion '{"version": "oops"'
 expect "畸形 JSON -> 400" "${STATUS}" 400
 expect "畸形 JSON 走信封" "$(jget code)" VALIDATION_ERROR
 

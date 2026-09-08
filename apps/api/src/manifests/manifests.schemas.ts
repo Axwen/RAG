@@ -11,10 +11,13 @@ import {
  *
  * rerankInputSize/candidateBudget 由 Manifest 固化（种子写 64 / 冻结 1024），
  * 不接受环境变量或前端覆盖（PROBE-005 裁决）。
+ *
+ * tenantId 已于 T14b 从请求体退场（T14 DoD）：租户只从服务端身份上下文
+ * 推导（IdentityGuard），请求体携带的 tenantId 被忽略——zod 默认 strip
+ * 未知键，「不生效」由测试钉住。
  */
 
 export const ingestionManifestCreateSchema = z.object({
-  tenantId: z.uuid(),
   version: z.number().int().positive(),
   parserRef: z.string().min(1),
   chunkerRef: z.string().min(1),
@@ -25,7 +28,6 @@ export const ingestionManifestCreateSchema = z.object({
 })
 
 export const retrievalManifestCreateSchema = z.object({
-  tenantId: z.uuid(),
   version: z.number().int().positive(),
   sparsePolicy: z.record(z.string(), z.unknown()),
   vectorPolicy: z
@@ -53,7 +55,6 @@ export const retrievalManifestCreateSchema = z.object({
 })
 
 export const answerManifestCreateSchema = z.object({
-  tenantId: z.uuid(),
   version: z.number().int().positive(),
   promptRef: z.string().min(1),
   modelRouteRef: z.string().min(1),
@@ -63,7 +64,6 @@ export const answerManifestCreateSchema = z.object({
 })
 
 export const pipelineManifestCreateSchema = z.object({
-  tenantId: z.uuid(),
   version: z.number().int().positive(),
   ingestionManifestId: z.uuid(),
   retrievalManifestId: z.uuid(),
@@ -71,7 +71,6 @@ export const pipelineManifestCreateSchema = z.object({
 })
 
 export const releaseManifestCreateSchema = z.object({
-  tenantId: z.uuid(),
   knowledgeSpaceId: z.uuid(),
   indexPartitionId: z.uuid(),
   ingestionManifestId: z.uuid(),

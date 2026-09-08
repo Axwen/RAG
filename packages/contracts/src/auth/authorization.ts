@@ -11,7 +11,8 @@
  */
 
 /** 拒绝原因。对应审计码 authz.capability_denied / authz.scope_denied / authz.dependency_unavailable。 */
-export type AuthorizationDenialReason = 'CAPABILITY_MISSING' | 'SCOPE_DENIED' | 'DEPENDENCY_UNAVAILABLE'
+export type AuthorizationDenialReason =
+  'CAPABILITY_MISSING' | 'SCOPE_DENIED' | 'DEPENDENCY_UNAVAILABLE'
 
 /** 统一授权入口的判定结果。允许时无附加载荷：能力明细不外发，判定本身即契约。 */
 export type AuthorizationDecision =
@@ -36,7 +37,11 @@ export interface AuthorizationRequest {
 /** 阶段 1 参与资源策略的资源类型：知识空间与文档版本（其余域按 ADR-0039 扩展点处理）。 */
 export type AuthorizationResource =
   | { readonly kind: 'knowledge_space'; readonly knowledgeSpaceId: string }
-  | { readonly kind: 'document_version'; readonly knowledgeSpaceId: string; readonly documentVersionId: string }
+  | {
+      readonly kind: 'document_version'
+      readonly knowledgeSpaceId: string
+      readonly documentVersionId: string
+    }
 
 /**
  * `acl_scope_key`（ADR-0026/0037）：索引侧与查询侧共用的稳定过滤键。
