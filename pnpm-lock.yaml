@@ -19,6 +19,9 @@ importers:
       '@rag/config':
         specifier: workspace:*
         version: link:packages/config
+      '@rag/contracts':
+        specifier: workspace:*
+        version: link:packages/contracts
       '@rag/database':
         specifier: workspace:*
         version: link:packages/database
