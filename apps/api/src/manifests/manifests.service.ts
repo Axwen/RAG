@@ -22,7 +22,10 @@ import type {
 } from './manifests.schemas'
 
 /**
- * Manifest 领域服务（T1a）。
+ * Manifest 领域服务（T1a；T14b 起租户上下文由调用方从服务端身份推导传入）。
+ *
+ * 所有按 id 的读取与写入都带租户谓词（T14 DoD）：跨租户的 id 得到
+ * NOT_FOUND 而不是 FORBIDDEN——后者会确认该 id 在别的租户存在。
  *
  * 只提供领域命令：注册（DRAFT）与批准（DRAFT -> APPROVED），不提供通用
  * PATCH status。APPROVED 后内容不可变——字段变化必须新建，数据库
@@ -37,10 +40,10 @@ type ManifestModel =
 export class ManifestsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createIngestion(input: IngestionManifestCreateInput) {
+  async createIngestion(tenantId: string, input: IngestionManifestCreateInput) {
     const content: IngestionManifestContent = {
       kind: 'ingestion',
-      tenantId: input.tenantId,
+      tenantId: tenantId,
       version: input.version,
       parserRef: input.parserRef,
       chunkerRef: input.chunkerRef,
@@ -53,7 +56,7 @@ export class ManifestsService {
     return this.prisma.ingestionManifest
       .create({
         data: {
-          tenantId: input.tenantId,
+          tenantId: tenantId,
           version: input.version,
           parserRef: input.parserRef,
           chunkerRef: input.chunkerRef,
@@ -67,20 +70,20 @@ export class ManifestsService {
       .catch(
         idempotentByContentHash(() =>
           this.prisma.ingestionManifest.findFirst({
-            where: { tenantId: input.tenantId, contentHash: hash },
+            where: { tenantId: tenantId, contentHash: hash },
           }),
         ),
       )
   }
 
-  async approveIngestion(id: string) {
-    return this.approve('ingestionManifest', id)
+  async approveIngestion(tenantId: string, id: string) {
+    return this.approve('ingestionManifest', tenantId, id)
   }
 
-  async createRetrieval(input: RetrievalManifestCreateInput) {
+  async createRetrieval(tenantId: string, input: RetrievalManifestCreateInput) {
     const content: RetrievalManifestContent = {
       kind: 'retrieval',
-      tenantId: input.tenantId,
+      tenantId: tenantId,
       version: input.version,
       sparsePolicy: input.sparsePolicy,
       vectorPolicy: input.vectorPolicy,
@@ -93,7 +96,7 @@ export class ManifestsService {
     return this.prisma.retrievalManifest
       .create({
         data: {
-          tenantId: input.tenantId,
+          tenantId: tenantId,
           version: input.version,
           sparsePolicy: input.sparsePolicy as object,
           vectorPolicy: input.vectorPolicy as object,
@@ -107,20 +110,20 @@ export class ManifestsService {
       .catch(
         idempotentByContentHash(() =>
           this.prisma.retrievalManifest.findFirst({
-            where: { tenantId: input.tenantId, contentHash: hash },
+            where: { tenantId: tenantId, contentHash: hash },
           }),
         ),
       )
   }
 
-  async approveRetrieval(id: string) {
-    return this.approve('retrievalManifest', id)
+  async approveRetrieval(tenantId: string, id: string) {
+    return this.approve('retrievalManifest', tenantId, id)
   }
 
-  async createAnswer(input: AnswerManifestCreateInput) {
+  async createAnswer(tenantId: string, input: AnswerManifestCreateInput) {
     const content: AnswerManifestContent = {
       kind: 'answer',
-      tenantId: input.tenantId,
+      tenantId: tenantId,
       version: input.version,
       promptRef: input.promptRef,
       modelRouteRef: input.modelRouteRef,
@@ -132,7 +135,7 @@ export class ManifestsService {
     return this.prisma.answerManifest
       .create({
         data: {
-          tenantId: input.tenantId,
+          tenantId: tenantId,
           version: input.version,
           promptRef: input.promptRef,
           modelRouteRef: input.modelRouteRef,
@@ -145,29 +148,29 @@ export class ManifestsService {
       .catch(
         idempotentByContentHash(() =>
           this.prisma.answerManifest.findFirst({
-            where: { tenantId: input.tenantId, contentHash: hash },
+            where: { tenantId: tenantId, contentHash: hash },
           }),
         ),
       )
   }
 
-  async approveAnswer(id: string) {
-    return this.approve('answerManifest', id)
+  async approveAnswer(tenantId: string, id: string) {
+    return this.approve('answerManifest', tenantId, id)
   }
 
   /**
    * 创建 Pipeline 组合：先做完整三要素兼容校验（同租户、全 APPROVED、
    * 向量通道与 Embedding 一致），违例时拒绝创建，不落半成品。
    */
-  async createPipeline(input: PipelineManifestCreateInput) {
-    const ingestion = await this.requireIngestion(input.ingestionManifestId)
-    const retrieval = await this.requireRetrieval(input.retrievalManifestId)
-    const answer = await this.requireAnswer(input.answerManifestId)
+  async createPipeline(tenantId: string, input: PipelineManifestCreateInput) {
+    const ingestion = await this.requireIngestion(tenantId, input.ingestionManifestId)
+    const retrieval = await this.requireRetrieval(tenantId, input.retrievalManifestId)
+    const answer = await this.requireAnswer(tenantId, input.answerManifestId)
 
     if (
-      ingestion.tenantId !== input.tenantId ||
-      retrieval.tenantId !== input.tenantId ||
-      answer.tenantId !== input.tenantId
+      ingestion.tenantId !== tenantId ||
+      retrieval.tenantId !== tenantId ||
+      answer.tenantId !== tenantId
     ) {
       throw new ApiErrorException(
         'COMPATIBILITY_VIOLATION',
@@ -217,7 +220,7 @@ export class ManifestsService {
 
     const content: PipelineManifestContent = {
       kind: 'pipeline',
-      tenantId: input.tenantId,
+      tenantId: tenantId,
       version: input.version,
       ingestionManifestId: input.ingestionManifestId,
       retrievalManifestId: input.retrievalManifestId,
@@ -227,7 +230,7 @@ export class ManifestsService {
     return this.prisma.pipelineManifest
       .create({
         data: {
-          tenantId: input.tenantId,
+          tenantId: tenantId,
           version: input.version,
           ingestionManifestId: input.ingestionManifestId,
           retrievalManifestId: input.retrievalManifestId,
@@ -243,18 +246,18 @@ export class ManifestsService {
       .catch(
         idempotentByContentHash(() =>
           this.prisma.pipelineManifest.findFirst({
-            where: { tenantId: input.tenantId, contentHash: hash },
+            where: { tenantId: tenantId, contentHash: hash },
           }),
         ),
       )
   }
 
-  async approvePipeline(id: string) {
-    return this.approve('pipelineManifest', id)
+  async approvePipeline(tenantId: string, id: string) {
+    return this.approve('pipelineManifest', tenantId, id)
   }
 
-  async findRelease(id: string) {
-    return this.prisma.releaseManifest.findUnique({ where: { id } })
+  async findRelease(tenantId: string, id: string) {
+    return this.prisma.releaseManifest.findFirst({ where: { id, tenantId } })
   }
 
   /**
@@ -262,18 +265,18 @@ export class ManifestsService {
    * 命令驱动）。校验 Ingestion -> Release 物理字段一致性（§4.3）；同哈希的
    * Release 重复创建是幂等操作。
    */
-  async createRelease(input: ReleaseManifestCreateInput) {
-    const ingestion = await this.requireIngestion(input.ingestionManifestId)
-    const partition = await this.prisma.indexPartition.findUnique({
-      where: { id: input.indexPartitionId },
+  async createRelease(tenantId: string, input: ReleaseManifestCreateInput) {
+    const ingestion = await this.requireIngestion(tenantId, input.ingestionManifestId)
+    const partition = await this.prisma.indexPartition.findFirst({
+      where: { id: input.indexPartitionId, tenantId },
     })
     if (partition === null) {
       throw new ApiErrorException('NOT_FOUND', 'IndexPartition 不存在', {
         param: 'indexPartitionId',
       })
     }
-    const knowledgeSpace = await this.prisma.knowledgeSpace.findUnique({
-      where: { id: input.knowledgeSpaceId },
+    const knowledgeSpace = await this.prisma.knowledgeSpace.findFirst({
+      where: { id: input.knowledgeSpaceId, tenantId },
     })
     if (knowledgeSpace === null) {
       throw new ApiErrorException('NOT_FOUND', 'KnowledgeSpace 不存在', {
@@ -281,10 +284,10 @@ export class ManifestsService {
       })
     }
     if (
-      ingestion.tenantId !== input.tenantId ||
-      partition.tenantId !== input.tenantId ||
+      ingestion.tenantId !== tenantId ||
+      partition.tenantId !== tenantId ||
       partition.knowledgeSpaceId !== input.knowledgeSpaceId ||
-      knowledgeSpace.tenantId !== input.tenantId
+      knowledgeSpace.tenantId !== tenantId
     ) {
       throw new ApiErrorException(
         'COMPATIBILITY_VIOLATION',
@@ -294,7 +297,7 @@ export class ManifestsService {
 
     const content: ReleaseManifestContent = {
       kind: 'release',
-      tenantId: input.tenantId,
+      tenantId: tenantId,
       knowledgeSpaceId: input.knowledgeSpaceId,
       indexPartitionId: input.indexPartitionId,
       ingestionManifestId: input.ingestionManifestId,
@@ -327,7 +330,7 @@ export class ManifestsService {
     // 且开发者只会看到"没有已批准的兼容 Pipeline"，看不到"存在但还是 DRAFT"。
     const candidates = await this.prisma.pipelineManifest.findMany({
       where: {
-        tenantId: input.tenantId,
+        tenantId: tenantId,
         ingestionManifestId: input.ingestionManifestId,
       },
       orderBy: { version: 'desc' },
@@ -364,7 +367,7 @@ export class ManifestsService {
     return this.prisma.releaseManifest
       .create({
         data: {
-          tenantId: input.tenantId,
+          tenantId: tenantId,
           knowledgeSpaceId: input.knowledgeSpaceId,
           indexPartitionId: input.indexPartitionId,
           ingestionManifestId: input.ingestionManifestId,
@@ -382,7 +385,7 @@ export class ManifestsService {
       .catch(
         idempotentByContentHash(() =>
           this.prisma.releaseManifest.findFirst({
-            where: { tenantId: input.tenantId, contentHash: hash },
+            where: { tenantId: tenantId, contentHash: hash },
           }),
         ),
       )
@@ -397,10 +400,10 @@ export class ManifestsService {
    * 500 INTERNAL_ERROR。受影响 0 行只可能是"已经是 APPROVED"（id 不存在已由
    * requireManifest 排除），按幂等返回既有行。
    */
-  private async approve(model: ManifestModel, id: string) {
-    await this.requireManifest(model, id)
+  private async approve(model: ManifestModel, tenantId: string, id: string) {
+    await this.requireManifest(model, tenantId, id)
     const data = { status: 'APPROVED' as const, approvedAt: new Date() }
-    const where = { id, status: 'DRAFT' as const }
+    const where = { id, tenantId, status: 'DRAFT' as const }
     // Prisma 的联合模型代理无法直接调用（updateMany/findUnique 签名互不兼容），
     // 按模型分发保持每条分支的精确类型。
     switch (model) {
@@ -417,49 +420,49 @@ export class ManifestsService {
         await this.prisma.pipelineManifest.updateMany({ where, data })
         break
     }
-    return this.requireManifest(model, id)
+    return this.requireManifest(model, tenantId, id)
   }
 
   /** 联合分发：只取回行并校验存在性，调用方拿到的仍是各模型的精确类型。 */
-  private async requireManifest(model: ManifestModel, id: string) {
+  private async requireManifest(model: ManifestModel, tenantId: string, id: string) {
     switch (model) {
       case 'ingestionManifest':
-        return this.requireIngestion(id)
+        return this.requireIngestion(tenantId, id)
       case 'retrievalManifest':
-        return this.requireRetrieval(id)
+        return this.requireRetrieval(tenantId, id)
       case 'answerManifest':
-        return this.requireAnswer(id)
+        return this.requireAnswer(tenantId, id)
       case 'pipelineManifest':
-        return this.requirePipeline(id)
+        return this.requirePipeline(tenantId, id)
     }
   }
 
-  private async requireIngestion(id: string) {
-    const found = await this.prisma.ingestionManifest.findUnique({ where: { id } })
+  private async requireIngestion(tenantId: string, id: string) {
+    const found = await this.prisma.ingestionManifest.findFirst({ where: { id, tenantId } })
     if (found === null) {
       throw new ApiErrorException('NOT_FOUND', 'ingestionManifest 不存在', { param: 'id' })
     }
     return found
   }
 
-  private async requireRetrieval(id: string) {
-    const found = await this.prisma.retrievalManifest.findUnique({ where: { id } })
+  private async requireRetrieval(tenantId: string, id: string) {
+    const found = await this.prisma.retrievalManifest.findFirst({ where: { id, tenantId } })
     if (found === null) {
       throw new ApiErrorException('NOT_FOUND', 'retrievalManifest 不存在', { param: 'id' })
     }
     return found
   }
 
-  private async requireAnswer(id: string) {
-    const found = await this.prisma.answerManifest.findUnique({ where: { id } })
+  private async requireAnswer(tenantId: string, id: string) {
+    const found = await this.prisma.answerManifest.findFirst({ where: { id, tenantId } })
     if (found === null) {
       throw new ApiErrorException('NOT_FOUND', 'answerManifest 不存在', { param: 'id' })
     }
     return found
   }
 
-  private async requirePipeline(id: string) {
-    const found = await this.prisma.pipelineManifest.findUnique({ where: { id } })
+  private async requirePipeline(tenantId: string, id: string) {
+    const found = await this.prisma.pipelineManifest.findFirst({ where: { id, tenantId } })
     if (found === null) {
       throw new ApiErrorException('NOT_FOUND', 'pipelineManifest 不存在', { param: 'id' })
     }

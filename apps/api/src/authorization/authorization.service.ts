@@ -11,7 +11,7 @@ import {
   writeAuditEvent,
 } from '@rag/database'
 import { createLogger } from '@rag/observability'
-import type { PrismaService } from '../database/prisma.service'
+import { PrismaService } from '../database/prisma.service'
 
 /**
  * 统一授权入口（T14b / ADR-0039 决策 2）。
@@ -42,7 +42,11 @@ export class AuthorizationService {
   ): Promise<AuthorizationDecision> {
     let decision: AuthorizationDecision
     let auditOutcome: 'ALLOWED' | 'DENIED' | 'DEGRADED'
-    let reasonCode: 'authz.capability_allowed' | 'authz.capability_denied' | 'authz.scope_denied' | 'authz.dependency_unavailable'
+    let reasonCode:
+      | 'authz.capability_allowed'
+      | 'authz.capability_denied'
+      | 'authz.scope_denied'
+      | 'authz.dependency_unavailable'
 
     try {
       const capabilities = await resolveCapabilities(this.prisma, {
@@ -59,7 +63,11 @@ export class AuthorizationService {
         reasonCode = 'authz.capability_denied'
         auditOutcome = 'DENIED'
       } else if (request.resource !== undefined) {
-        decision = await this.checkResource(request.businessUserId, request.tenantId, request.resource)
+        decision = await this.checkResource(
+          request.businessUserId,
+          request.tenantId,
+          request.resource,
+        )
         reasonCode = decision.allowed ? 'authz.capability_allowed' : 'authz.scope_denied'
         auditOutcome = decision.allowed ? 'ALLOWED' : 'DENIED'
       } else {
@@ -123,7 +131,11 @@ export class AuthorizationService {
   private async writeDecisionAudit(
     request: AuthorizationRequest,
     decision: AuthorizationDecision,
-    reasonCode: 'authz.capability_allowed' | 'authz.capability_denied' | 'authz.scope_denied' | 'authz.dependency_unavailable',
+    reasonCode:
+      | 'authz.capability_allowed'
+      | 'authz.capability_denied'
+      | 'authz.scope_denied'
+      | 'authz.dependency_unavailable',
     outcome: 'ALLOWED' | 'DENIED' | 'DEGRADED',
     traceId: string | undefined,
   ): Promise<void> {

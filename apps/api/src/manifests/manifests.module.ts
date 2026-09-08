@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { AuthModule } from '../auth/auth.module'
 import { ManifestsController } from './manifests.controller'
 import { ManifestsService } from './manifests.service'
 
@@ -11,6 +12,8 @@ import { ManifestsService } from './manifests.service'
  * release 激活子模块。
  */
 @Module({
+  // T14b：控制器挂 IdentityGuard，守卫的配置来自 AuthModule。
+  imports: [AuthModule],
   controllers: [ManifestsController],
   providers: [ManifestsService],
 })

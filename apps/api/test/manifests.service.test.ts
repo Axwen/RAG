@@ -109,40 +109,58 @@ function makeService(rows: Record<string, StubRow> = {}): ManifestsService {
   const prisma = {
     ingestionManifest: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
-      findFirst: vi.fn(async () => null),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) =>
+        rows[where.id]?.tenantId === where.tenantId ? rows[where.id]! : null,
+      ),
       create: vi.fn(async ({ data }: { data: StubRow }) => ({ id: 'new', ...data })),
       updateMany: makeUpdateMany(rows),
     },
     retrievalManifest: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
-      findFirst: vi.fn(async () => null),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) =>
+        rows[where.id]?.tenantId === where.tenantId ? rows[where.id]! : null,
+      ),
       create: vi.fn(async ({ data }: { data: StubRow }) => ({ id: 'new', ...data })),
       updateMany: makeUpdateMany(rows),
     },
     answerManifest: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
-      findFirst: vi.fn(async () => null),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) =>
+        rows[where.id]?.tenantId === where.tenantId ? rows[where.id]! : null,
+      ),
       create: vi.fn(async ({ data }: { data: StubRow }) => ({ id: 'new', ...data })),
       updateMany: makeUpdateMany(rows),
     },
     releaseManifest: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
-      findFirst: vi.fn(async () => null),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) =>
+        rows[where.id]?.tenantId === where.tenantId ? rows[where.id]! : null,
+      ),
       create: vi.fn(async ({ data }: { data: StubRow }) => ({ id: 'new', ...data })),
     },
     knowledgeSpace: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
         where.id === knowledgeSpaceRow.id ? knowledgeSpaceRow : null,
       ),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) =>
+        where.id === knowledgeSpaceRow.id && knowledgeSpaceRow.tenantId === where.tenantId
+          ? knowledgeSpaceRow
+          : null,
+      ),
     },
     indexPartition: {
       findUnique: vi.fn(async () => rows[partitionId] ?? null),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) =>
+        rows[where.id]?.tenantId === where.tenantId ? rows[where.id]! : null,
+      ),
     },
     // createRelease 按 (tenantId, ingestionManifestId) 取全部候选，状态判定交给
     // checkPipelineToRelease；stub 也照此过滤，DRAFT 的 Pipeline 才能被测出来。
     pipelineManifest: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
-      findFirst: vi.fn(async () => null),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) =>
+        rows[where.id]?.tenantId === where.tenantId ? rows[where.id]! : null,
+      ),
       findMany: vi.fn(
         async ({ where }: { where: { tenantId: string; ingestionManifestId: string } }) =>
           Object.values(rows).filter(
@@ -165,8 +183,7 @@ describe('ManifestsService.createPipeline', () => {
       [retrievalId]: retrievalRow,
       [answerId]: answerRow,
     })
-    const pipeline = await service.createPipeline({
-      tenantId,
+    const pipeline = await service.createPipeline(tenantId, {
       version: 1,
       ingestionManifestId: ingestionId,
       retrievalManifestId: retrievalId,
@@ -182,8 +199,7 @@ describe('ManifestsService.createPipeline', () => {
       [answerId]: answerRow,
     })
     await expect(
-      service.createPipeline({
-        tenantId,
+      service.createPipeline(tenantId, {
         version: 1,
         ingestionManifestId: ingestionId,
         retrievalManifestId: retrievalId,
@@ -195,8 +211,7 @@ describe('ManifestsService.createPipeline', () => {
   it('引用不存在的 Manifest 时以 NOT_FOUND 拒绝', async () => {
     const service = makeService({})
     await expect(
-      service.createPipeline({
-        tenantId,
+      service.createPipeline(tenantId, {
         version: 1,
         ingestionManifestId: ingestionId,
         retrievalManifestId: retrievalId,
@@ -205,27 +220,28 @@ describe('ManifestsService.createPipeline', () => {
     ).rejects.toMatchObject({ envelope: { code: 'NOT_FOUND' } })
   })
 
-  it('请求租户与 Manifest 租户不一致时拒绝', async () => {
+  // T14 DoD：按 id 查询必须带租户谓词，跨租户 id 得到 NOT_FOUND 而不是
+  // FORBIDDEN——后者会确认该 id 在别的租户存在。
+  it('跨租户的 Manifest id 以 NOT_FOUND 拒绝（租户谓词）', async () => {
+    const otherTenant = '018f0000-0000-7000-8000-000000000099'
     const service = makeService({
-      [ingestionId]: ingestionRow,
+      [ingestionId]: { ...ingestionRow, tenantId: otherTenant },
       [retrievalId]: retrievalRow,
       [answerId]: answerRow,
     })
     await expect(
-      service.createPipeline({
-        tenantId: '018f0000-0000-7000-8000-000000000099',
+      service.createPipeline(tenantId, {
         version: 1,
         ingestionManifestId: ingestionId,
         retrievalManifestId: retrievalId,
         answerManifestId: answerId,
       }),
-    ).rejects.toMatchObject({ envelope: { code: 'COMPATIBILITY_VIOLATION' } })
+    ).rejects.toMatchObject({ envelope: { code: 'NOT_FOUND' } })
   })
 })
 
 describe('ManifestsService.createRelease', () => {
   const releaseInput = {
-    tenantId,
     knowledgeSpaceId: '018f0000-0000-7000-8000-000000000010',
     indexPartitionId: partitionId,
     ingestionManifestId: ingestionId,
@@ -243,7 +259,7 @@ describe('ManifestsService.createRelease', () => {
       [partitionId]: partitionRow,
       [pipelineRow.id]: pipelineRow,
     })
-    const release = await service.createRelease(releaseInput)
+    const release = await service.createRelease(tenantId, releaseInput)
     expect(release).toMatchObject({
       indexSchemaVersion: 'index-schema@1',
       embeddingVersion: 'bge-m3@1.0.0',
@@ -257,14 +273,14 @@ describe('ManifestsService.createRelease', () => {
       [ingestionId]: ingestionRow,
       [partitionId]: { ...partitionRow, embeddingVersion: 'bge-m3@2.0.0' },
     })
-    await expect(service.createRelease(releaseInput)).rejects.toMatchObject({
+    await expect(service.createRelease(tenantId, releaseInput)).rejects.toMatchObject({
       envelope: { code: 'COMPATIBILITY_VIOLATION' },
     })
   })
 
   it('分区不存在时以 NOT_FOUND 拒绝', async () => {
     const service = makeService({ [ingestionId]: ingestionRow })
-    await expect(service.createRelease(releaseInput)).rejects.toMatchObject({
+    await expect(service.createRelease(tenantId, releaseInput)).rejects.toMatchObject({
       envelope: { code: 'NOT_FOUND', param: 'indexPartitionId' },
     })
   })
@@ -274,19 +290,19 @@ describe('ManifestsService.createRelease', () => {
       [ingestionId]: ingestionRow,
       [partitionId]: partitionRow,
     })
-    await expect(service.createRelease(releaseInput)).rejects.toMatchObject({
+    await expect(service.createRelease(tenantId, releaseInput)).rejects.toMatchObject({
       envelope: { code: 'COMPATIBILITY_VIOLATION' },
     })
   })
 
-  it('分区或知识空间跨租户/空间时拒绝创建', async () => {
+  it('分区跨租户时以 NOT_FOUND 拒绝（不确认 id 在别的租户存在）', async () => {
     const service = makeService({
       [ingestionId]: ingestionRow,
       [partitionId]: { ...partitionRow, tenantId: '018f0000-0000-7000-8000-000000000099' },
       [pipelineRow.id]: pipelineRow,
     })
-    await expect(service.createRelease(releaseInput)).rejects.toMatchObject({
-      envelope: { code: 'COMPATIBILITY_VIOLATION' },
+    await expect(service.createRelease(tenantId, releaseInput)).rejects.toMatchObject({
+      envelope: { code: 'NOT_FOUND', param: 'indexPartitionId' },
     })
   })
 
@@ -298,7 +314,7 @@ describe('ManifestsService.createRelease', () => {
       [partitionId]: partitionRow,
       [pipelineRow.id]: { ...pipelineRow, status: 'DRAFT' },
     })
-    await expect(service.createRelease(releaseInput)).rejects.toMatchObject({
+    await expect(service.createRelease(tenantId, releaseInput)).rejects.toMatchObject({
       envelope: { code: 'COMPATIBILITY_VIOLATION' },
     })
   })
@@ -308,7 +324,7 @@ describe('ManifestsService.approve', () => {
   it('DRAFT -> APPROVED 并写入 approvedAt', async () => {
     const rows = { [ingestionId]: { ...ingestionRow, status: 'DRAFT', approvedAt: null } }
     const service = makeService(rows)
-    const approved = await service.approveIngestion(ingestionId)
+    const approved = await service.approveIngestion(tenantId, ingestionId)
     expect(approved).toMatchObject({ id: ingestionId, status: 'APPROVED' })
     expect(approved.approvedAt).toBeInstanceOf(Date)
   })
@@ -317,7 +333,7 @@ describe('ManifestsService.approve', () => {
   // APPROVED 行；若改成"0 行即报错"，两个正常请求里就有一个拿到 5xx。
   it('已是 APPROVED 时受影响 0 行，幂等返回既有行而不报错', async () => {
     const service = makeService({ [ingestionId]: ingestionRow })
-    await expect(service.approveIngestion(ingestionId)).resolves.toMatchObject({
+    await expect(service.approveIngestion(tenantId, ingestionId)).resolves.toMatchObject({
       id: ingestionId,
       status: 'APPROVED',
     })
@@ -325,7 +341,7 @@ describe('ManifestsService.approve', () => {
 
   it('id 不存在时以 NOT_FOUND 拒绝，不静默成功', async () => {
     const service = makeService({})
-    await expect(service.approveIngestion(ingestionId)).rejects.toMatchObject({
+    await expect(service.approveIngestion(tenantId, ingestionId)).rejects.toMatchObject({
       envelope: { code: 'NOT_FOUND', param: 'id' },
     })
   })
@@ -336,8 +352,12 @@ describe('ManifestsService.approve', () => {
       [answerId]: { ...answerRow, status: 'DRAFT', approvedAt: null },
       [pipelineRow.id]: { ...pipelineRow, status: 'DRAFT' },
     })
-    expect(await service.approveRetrieval(retrievalId)).toMatchObject({ status: 'APPROVED' })
-    expect(await service.approveAnswer(answerId)).toMatchObject({ status: 'APPROVED' })
-    expect(await service.approvePipeline(pipelineRow.id)).toMatchObject({ status: 'APPROVED' })
+    expect(await service.approveRetrieval(tenantId, retrievalId)).toMatchObject({
+      status: 'APPROVED',
+    })
+    expect(await service.approveAnswer(tenantId, answerId)).toMatchObject({ status: 'APPROVED' })
+    expect(await service.approvePipeline(tenantId, pipelineRow.id)).toMatchObject({
+      status: 'APPROVED',
+    })
   })
 })

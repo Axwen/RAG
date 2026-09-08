@@ -1,0 +1,74 @@
+import { CanActivate, ExecutionContext, Inject, Injectable } from '@nestjs/common'
+import type { Request } from 'express'
+import { ApiErrorException } from '../common/api-error.exception'
+import type { ServerIdentityContext } from '@rag/contracts'
+import { parseSessionCookie } from './session-cookie'
+import type { AuthConfig } from './auth.config'
+import { AUTH_CONFIG } from './auth.providers'
+
+/**
+ * 身份守卫（T14b / ADR-0039 决策 4）：受保护路由的租户上下文入口。
+ *
+ * 从会话 cookie 恢复服务端身份上下文，并把租户推导出来挂到请求上——
+ * 控制器从此不再接受请求体里的 `tenantId`（T1a 迁移期兼容在本票据退场）。
+ *
+ * 租户推导规则：恰好一个 ACTIVE 租户成员关系。零个 → 403（身份已验证
+ * 但不属于任何租户）；多个 → 403（多租户切换器是 T16 的产品决策，在它
+ * 落地前 fail closed，不默认取第一个——「静默选第一个」会让用户在不知情
+ * 时操作错误租户）。
+ */
+
+/** 挂到请求上的身份与推导出的租户。 */
+export interface RequestIdentity {
+  readonly context: ServerIdentityContext
+  readonly tenantId: string
+}
+
+/**
+ * 请求上的身份挂载点。不通过 `declare module` 扩充 express 类型（那需要
+ * 直接依赖 express-serve-static-core 的路径解析）：控制器用
+ * `identityOf(request)` 取值，拿不到就是路由没挂守卫——类型不撒谎。
+ */
+export function identityOf(request: Request): RequestIdentity {
+  const identity = (request as { identity?: RequestIdentity }).identity
+  if (identity === undefined) {
+    throw new Error('路由缺少 IdentityGuard：request.identity 未设置')
+  }
+  return identity
+}
+
+@Injectable()
+export class IdentityGuard implements CanActivate {
+  private readonly config: AuthConfig
+
+  constructor(@Inject(AUTH_CONFIG) config: AuthConfig) {
+    this.config = config
+  }
+
+  canActivate(executionContext: ExecutionContext): boolean {
+    const request = executionContext.switchToHttp().getRequest<Request>()
+    const cookie = request.headers.cookie
+      ?.split(';')
+      .find((part) => part.trim().startsWith('rag_session='))
+      ?.split('=')
+      .slice(1)
+      .join('=')
+    const parsed = parseSessionCookie(cookie?.trim(), this.config.sessionSecret)
+    if (!parsed.ok) {
+      // 过期/伪造/缺失统一 401：走信封（ApiErrorException），不是 Nest 默认响应体。
+      throw new ApiErrorException('UNAUTHORIZED', '未登录或会话已过期')
+    }
+    const active = parsed.payload.context.tenantMemberships.filter((m) => m.status === 'ACTIVE')
+    if (active.length === 0) {
+      throw new ApiErrorException('FORBIDDEN', '当前身份没有活跃的租户成员关系')
+    }
+    if (active.length > 1) {
+      throw new ApiErrorException('FORBIDDEN', '当前身份属于多个租户，多租户切换尚未开放')
+    }
+    ;(request as { identity?: RequestIdentity }).identity = {
+      context: parsed.payload.context,
+      tenantId: active[0]!.tenantId,
+    }
+    return true
+  }
+}
