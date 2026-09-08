@@ -1,7 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { REASON_CODE_PATTERN, auditCategories, auditOutcomes } from '@rag/contracts'
+import {
+  REASON_CODE_PATTERN,
+  auditCategories,
+  auditOutcomes,
+  documentVersionDataClasses,
+} from '@rag/contracts'
 import * as observability from '@rag/observability'
 import {
   DATABASE_PACKAGE,
@@ -183,6 +188,12 @@ describe('审计契约与库结构不漂移（ADR-0040 / T11a）', () => {
     expect(enumValues('BusinessUserStatus')).toEqual(['ACTIVE', 'DISABLED'])
     expect(enumValues('MembershipStatus')).toEqual(['ACTIVE', 'SUSPENDED', 'REVOKED'])
     expect(enumValues('RoleScope')).toEqual(['TENANT', 'WORKSPACE'])
+  })
+
+  it('DataClass 五值与契约包的 documentVersionDataClasses 逐值同序（ADR-0025 / T14b）', () => {
+    // 数据等级进入授权契约（复核元数据 + 阶段 1 拒绝集）后，枚举漂移会让
+    // authz.dataclass_denied 的判定口径与库里的实际等级对不上。
+    expect(enumValues('DataClass')).toEqual([...documentVersionDataClasses])
   })
 
   it('身份层只有两张跨租户表，其余身份表都带租户谓词（ADR-0039 决策 3）', () => {

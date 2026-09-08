@@ -43,7 +43,10 @@ export type AuditOutcome = (typeof auditOutcomes)[number]
  * 首个接入面是 T12a 的四类预算判定，`category` 一律 `BUDGET`（T12 事务入口契约的表）。
  * T14b 加入 `authz.*`：统一授权入口的每一次判定（允许与拒绝）都写一行；
  * `dependency_unavailable` 在写入口的 `outcome` 记 `DEGRADED`——拒绝不是策略结论，
- * 而是依赖不可用时的 fail closed（T14 票据不变量）。
+ * 而是依赖不可用时的 fail closed（T14 票据不变量）。`dataclass_denied` 是资源
+ * 策略层的数据等级拒绝（`AUTHZ` 域——它是一次授权判定）；`DATA_CLASS` 域留给
+ * T15 准入层的 `dataclass.*` 码（执行区阻断是路由判定，不是授权判定），两者
+ * 不得互并。
  */
 export const REASON_CODES = Object.freeze({
   'budget.reserve_rejected': 'BUDGET',
@@ -53,6 +56,7 @@ export const REASON_CODES = Object.freeze({
   'authz.capability_allowed': 'AUTHZ',
   'authz.capability_denied': 'AUTHZ',
   'authz.scope_denied': 'AUTHZ',
+  'authz.dataclass_denied': 'AUTHZ',
   'authz.dependency_unavailable': 'AUTHZ',
 }) satisfies Readonly<Record<string, AuditCategory>>
 

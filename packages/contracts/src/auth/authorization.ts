@@ -1,18 +1,26 @@
+import type { ReasonCode } from '../audit/reason-codes'
+
 /**
  * 授权结果与作用域键（T14b / ADR-0026、ADR-0039）。
  *
  * 统一授权入口的输出契约：能力权限与资源策略两层判定收敛为一个决策，
  * 调用方不得拿到中间层自行组合（那是绕过统一入口的另一种形态）。
  *
- * 拒绝原因只有三类，与审计原因码一一对应：能力缺失、作用域不匹配、
- * 依赖不可用（fail closed）。资源策略的拒绝统一落在 `SCOPE_DENIED`：
- * 阶段 1 的授权模型是纯作用域型（ADR-0026），资源策略的输出就是
- * 「资源是否在允许作用域内」。
+ * 拒绝原因有四类，与审计原因码一一对应：能力缺失、作用域不匹配、
+ * 数据等级拒绝、依赖不可用（fail closed）。作用域不匹配与数据等级拒绝
+ * 同属资源策略层（ADR-0039 决策 2），但分开记：两者的补救路径完全
+ * 不同（成员关系 vs 重新定级），审计读侧要能按原因码区分。
  */
 
-/** 拒绝原因。对应审计码 authz.capability_denied / authz.scope_denied / authz.dependency_unavailable。 */
+/** 拒绝原因。对应审计码 authz.capability_denied / authz.scope_denied /
+ * authz.dataclass_denied / authz.dependency_unavailable。 */
 export type AuthorizationDenialReason =
-  'CAPABILITY_MISSING' | 'SCOPE_DENIED' | 'DEPENDENCY_UNAVAILABLE'
+  'CAPABILITY_MISSING' | 'SCOPE_DENIED' | 'DATA_CLASS_DENIED' | 'DEPENDENCY_UNAVAILABLE'
+
+/** 统一授权入口的审计原因码：中央注册表 `authz.*` 命名空间的收窄视图。
+ * 拒绝原因与审计码一一对应，这里钉住「服务层不再私拍联合类型」——
+ * 注册表加码而本视图跟不上，编译期就过不去。 */
+export type AuthzReasonCode = Extract<ReasonCode, `authz.${string}`>
 
 /** 统一授权入口的判定结果。允许时无附加载荷：能力明细不外发，判定本身即契约。 */
 export type AuthorizationDecision =
@@ -42,6 +50,36 @@ export type AuthorizationResource =
       readonly knowledgeSpaceId: string
       readonly documentVersionId: string
     }
+
+/**
+ * 文档版本数据等级。与 Prisma 的 `DataClass` 枚举逐值一致——契约不
+ * import 生成类型，两处各写一份，漂移由 `packages/database` 的 schema
+ * 文本断言钉住（与 `auditCategories` 同一模式，ADR-0040 决策 3 的先例）。
+ */
+export const documentVersionDataClasses = [
+  'UNKNOWN',
+  'PUBLIC',
+  'INTERNAL',
+  'CONTROLLED',
+  'SENSITIVE',
+] as const
+
+export type DocumentVersionDataClass = (typeof documentVersionDataClasses)[number]
+
+/**
+ * 阶段 1 资源策略直接拒绝的数据等级（ADR-0039 决策 2、ADR-0025）。
+ *
+ * 阶段 1 没有 per-subject 的 clearance 模型，统一授权入口对
+ * document_version 采取 fail-closed 默认：UNKNOWN（无法定级）与
+ * SENSITIVE（敏感级）拒绝，其余放行。引入 clearance 后此集合变为
+ * per-subject 计算，那是新 ADR 的事。
+ *
+ * 边界要读清楚：这只是**直连资源访问**的判定。检索链路的候选复核
+ * 不做这个减法——SENSITIVE 候选仍要被召回，由 ModelAdapter 准入层按
+ * 执行区阻断（ADR-0025）；把拒绝塞进复核会让敏感内容失去进入本地
+ * 执行区的路由机会。
+ */
+export const stage1DeniedDataClasses: readonly DocumentVersionDataClass[] = ['UNKNOWN', 'SENSITIVE']
 
 /**
  * `acl_scope_key`（ADR-0026/0037）：索引侧与查询侧共用的稳定过滤键。
@@ -91,8 +129,13 @@ export interface AllowedScopes {
  * 复核只能做减法：`rejected` 的候选被丢弃且不进入证据、引用与 Trace 摘要。
  * 拒绝原因目前只有一类（候选不存在或不在本租户的作用域内）；删除墓碑、
  * Legal Hold 与有效期随 T5/T8 的列落地逐项加入，形状保持批量单查询。
+ * 数据等级**不是**复核的减法项——`dataClasses` 是给统一授权入口资源
+ * 策略读的元数据，检索链路忽略它（SENSITIVE 候选的路由阻断在 T15
+ * 准入层，见 `stage1DeniedDataClasses` 的边界说明）。
  */
 export interface CandidateRecheckResult {
   readonly allowed: readonly string[]
   readonly rejected: readonly string[]
+  /** 允许候选的 dataClass，按 documentVersionId 索引；拒绝候选不出现。 */
+  readonly dataClasses: Readonly<Record<string, DocumentVersionDataClass>>
 }
