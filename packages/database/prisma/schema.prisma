@@ -177,6 +177,10 @@ enum RoleScope {
 model Tenant {
   id                  String              @id @default(uuid(7)) @db.Uuid
   name                String
+  // 租户级授权事实版本（ADR-0026）：撤权或成员变更时递增；Redis「主体→允许作用域」
+  // 缓存的键必须包含它，失效不依赖 TTL。阶段 1 无成员写路径，由 bumpAclRevision
+  // 维护（T16b 管理面与集成测试调用）。
+  aclRevision         Int                 @default(0)
   createdAt           DateTime            @default(now()) @db.Timestamptz(6)
   knowledgeSpaces     KnowledgeSpace[]
   documents           Document[]
