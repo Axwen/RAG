@@ -87,7 +87,9 @@ afterAll(async () => {
     // 本次运行的两个用户按 id 清；此前中断运行的用户按展示名兜底（跨租户表，
     // 不阻塞租户删除，但会无限累积）。
     await prisma.businessUser.deleteMany({
-      where: { OR: [{ id: { in: [userId, otherUserId] } }, { displayName: { in: ['主体A', '主体B'] } }] },
+      where: {
+        OR: [{ id: { in: [userId, otherUserId] } }, { displayName: { in: ['主体A', '主体B'] } }],
+      },
     })
     await prisma.tenant.deleteMany({ where: { id: { in: staleIds } } })
   }
