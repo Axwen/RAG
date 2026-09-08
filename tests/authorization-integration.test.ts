@@ -67,25 +67,31 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  // 清理顺序按外键：成员 → 角色/权限 → 空间 → 用户 → 租户。
-  // 不用级联删除——那张表上的 RESTRICT 就是我们要保的性质。
-  await prisma.workspaceMembership.deleteMany({ where: { tenantId } })
-  await prisma.tenantMembership.deleteMany({ where: { tenantId } })
-  await prisma.workspaceMembership.deleteMany({ where: { tenantId: otherTenantId } })
-  await prisma.tenantMembership.deleteMany({ where: { tenantId: otherTenantId } })
-  await prisma.role.deleteMany({ where: { tenantId } })
-  await prisma.role.deleteMany({ where: { tenantId: otherTenantId } })
-  await prisma.rolePermission.deleteMany({
-    where: { role: { tenantId } },
+  // 按名字模式清（t14b-int-*）：既清本次运行，也自愈此前中断运行留下的孤儿租户
+  // ——按 id 清会让一次崩溃永久污染开发库。顺序按外键依赖：成员/绑定 → 角色
+  // → 权限 → 文档 → 空间 → 用户 → 租户；不用级联删除，RESTRICT 正是我们要保的。
+  const stale = await prisma.tenant.findMany({
+    where: { name: { startsWith: 't14b-int-' } },
+    select: { id: true },
   })
-  await prisma.rolePermission.deleteMany({ where: { role: { tenantId: otherTenantId } } })
-  await prisma.permission.deleteMany({
-    where: { code: { startsWith: `int.${tenantId.slice(0, 8)}` } },
-  })
-  await prisma.knowledgeSpace.deleteMany({ where: { tenantId } })
-  await prisma.knowledgeSpace.deleteMany({ where: { tenantId: otherTenantId } })
-  await prisma.businessUser.deleteMany({ where: { id: { in: [userId, otherUserId] } } })
-  await prisma.tenant.deleteMany({ where: { id: { in: [tenantId, otherTenantId] } } })
+  const staleIds = stale.map((t) => t.id)
+  if (staleIds.length > 0) {
+    await prisma.workspaceMembership.deleteMany({ where: { tenantId: { in: staleIds } } })
+    await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: staleIds } } })
+    await prisma.rolePermission.deleteMany({ where: { role: { tenantId: { in: staleIds } } } })
+    await prisma.role.deleteMany({ where: { tenantId: { in: staleIds } } })
+    await prisma.documentVersion.deleteMany({ where: { tenantId: { in: staleIds } } })
+    await prisma.document.deleteMany({ where: { tenantId: { in: staleIds } } })
+    await prisma.workspace.deleteMany({ where: { tenantId: { in: staleIds } } })
+    await prisma.knowledgeSpace.deleteMany({ where: { tenantId: { in: staleIds } } })
+    // 本次运行的两个用户按 id 清；此前中断运行的用户按展示名兜底（跨租户表，
+    // 不阻塞租户删除，但会无限累积）。
+    await prisma.businessUser.deleteMany({
+      where: { OR: [{ id: { in: [userId, otherUserId] } }, { displayName: { in: ['主体A', '主体B'] } }] },
+    })
+    await prisma.tenant.deleteMany({ where: { id: { in: staleIds } } })
+  }
+  await prisma.permission.deleteMany({ where: { code: { startsWith: 'int.' } } })
   await prisma.$disconnect()
 })
 
