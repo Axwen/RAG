@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { PrismaClient } from '../src/generated/prisma/client'
 import type { Tx } from '../src/tx'
 import { loadIdentityContext } from '../src/identity/load-identity-context'
 
@@ -9,8 +10,8 @@ import { loadIdentityContext } from '../src/identity/load-identity-context'
  * Workspace 的 tenantId 随 Workspace 携带。SQL 与 include 的保真度归集成层
  * （`tests/` 跑在已迁移的 PostgreSQL 上），这里不重复。
  *
- * 假句柄只实现 `businessUser.findUnique`：这是入口唯一的委托调用，多实现
- * 一个方法就多一处与真实语义无关的猜测。
+ * 假客户端只实现 `$transaction` 和事务内的 `businessUser.findUnique`：这是
+ * 入口唯一的数据库交互，多实现一个方法就多一处与真实语义无关的猜测。
  */
 
 /** 最小可断言的用户行，字段名与 Prisma 模型一致。 */
@@ -34,8 +35,11 @@ interface FakeBusinessUser {
   }>
 }
 
-function fakeTx(users: readonly FakeBusinessUser[]): Tx {
-  return {
+function fakePrisma(users: readonly FakeBusinessUser[]): {
+  readonly client: PrismaClient
+  readonly transactionCalls: () => number
+} {
+  const tx = {
     businessUser: {
       async findUnique({
         where,
@@ -52,13 +56,23 @@ function fakeTx(users: readonly FakeBusinessUser[]): Tx {
       },
     },
   } as unknown as Tx
+  let calls = 0
+  return {
+    client: {
+      async $transaction(callback: (transaction: Tx) => Promise<unknown>): Promise<unknown> {
+        calls += 1
+        return callback(tx)
+      },
+    } as unknown as PrismaClient,
+    transactionCalls: () => calls,
+  }
 }
 
 const issuer = 'http://localhost:8080/realms/rag-local'
 
 describe('loadIdentityContext', () => {
   it('装配租户与 Workspace 成员及角色引用', async () => {
-    const tx = fakeTx([
+    const prisma = fakePrisma([
       {
         id: 'u1',
         issuer,
@@ -90,8 +104,9 @@ describe('loadIdentityContext', () => {
       },
     ])
 
-    const result = await loadIdentityContext(tx, { issuer, subject: 'kc-1' })
+    const result = await loadIdentityContext(prisma.client, { issuer, subject: 'kc-1' })
 
+    expect(prisma.transactionCalls()).toBe(1)
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('unreachable')
     expect(result.context.businessUserId).toBe('u1')
@@ -111,13 +126,13 @@ describe('loadIdentityContext', () => {
   })
 
   it('未建立映射的外部身份返回 USER_NOT_FOUND，不自动建档', async () => {
-    const tx = fakeTx([])
-    const result = await loadIdentityContext(tx, { issuer, subject: 'nobody' })
+    const prisma = fakePrisma([])
+    const result = await loadIdentityContext(prisma.client, { issuer, subject: 'nobody' })
     expect(result).toEqual({ ok: false, reason: 'USER_NOT_FOUND' })
   })
 
   it('DISABLED 用户返回 USER_DISABLED，即使成员关系仍是 ACTIVE', async () => {
-    const tx = fakeTx([
+    const prisma = fakePrisma([
       {
         id: 'u2',
         issuer,
@@ -129,12 +144,12 @@ describe('loadIdentityContext', () => {
         workspaceMemberships: [],
       },
     ])
-    const result = await loadIdentityContext(tx, { issuer, subject: 'kc-2' })
+    const result = await loadIdentityContext(prisma.client, { issuer, subject: 'kc-2' })
     expect(result).toEqual({ ok: false, reason: 'USER_DISABLED' })
   })
 
   it('SUSPENDED/REVOKED 成员照实携带，不在装配层过滤', async () => {
-    const tx = fakeTx([
+    const prisma = fakePrisma([
       {
         id: 'u3',
         issuer,
@@ -153,7 +168,7 @@ describe('loadIdentityContext', () => {
         ],
       },
     ])
-    const result = await loadIdentityContext(tx, { issuer, subject: 'kc-3' })
+    const result = await loadIdentityContext(prisma.client, { issuer, subject: 'kc-3' })
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('unreachable')
     expect(result.context.tenantMemberships[0]?.status).toBe('REVOKED')

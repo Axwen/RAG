@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   loadDependencyEndpoints,
+  loadKeycloakEndpoint,
   oidcDiscoveryUrl,
   parsePort,
   parseRedisUrl,
@@ -34,6 +35,24 @@ describe('依赖接入点解析', () => {
 
   it('非法 URL 直接拒绝', () => {
     expect(() => loadDependencyEndpoints({ ...minimalEnv, MINIO_ENDPOINT: 'not-a-url' })).toThrow()
+  })
+
+  it('Keycloak 接入点复用同一套默认值与配置校验', () => {
+    expect(loadKeycloakEndpoint({})).toEqual({
+      keycloakBaseUrl: 'http://localhost:8080',
+      keycloakRealm: 'rag-local',
+    })
+    expect(
+      loadKeycloakEndpoint({
+        KEYCLOAK_BASE_URL: 'http://keycloak.test///',
+        KEYCLOAK_REALM: 'corp',
+      }),
+    ).toEqual({ keycloakBaseUrl: 'http://keycloak.test///', keycloakRealm: 'corp' })
+  })
+
+  it('Keycloak URL 或 Realm 非法时直接拒绝', () => {
+    expect(() => loadKeycloakEndpoint({ KEYCLOAK_BASE_URL: 'not-a-url' })).toThrow()
+    expect(() => loadKeycloakEndpoint({ KEYCLOAK_REALM: '' })).toThrow()
   })
 })
 

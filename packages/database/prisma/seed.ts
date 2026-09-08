@@ -10,6 +10,7 @@ import {
   type IngestionManifestContent,
   type RetrievalManifestContent,
 } from '@rag/contracts'
+import { loadKeycloakEndpoint } from '@rag/config'
 import { createPrismaClient } from '../src/client'
 
 /**
@@ -43,9 +44,8 @@ const PARTITION_ID = '018f0000-0000-7000-8000-000000000020'
 // (issuer, subject) 映射键对不上。subject 与 init-keycloak.sh 的 DEV_USER_ID
 // 同源，改动时两边一起改。
 function identityIssuer(): string {
-  const base = (process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:8080').replace(/\/+$/, '')
-  const realm = process.env.KEYCLOAK_REALM ?? 'rag-local'
-  return `${base}/realms/${realm}`
+  const { keycloakBaseUrl, keycloakRealm } = loadKeycloakEndpoint(process.env)
+  return `${keycloakBaseUrl.replace(/\/+$/, '')}/realms/${keycloakRealm}`
 }
 const DEV_USER_SUBJECT = '018f0000-0000-7000-8000-00000000a001'
 const BUSINESS_USER_ID = '018f0000-0000-7000-8000-0000000000a1'
@@ -352,7 +352,12 @@ async function seed(): Promise<void> {
         displayName: 'Dev User',
         email: 'dev@example.invalid',
       },
-      update: {},
+      update: {
+        // 固定 dev 用户必须随 KEYCLOAK_BASE_URL/KEYCLOAK_REALM 变化自愈，否则
+        // 重建 realm 后 token 的 issuer 变化会让 (issuer, subject) 映射失效。
+        issuer: identityIssuer(),
+        subject: DEV_USER_SUBJECT,
+      },
     })
 
     await prisma.tenantMembership.upsert({
