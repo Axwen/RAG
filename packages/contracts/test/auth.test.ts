@@ -81,4 +81,9 @@ describe('toSessionView', () => {
     expect(view.displayName).toBe('Dev User')
     expect(view.email).toBe('dev@example.invalid')
   })
+
+  it('活动租户显式投影，未选择时为 null', () => {
+    expect(toSessionView(context).activeTenantId).toBeNull()
+    expect(toSessionView(context, 't1').activeTenantId).toBe('t1')
+  })
 })

@@ -32,6 +32,7 @@ const otherTenantId = randomUUID()
 const userId = randomUUID()
 const otherUserId = randomUUID()
 const spaceIn = randomUUID()
+const spaceOutsideWorkspace = randomUUID()
 const spaceOther = randomUUID()
 const workspaceIn = randomUUID()
 const workspaceOther = randomUUID()
@@ -62,7 +63,26 @@ beforeAll(async () => {
     data: { id: spaceIn, tenantId, slug: 'in', name: '本租户空间' },
   })
   await prisma.knowledgeSpace.create({
+    data: {
+      id: spaceOutsideWorkspace,
+      tenantId,
+      slug: 'outside-workspace',
+      name: '未绑定到工作台的空间',
+    },
+  })
+  await prisma.knowledgeSpace.create({
     data: { id: spaceOther, tenantId: otherTenantId, slug: 'other', name: '他租户空间' },
+  })
+  await prisma.workspace.create({
+    data: { id: workspaceIn, tenantId, slug: 'desk-in', name: '本租户工作台' },
+  })
+  await prisma.workspaceKnowledgeSpace.create({
+    data: {
+      id: randomUUID(),
+      tenantId,
+      workspaceId: workspaceIn,
+      knowledgeSpaceId: spaceIn,
+    },
   })
 })
 
@@ -77,6 +97,7 @@ afterAll(async () => {
   const staleIds = stale.map((t) => t.id)
   if (staleIds.length > 0) {
     await prisma.workspaceMembership.deleteMany({ where: { tenantId: { in: staleIds } } })
+    await prisma.workspaceKnowledgeSpace.deleteMany({ where: { tenantId: { in: staleIds } } })
     await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: staleIds } } })
     await prisma.rolePermission.deleteMany({ where: { role: { tenantId: { in: staleIds } } } })
     await prisma.role.deleteMany({ where: { tenantId: { in: staleIds } } })
@@ -143,13 +164,35 @@ describe('作用域编译与撤权（ADR-0026 第一段）', () => {
       data: { id: randomUUID(), tenantId, businessUserId: userId },
     })
     const result = await compileAllowedScopes(prisma, { businessUserId: userId, tenantId })
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    expect(result.scopes.aclRevision).toBe(0)
+    expect(result.scopes.scopeKeys).toEqual(
+      expect.arrayContaining([
+        scopeKeyForKnowledgeSpace(tenantId, spaceIn),
+        scopeKeyForKnowledgeSpace(tenantId, spaceOutsideWorkspace),
+      ]),
+    )
+    expect(result.scopes.scopeKeys).toHaveLength(2)
+  })
+
+  it('指定 Workspace → 只返回绑定到该 Workspace 的知识空间', async () => {
+    await prisma.workspaceMembership.create({
+      data: {
+        id: randomUUID(),
+        tenantId,
+        workspaceId: workspaceIn,
+        businessUserId: userId,
+      },
+    })
+    const result = await compileAllowedScopes(prisma, {
+      businessUserId: userId,
+      tenantId,
+      workspaceId: workspaceIn,
+    })
     expect(result).toMatchObject({
       ok: true,
-      scopes: {
-        scopeKeys: [scopeKeyForKnowledgeSpace(tenantId, spaceIn)],
-        // 新租户从 aclRevision=0 开始
-        aclRevision: 0,
-      },
+      scopes: { scopeKeys: [scopeKeyForKnowledgeSpace(tenantId, spaceIn)] },
     })
   })
 
@@ -184,17 +227,6 @@ describe('能力解析（跨租户与两层并集）', () => {
   const wsCode = `int.${tenantId.slice(0, 8)}.document.upload`
 
   it('租户级与 Workspace 级角色能力并集；跨租户 Workspace 拒绝', async () => {
-    await prisma.workspace.create({
-      data: { id: workspaceIn, tenantId, slug: 'desk-in', name: '本租户工作台' },
-    })
-    await prisma.workspaceMembership.create({
-      data: {
-        id: randomUUID(),
-        tenantId,
-        workspaceId: workspaceIn,
-        businessUserId: userId,
-      },
-    })
     await grant(tenantId, userId, { scope: 'TENANT', codes: [code] })
     await grant(tenantId, userId, { scope: 'WORKSPACE', codes: [wsCode], workspaceId: workspaceIn })
 

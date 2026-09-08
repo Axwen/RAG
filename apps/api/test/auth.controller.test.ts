@@ -1,13 +1,18 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ServerIdentityContext } from '@rag/contracts'
 import { parseAuthConfig } from '../src/auth/auth.config'
 import { AuthController } from '../src/auth/auth.controller'
 import type { AuthService } from '../src/auth/auth.service'
-import { IdentityRejectedError, InvalidStateException } from '../src/auth/auth.service'
+import {
+  IdentityRejectedError,
+  InvalidStateException,
+  TenantSelectionRejectedError,
+} from '../src/auth/auth.service'
 import { KeycloakUnavailableError } from '../src/auth/oidc-client'
 import {
   PKCE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
+  parseSessionCookie,
   signPkceCookie,
   signSession,
 } from '../src/auth/session-cookie'
@@ -36,6 +41,20 @@ const context: ServerIdentityContext = {
   userStatus: 'ACTIVE',
   tenantMemberships: [],
   workspaceMemberships: [],
+}
+
+const TENANT_A = '018f0000-0000-7000-8000-000000000001'
+const TENANT_B = '018f0000-0000-7000-8000-000000000002'
+
+function contextWithActiveTenants(...tenantIds: string[]): ServerIdentityContext {
+  return {
+    ...context,
+    tenantMemberships: tenantIds.map((tenantId) => ({
+      tenantId,
+      status: 'ACTIVE' as const,
+      tenantRole: null,
+    })),
+  }
 }
 
 interface Recorded {
@@ -84,11 +103,21 @@ type Establish = (
   received: string | undefined,
 ) => Promise<ServerIdentityContext>
 
-function makeController(establish: Establish): AuthController {
+function makeController(
+  establish: Establish,
+  selectTenant: (
+    context: ServerIdentityContext,
+    tenantId: string,
+  ) => Promise<ServerIdentityContext> = async (selectedContext) => selectedContext,
+): AuthController {
   const service = {
     buildLoginRequest: () => ({ authorizeUrl: 'http://kc/auth', verifier: 'v', state: 'st' }),
     establishIdentity: establish,
-    sessionView: (ctx: ServerIdentityContext) => ({ businessUserId: ctx.businessUserId }),
+    selectTenant,
+    sessionView: (ctx: ServerIdentityContext, activeTenantId?: string) => ({
+      businessUserId: ctx.businessUserId,
+      activeTenantId: activeTenantId ?? null,
+    }),
   } as unknown as AuthService
   return new AuthController(config, service)
 }
@@ -195,14 +224,27 @@ describe('AuthController.callback', () => {
   })
 
   it('成功时签发 httpOnly 会话 cookie 并返回会话视图', async () => {
-    const controller = makeController(async () => context)
+    const singleTenantContext = contextWithActiveTenants(TENANT_A)
+    const controller = makeController(async () => singleTenantContext)
     const { res, recorded } = fakeResponse(`${PKCE_COOKIE_NAME}=${pkceCookie}`)
     await controller.callback('code', 'st', undefined, res as never)
     const session = recorded.cookies.find((c) => c.name === SESSION_COOKIE_NAME)
     expect(session).toBeDefined()
     expect(session?.options).toMatchObject({ httpOnly: true, sameSite: 'lax', path: '/' })
+    const parsed = parseSessionCookie(session?.value, config.sessionSecret)
+    expect(parsed.ok && parsed.payload.activeTenantId).toBe(TENANT_A)
     expect(recorded.status).toBe(200)
-    expect(recorded.json).toMatchObject({ businessUserId: 'u1' })
+    expect(recorded.json).toMatchObject({ businessUserId: 'u1', activeTenantId: TENANT_A })
+  })
+
+  it('多个 ACTIVE 租户登录时不静默选择默认租户', async () => {
+    const controller = makeController(async () => contextWithActiveTenants(TENANT_A, TENANT_B))
+    const { res, recorded } = fakeResponse(`${PKCE_COOKIE_NAME}=${pkceCookie}`)
+    await controller.callback('code', 'st', undefined, res as never)
+    const session = recorded.cookies.find((cookie) => cookie.name === SESSION_COOKIE_NAME)
+    const parsed = parseSessionCookie(session?.value, config.sessionSecret)
+    expect(parsed.ok && parsed.payload.activeTenantId).toBeUndefined()
+    expect(recorded.json).toMatchObject({ activeTenantId: null })
   })
 })
 
@@ -225,6 +267,55 @@ describe('AuthController.session / logout', () => {
       res as never,
     )
     expect(recorded.json).toMatchObject({ businessUserId: 'u1' })
+  })
+
+  it('选择 ACTIVE 租户后刷新身份并重签会话，且不延长原过期时间', async () => {
+    const refreshed = contextWithActiveTenants(TENANT_A, TENANT_B)
+    const selectTenant = vi.fn(async () => refreshed)
+    const controller = makeController(async () => context, selectTenant)
+    const expiresAt = Math.floor(Date.now() / 1000) + 60
+    const cookie = signSession({ context, expiresAt }, config.sessionSecret)
+    const request = { headers: { cookie: `${SESSION_COOKIE_NAME}=${cookie}` } }
+    const { res, recorded } = fakeResponse()
+
+    await controller.selectTenant(request as never, TENANT_B, res as never)
+
+    expect(selectTenant).toHaveBeenCalledWith(context, TENANT_B)
+    const selected = recorded.cookies.find((entry) => entry.name === SESSION_COOKIE_NAME)
+    const parsed = parseSessionCookie(selected?.value, config.sessionSecret)
+    expect(parsed.ok && parsed.payload).toMatchObject({
+      context: refreshed,
+      activeTenantId: TENANT_B,
+      expiresAt,
+    })
+    expect(recorded.json).toMatchObject({ activeTenantId: TENANT_B })
+  })
+
+  it('选择非 ACTIVE 租户映射 FORBIDDEN，缺失会话映射 UNAUTHORIZED', async () => {
+    const controller = makeController(
+      async () => context,
+      async () => {
+        throw new TenantSelectionRejectedError()
+      },
+    )
+    const cookie = signSession(
+      { context, expiresAt: Math.floor(Date.now() / 1000) + 60 },
+      config.sessionSecret,
+    )
+    const { res } = fakeResponse()
+    await expectApiErrorAsync(
+      () =>
+        controller.selectTenant(
+          { headers: { cookie: `${SESSION_COOKIE_NAME}=${cookie}` } } as never,
+          TENANT_A,
+          res as never,
+        ),
+      'FORBIDDEN',
+    )
+    await expectApiErrorAsync(
+      () => controller.selectTenant({ headers: {} } as never, TENANT_A, res as never),
+      'UNAUTHORIZED',
+    )
   })
 
   it('logout 清除会话 cookie', () => {

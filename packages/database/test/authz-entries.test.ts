@@ -31,6 +31,7 @@ interface FakeWorld {
     businessUserId: string
     status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED'
     role: { permissions: ReadonlyArray<{ permission: { code: string } }> } | null
+    knowledgeSpaceIds: readonly string[]
   }>
   documentVersions: ReadonlyArray<{
     id: string
@@ -50,8 +51,14 @@ function fakeReader(world: FakeWorld): Tx {
     tenantMembership: {
       async findUnique({
         where,
+        select,
       }: {
         where: { tenantId_businessUserId: { tenantId: string; businessUserId: string } }
+        select?: {
+          tenant?: {
+            select?: { workspaces?: { where?: { id?: string } } }
+          }
+        }
       }) {
         const found = world.tenantMemberships.find(
           (m) =>
@@ -60,6 +67,15 @@ function fakeReader(world: FakeWorld): Tx {
         )
         if (found === undefined) return null
         // 三个消费方各取一部分：角色权限（能力解析）、用户状态与 revision/空间列表（作用域编译）。
+        const workspaceId = select?.tenant?.select?.workspaces?.where?.id
+        const workspaceMemberships =
+          typeof workspaceId === 'string'
+            ? world.workspaceMemberships.filter(
+                (membership) =>
+                  membership.workspaceId === workspaceId &&
+                  membership.workspaceTenantId === found.tenantId,
+              )
+            : []
         return {
           status: found.status,
           tenantRole: found.tenantRole,
@@ -67,6 +83,15 @@ function fakeReader(world: FakeWorld): Tx {
           tenant: {
             aclRevision: found.aclRevision,
             knowledgeSpaces: found.knowledgeSpaceIds.map((id) => ({ id })),
+            workspaces: workspaceMemberships.map((membership) => ({
+              members:
+                membership.businessUserId === found.businessUserId && membership.status === 'ACTIVE'
+                  ? [{ id: 'membership' }]
+                  : [],
+              knowledgeSpaces: membership.knowledgeSpaceIds.map((knowledgeSpaceId) => ({
+                knowledgeSpaceId,
+              })),
+            })),
           },
         }
       },
@@ -141,6 +166,7 @@ function baseWorld(): FakeWorld {
         businessUserId: USER,
         status: 'ACTIVE',
         role: { permissions: [{ permission: { code: 'answer.run' } }] },
+        knowledgeSpaceIds: ['ks1'],
       },
     ],
     documentVersions: [
@@ -236,6 +262,28 @@ describe('compileAllowedScopes', () => {
         scopeKeys: ['t:t1:ks:ks1', 't:t1:ks:ks2'],
       },
     })
+  })
+
+  it('指定 Workspace → 只返回该 Workspace 绑定的知识空间', async () => {
+    const result = await compileAllowedScopes(fakeReader(baseWorld()), {
+      businessUserId: USER,
+      tenantId: TENANT,
+      workspaceId: 'w1',
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      scopes: { aclRevision: 7, scopeKeys: ['t:t1:ks:ks1'] },
+    })
+
+    const world = baseWorld()
+    world.workspaceMemberships = [{ ...world.workspaceMemberships[0]!, status: 'SUSPENDED' }]
+    expect(
+      await compileAllowedScopes(fakeReader(world), {
+        businessUserId: USER,
+        tenantId: TENANT,
+        workspaceId: 'w1',
+      }),
+    ).toMatchObject({ ok: false, reason: 'NO_ACTIVE_WORKSPACE_MEMBERSHIP' })
   })
 
   it('成员失效或用户禁用都返回失败，不给降级集合', async () => {

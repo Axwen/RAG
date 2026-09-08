@@ -70,6 +70,7 @@ export interface SessionView {
   readonly businessUserId: string
   readonly displayName: string
   readonly email: string | null
+  readonly activeTenantId: string | null
   readonly tenants: ReadonlyArray<{
     readonly tenantId: string
     readonly tenantRoleCode: string | null
@@ -84,11 +85,15 @@ export interface SessionView {
 }
 
 /** 由完整上下文投影出会话视图（唯一构造点，投影规则不散落各端点）。 */
-export function toSessionView(context: ServerIdentityContext): SessionView {
+export function toSessionView(
+  context: ServerIdentityContext,
+  activeTenantId?: string,
+): SessionView {
   return {
     businessUserId: context.businessUserId,
     displayName: context.displayName,
     email: context.email,
+    activeTenantId: activeTenantId ?? null,
     tenants: context.tenantMemberships.map((m) => ({
       tenantId: m.tenantId,
       tenantRoleCode: m.tenantRole?.code ?? null,

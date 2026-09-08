@@ -53,8 +53,15 @@ function executionContextOf(request: Request): {
 
 const guard = new IdentityGuard(config)
 
-function sessionCookie(context: ServerIdentityContext): string {
-  return `rag_session=${signSession({ context, expiresAt: Math.floor(Date.now() / 1000) + 60 }, config.sessionSecret)}`
+function sessionCookie(context: ServerIdentityContext, activeTenantId?: string): string {
+  return `rag_session=${signSession(
+    {
+      context,
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+      ...(activeTenantId === undefined ? {} : { activeTenantId }),
+    },
+    config.sessionSecret,
+  )}`
 }
 
 describe('IdentityGuard', () => {
@@ -82,8 +89,21 @@ describe('IdentityGuard', () => {
     expectApiError(() => guard.canActivate(executionContextOf(request) as never), 'FORBIDDEN')
   })
 
-  it('多个 ACTIVE 租户 → FORBIDDEN（多租户切换未开放，不静默选第一个）', () => {
+  it('多个 ACTIVE 租户且未选择活动租户 → FORBIDDEN', () => {
     const request = requestWithCookie(sessionCookie(contextWithTenants(TENANT_A, TENANT_B)))
+    expectApiError(() => guard.canActivate(executionContextOf(request) as never), 'FORBIDDEN')
+  })
+
+  it('签名会话选择 ACTIVE 租户 → 使用该租户挂载请求身份', () => {
+    const request = requestWithCookie(
+      sessionCookie(contextWithTenants(TENANT_A, TENANT_B), TENANT_B),
+    )
+    expect(guard.canActivate(executionContextOf(request) as never)).toBe(true)
+    expect(identityOf(request).tenantId).toBe(TENANT_B)
+  })
+
+  it('签名会话选择的租户不在 ACTIVE 成员中 → FORBIDDEN', () => {
+    const request = requestWithCookie(sessionCookie(contextWithTenants(TENANT_A), TENANT_B))
     expectApiError(() => guard.canActivate(executionContextOf(request) as never), 'FORBIDDEN')
   })
 })
