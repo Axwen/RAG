@@ -41,12 +41,19 @@ export type AuditOutcome = (typeof auditOutcomes)[number]
  * `authz.*` / `membership.*` / `dataclass.*` / `injection.*` / `evidence.*` / `deletion.*`。
  *
  * 首个接入面是 T12a 的四类预算判定，`category` 一律 `BUDGET`（T12 事务入口契约的表）。
+ * T14b 加入 `authz.*`：统一授权入口的每一次判定（允许与拒绝）都写一行；
+ * `dependency_unavailable` 在写入口的 `outcome` 记 `DEGRADED`——拒绝不是策略结论，
+ * 而是依赖不可用时的 fail closed（T14 票据不变量）。
  */
 export const REASON_CODES = Object.freeze({
   'budget.reserve_rejected': 'BUDGET',
   'budget.pool_boundary_rejected': 'BUDGET',
   'budget.settlement_delta': 'BUDGET',
   'budget.lease_expired': 'BUDGET',
+  'authz.capability_allowed': 'AUTHZ',
+  'authz.capability_denied': 'AUTHZ',
+  'authz.scope_denied': 'AUTHZ',
+  'authz.dependency_unavailable': 'AUTHZ',
 }) satisfies Readonly<Record<string, AuditCategory>>
 
 /** 未注册的码在编译期就过不去——与 `ERROR_STATUS` 双射同一个思路。 */
