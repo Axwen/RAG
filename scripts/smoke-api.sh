@@ -123,7 +123,8 @@ expect "无会话错误码 UNAUTHORIZED" "$(jget code)" UNAUTHORIZED
 # 走 API 的 /auth/login：PKCE 的 verifier/challenge 由 API 生成并种在自己的
 # pkce cookie 里——脚本不自己碰 PKCE，模拟的就是浏览器行为。
 #   /auth/login（API_JAR 收 pkce cookie）→ Keycloak 登录表单 → POST 凭据
-#   → 302 带 code → /auth/callback（携 pkce cookie）→ 会话 cookie 落 API_JAR
+#   → 302 带 code → 回调 query（code 与 state）存 CALLBACK_QUERY，由调用方
+#   携 pkce cookie 打 /auth/callback。code 一次性，第二次登录要整段重走。
 DEV_USER_NAME="$(sed -nE 's/^DEV_USER_NAME=(.+)$/\1/p' .env | tail -1)"
 DEV_USER_NAME="${DEV_USER_NAME:-dev}"
 DEV_USER_PASSWORD="$(sed -nE 's/^DEV_USER_PASSWORD=(.+)$/\1/p' .env | tail -1)"
@@ -132,40 +133,44 @@ KC_JAR="${TMP}/kc-jar.txt"
 API_JAR="${TMP}/api-jar.txt"
 LOGIN_HTML="${TMP}/kc-login.html"
 
-AUTHORIZE_URL="$(curl -sS -c "${API_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' "${BASE}/auth/login")"
-if [[ "${AUTHORIZE_URL}" != *"protocol/openid-connect/auth"* ]]; then
-  echo "❌ /auth/login 未重定向到 Keycloak（实得 ${AUTHORIZE_URL:0:120}）" >&2
-  exit 1
-fi
-pass "/auth/login 302 到 Keycloak authorize"
+oidc_login() {
+  local authorize_url login_action callback_location
+  authorize_url="$(curl -sS -c "${API_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' "${BASE}/auth/login")"
+  if [[ "${authorize_url}" != *"protocol/openid-connect/auth"* ]]; then
+    echo "❌ /auth/login 未重定向到 Keycloak（实得 ${authorize_url:0:120}）" >&2
+    exit 1
+  fi
+  pass "/auth/login 302 到 Keycloak authorize"
 
-curl -sS -c "${KC_JAR}" --max-time 15 "${AUTHORIZE_URL}" -o "${LOGIN_HTML}"
-LOGIN_ACTION="$(python3 -c '
+  curl -sS -c "${KC_JAR}" --max-time 15 "${authorize_url}" -o "${LOGIN_HTML}"
+  login_action="$(python3 -c '
 import html, re, sys
 text = open(sys.argv[1], encoding="utf-8").read()
 m = re.search(r"action=\"([^\"]+)\"", text)
 print(html.unescape(m.group(1)) if m else "")
 ' "${LOGIN_HTML}")"
-if [[ -z "${LOGIN_ACTION}" ]]; then
-  echo "❌ Keycloak 登录页解析失败（authorize 页无 form action）" >&2
-  exit 1
-fi
+  if [[ -z "${login_action}" ]]; then
+    echo "❌ Keycloak 登录页解析失败（authorize 页无 form action）" >&2
+    exit 1
+  fi
 
-CALLBACK_LOCATION="$(curl -sS -b "${KC_JAR}" -c "${KC_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' \
-  -H 'content-type: application/x-www-form-urlencoded' \
-  --data-urlencode "username=${DEV_USER_NAME}" \
-  --data-urlencode "password=${DEV_USER_PASSWORD}" \
-  --data-urlencode 'credentialId=' \
-  "${LOGIN_ACTION}")"
-CALLBACK_QUERY="$(python3 -c '
+  callback_location="$(curl -sS -b "${KC_JAR}" -c "${KC_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' \
+    -H 'content-type: application/x-www-form-urlencoded' \
+    --data-urlencode "username=${DEV_USER_NAME}" \
+    --data-urlencode "password=${DEV_USER_PASSWORD}" \
+    --data-urlencode 'credentialId=' \
+    "${login_action}")"
+  CALLBACK_QUERY="$(python3 -c '
 import sys, urllib.parse
 print(urllib.parse.urlparse(sys.argv[1]).query)
-' "${CALLBACK_LOCATION}")"
-if [[ "${CALLBACK_QUERY}" != *"code="* ]]; then
-  echo "❌ 授权码获取失败（location=${CALLBACK_LOCATION:0:120}）" >&2
-  exit 1
-fi
+' "${callback_location}")"
+  if [[ "${CALLBACK_QUERY}" != *"code="* ]]; then
+    echo "❌ 授权码获取失败（location=${callback_location:0:120}）" >&2
+    exit 1
+  fi
+}
 
+oidc_login
 # 完整 query 原样转发（code 与 state 都要）：state 丢了会被控制器当 CSRF 拒绝。
 CB1_STATUS="$(curl -sS -b "${API_JAR}" -c "${API_JAR}" -o "${BODY}" -w '%{http_code}' \
   "${BASE}/auth/callback?${CALLBACK_QUERY}" || echo 000)"
@@ -181,28 +186,11 @@ else
   fail "会话视图泄漏 issuer/subject"
 fi
 
-# req() 已消费 code（一次性）。再走一遍完整 login 流程，把会话 cookie 落进
+# 回调已消费 code（一次性）。再走一遍完整 login 流程，把会话 cookie 落进
 # API_JAR 供后续领域请求使用——second pass 的 code 是新的，合法。
-AUTHORIZE_URL2="$(curl -sS -c "${API_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' "${BASE}/auth/login")"
-curl -sS -c "${KC_JAR}" --max-time 15 "${AUTHORIZE_URL2}" -o "${LOGIN_HTML}"
-LOGIN_ACTION2="$(python3 -c '
-import html, re, sys
-text = open(sys.argv[1], encoding="utf-8").read()
-m = re.search(r"action=\"([^\"]+)\"", text)
-print(html.unescape(m.group(1)) if m else "")
-' "${LOGIN_HTML}")"
-CALLBACK_LOCATION2="$(curl -sS -b "${KC_JAR}" -c "${KC_JAR}" --max-time 15 -o /dev/null -w '%{redirect_url}' \
-  -H 'content-type: application/x-www-form-urlencoded' \
-  --data-urlencode "username=${DEV_USER_NAME}" \
-  --data-urlencode "password=${DEV_USER_PASSWORD}" \
-  --data-urlencode 'credentialId=' \
-  "${LOGIN_ACTION2}")"
-CALLBACK_QUERY2="$(python3 -c '
-import sys, urllib.parse
-print(urllib.parse.urlparse(sys.argv[1]).query)
-' "${CALLBACK_LOCATION2}")"
-CB_STATUS="$(curl -sS -b "${API_JAR}" -c "${API_JAR}" --max-time 15 -o /dev/null -w '%{http_code}' \
-  "${BASE}/auth/callback?${CALLBACK_QUERY2}")"
+oidc_login
+CB_STATUS="$(curl -sS -b "${API_JAR}" -c "${API_JAR}" -o "${BODY}" -w '%{http_code}' \
+  "${BASE}/auth/callback?${CALLBACK_QUERY}")"
 expect "第二次回调（取会话 cookie）-> 200" "${CB_STATUS}" 200
 
 # req() 从此带上会话 cookie（登录完成，覆盖前面的无 cookie 定义）
