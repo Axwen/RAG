@@ -513,7 +513,8 @@ model BusinessUser {
 }
 
 // 业务用户与租户的成员关系；tenantRoleId 指向 scope=TENANT 的角色
-// （租户级管理能力），普通成员可以为 null。
+// （租户级管理能力），普通成员可以为 null。租户与角色的复合外键保证同租户，
+// 迁移中的数据库触发器再保证角色 scope=TENANT。
 model TenantMembership {
   id              String           @id @default(uuid(7)) @db.Uuid
   tenantId        String           @db.Uuid
@@ -524,7 +525,7 @@ model TenantMembership {
   revokedAt       DateTime?        @db.Timestamptz(6)
   tenant          Tenant           @relation(fields: [tenantId], references: [id])
   businessUser    BusinessUser     @relation(fields: [businessUserId], references: [id])
-  tenantRole      Role?            @relation("TenantMembershipsByRole", fields: [tenantRoleId], references: [id])
+  tenantRole      Role?            @relation("TenantMembershipsByRole", fields: [tenantId, tenantRoleId], references: [tenantId, id], onDelete: Restrict, map: "tenant_memberships_tenant_role_fkey")
 
   @@unique([tenantId, businessUserId])
   @@unique([tenantId, id])
@@ -550,7 +551,8 @@ model Workspace {
 
 // 业务用户与 Workspace 的成员关系；roleId 指向 scope=WORKSPACE 的角色。
 // 切换 Workspace 不继承上一 Workspace 的资源范围（ADR-0039 决策 3），
-// 所以身份上下文装配必须按 Workspace 分别取角色，不合并。
+// 所以身份上下文装配必须按 Workspace 分别取角色，不合并。复合外键保证同租户，
+// 迁移中的数据库触发器再保证角色 scope=WORKSPACE。
 model WorkspaceMembership {
   id             String           @id @default(uuid(7)) @db.Uuid
   tenantId       String           @db.Uuid
@@ -562,7 +564,7 @@ model WorkspaceMembership {
   revokedAt      DateTime?        @db.Timestamptz(6)
   workspace      Workspace        @relation(fields: [tenantId, workspaceId], references: [tenantId, id])
   businessUser   BusinessUser     @relation(fields: [businessUserId], references: [id])
-  role           Role?            @relation("WorkspaceMembershipsByRole", fields: [roleId], references: [id])
+  role           Role?            @relation("WorkspaceMembershipsByRole", fields: [tenantId, roleId], references: [tenantId, id], onDelete: Restrict, map: "workspace_memberships_tenant_role_fkey")
 
   @@unique([workspaceId, businessUserId])
   @@unique([tenantId, id])
