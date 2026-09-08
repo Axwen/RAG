@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Tx } from '../src/tx'
-import { resolveCapabilities } from '../src/authz/resolve-capabilities'
-import { compileAllowedScopes } from '../src/authz/compile-allowed-scopes'
+import { resolveCapabilities, type CapabilityResolution } from '../src/authz/resolve-capabilities'
+import { compileAllowedScopes, type ScopeCompilation } from '../src/authz/compile-allowed-scopes'
 import { recheckCandidates } from '../src/authz/recheck-candidates'
 
 /**
@@ -32,7 +32,12 @@ interface FakeWorld {
     status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED'
     role: { permissions: ReadonlyArray<{ permission: { code: string } }> } | null
   }>
-  documentVersions: ReadonlyArray<{ id: string; tenantId: string; knowledgeSpaceId: string }>
+  documentVersions: ReadonlyArray<{
+    id: string
+    tenantId: string
+    knowledgeSpaceId: string
+    dataClass: 'UNKNOWN' | 'PUBLIC' | 'INTERNAL' | 'CONTROLLED' | 'SENSITIVE'
+  }>
 }
 
 function fakeReader(world: FakeWorld): Tx {
@@ -139,9 +144,9 @@ function baseWorld(): FakeWorld {
       },
     ],
     documentVersions: [
-      { id: 'dv1', tenantId: TENANT, knowledgeSpaceId: 'ks1' },
-      { id: 'dv2', tenantId: TENANT, knowledgeSpaceId: 'ks1' },
-      { id: 'dv3', tenantId: OTHER_TENANT, knowledgeSpaceId: 'ks9' },
+      { id: 'dv1', tenantId: TENANT, knowledgeSpaceId: 'ks1', dataClass: 'INTERNAL' },
+      { id: 'dv2', tenantId: TENANT, knowledgeSpaceId: 'ks1', dataClass: 'SENSITIVE' },
+      { id: 'dv3', tenantId: OTHER_TENANT, knowledgeSpaceId: 'ks9', dataClass: 'INTERNAL' },
     ],
   }
 }
@@ -256,6 +261,7 @@ describe('recheckCandidates', () => {
     expect(await recheckCandidates(reader, { tenantId: TENANT, documentVersionIds: [] })).toEqual({
       allowed: [],
       rejected: [],
+      dataClasses: {},
     })
   })
 
@@ -272,7 +278,7 @@ describe('recheckCandidates', () => {
     const world = baseWorld()
     world.documentVersions = [
       ...world.documentVersions,
-      { id: 'dv4', tenantId: TENANT, knowledgeSpaceId: 'ks2' },
+      { id: 'dv4', tenantId: TENANT, knowledgeSpaceId: 'ks2', dataClass: 'PUBLIC' },
     ]
     const result = await recheckCandidates(fakeReader(world), {
       tenantId: TENANT,
@@ -281,5 +287,37 @@ describe('recheckCandidates', () => {
     })
     expect(result.allowed).toEqual(['dv4'])
     expect(result.rejected).toEqual(['dv1'])
+  })
+
+  it('数据等级不是减法项：SENSITIVE/UNKNOWN 候照样放行，dataClasses 如实上报', async () => {
+    // ADR-0025 的阻断点在 T15 准入层——复核若在这里剔敏感候选，敏感内容
+    // 就失去了进入本地执行区的路由机会。等级只作为元数据随行。
+    const world = baseWorld()
+    world.documentVersions = [
+      ...world.documentVersions,
+      { id: 'dv5', tenantId: TENANT, knowledgeSpaceId: 'ks1', dataClass: 'UNKNOWN' },
+    ]
+    const result = await recheckCandidates(fakeReader(world), {
+      tenantId: TENANT,
+      documentVersionIds: ['dv1', 'dv2', 'dv5', 'dv-nope'],
+    })
+    expect(result.allowed).toEqual(['dv1', 'dv2', 'dv5'])
+    expect(result.dataClasses).toEqual({
+      dv1: 'INTERNAL',
+      dv2: 'SENSITIVE',
+      dv5: 'UNKNOWN',
+    })
+  })
+})
+
+describe('两个入口的成员口径不漂移', () => {
+  it('作用域编译的失败原因必须是能力解析失败原因的子集（类型级）', () => {
+    // compileAllowedScopes 故意一次 join 取齐（区分不了 USER_NOT_FOUND），
+    // resolveCapabilities 先查用户再查成员（要区分）。两者的成员状态判定
+    // 必须同源：编译侧新增一个解析侧没有的失败原因，就是口径漂移。
+    type ScopeFailure = Exclude<ScopeCompilation, { ok: true }>['reason']
+    type CapabilityFailure = Exclude<CapabilityResolution, { ok: true }>['reason']
+    const subset: ScopeFailure extends CapabilityFailure ? true : false = true
+    expect(subset).toBe(true)
   })
 })
