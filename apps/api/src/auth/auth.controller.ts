@@ -10,6 +10,7 @@ import {
   Res,
 } from '@nestjs/common'
 import type { CookieOptions, Request, Response } from 'express'
+import { createLogger } from '@rag/observability'
 import { ApiErrorException } from '../common/api-error.exception'
 import { AuthService, IdentityRejectedError, InvalidStateException } from './auth.service'
 import { KeycloakUnavailableError } from './oidc-client'
@@ -36,6 +37,7 @@ import {
 @Controller('auth')
 export class AuthController {
   private readonly config: AuthConfig
+  private readonly logger = createLogger({ bindings: { service: 'api' } })
 
   constructor(
     @Inject(AUTH_CONFIG) config: AuthConfig,
@@ -113,7 +115,15 @@ export class AuthController {
       // 三类失败映射到不同错误码，其余交全局过滤器（INTERNAL_ERROR）：
       // - Keycloak 不可用 → 503 DEPENDENCY_UNAVAILABLE（可重试，调用方应提示稍后再试）
       // - state 不匹配 / token 校验失败 / 身份被拒 → 401 UNAUTHORIZED（重新登录）
-      // - 区分对客户端的文案，细节（供应商原文、禁用原因）只进日志。
+      // - 区分对客户端的文案，细节（供应商原文、禁用原因）只进日志：
+      //   没有这一行，映射后的 401 在日志里零线索，排障只能猜分支。
+      this.logger.warn(
+        {
+          err: cause instanceof Error ? cause.message : String(cause),
+          cause: cause instanceof Error ? cause.constructor.name : typeof cause,
+        },
+        '登录回调失败',
+      )
       if (cause instanceof KeycloakUnavailableError) {
         throw new ApiErrorException('DEPENDENCY_UNAVAILABLE', '身份服务暂不可用，请稍后重试')
       }

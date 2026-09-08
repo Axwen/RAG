@@ -157,18 +157,18 @@ CALLBACK_LOCATION="$(curl -sS -b "${KC_JAR}" -c "${KC_JAR}" --max-time 15 -o /de
   --data-urlencode "password=${DEV_USER_PASSWORD}" \
   --data-urlencode 'credentialId=' \
   "${LOGIN_ACTION}")"
-CALLBACK_CODE="$(python3 -c '
+CALLBACK_QUERY="$(python3 -c '
 import sys, urllib.parse
-q = urllib.parse.urlparse(sys.argv[1]).query
-print(urllib.parse.parse_qs(q).get("code", [""])[0])
+print(urllib.parse.urlparse(sys.argv[1]).query)
 ' "${CALLBACK_LOCATION}")"
-if [[ -z "${CALLBACK_CODE}" ]]; then
+if [[ "${CALLBACK_QUERY}" != *"code="* ]]; then
   echo "❌ 授权码获取失败（location=${CALLBACK_LOCATION:0:120}）" >&2
   exit 1
 fi
 
+# 完整 query 原样转发（code 与 state 都要）：state 丢了会被控制器当 CSRF 拒绝。
 CB1_STATUS="$(curl -sS -b "${API_JAR}" -c "${API_JAR}" -o "${BODY}" -w '%{http_code}' \
-  "${BASE}/auth/callback?code=${CALLBACK_CODE}" || echo 000)"
+  "${BASE}/auth/callback?${CALLBACK_QUERY}" || echo 000)"
 expect "OIDC 回调 -> 200 会话视图" "${CB1_STATUS}" 200
 if python3 -c "import json,sys; sys.exit(0 if 'workspaces' in json.load(open('${BODY}')) else 1)"; then
   pass "会话视图含 Workspace 投影"
@@ -197,13 +197,12 @@ CALLBACK_LOCATION2="$(curl -sS -b "${KC_JAR}" -c "${KC_JAR}" --max-time 15 -o /d
   --data-urlencode "password=${DEV_USER_PASSWORD}" \
   --data-urlencode 'credentialId=' \
   "${LOGIN_ACTION2}")"
-CALLBACK_CODE2="$(python3 -c '
+CALLBACK_QUERY2="$(python3 -c '
 import sys, urllib.parse
-q = urllib.parse.urlparse(sys.argv[1]).query
-print(urllib.parse.parse_qs(q).get("code", [""])[0])
+print(urllib.parse.urlparse(sys.argv[1]).query)
 ' "${CALLBACK_LOCATION2}")"
-CB_STATUS="$(curl -sS -c "${API_JAR}" --max-time 15 -o /dev/null -w '%{http_code}' \
-  "${BASE}/auth/callback?code=${CALLBACK_CODE2}")"
+CB_STATUS="$(curl -sS -b "${API_JAR}" -c "${API_JAR}" --max-time 15 -o /dev/null -w '%{http_code}' \
+  "${BASE}/auth/callback?${CALLBACK_QUERY2}")"
 expect "第二次回调（取会话 cookie）-> 200" "${CB_STATUS}" 200
 
 # req() 从此带上会话 cookie（登录完成，覆盖前面的无 cookie 定义）
@@ -231,7 +230,7 @@ STAMP="$(date +%s)"
 ING_BODY="$(python3 -c '
 import json, sys
 print(json.dumps({
-  "version": int(sys.argv[2]) % 2000000000,
+  "version": int(sys.argv[1]) % 2000000000,
   "parserRef": "deepdoc@1.0.0",
   "chunkerRef": "wide-1024@1.0.0",
   "embeddingRef": "qwen3-embedding-8b@1.0.0",

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Req, UseGuards } from '@nestjs/common'
 import type { Request } from 'express'
+import { ApiErrorException } from '../common/api-error.exception'
 import { ManifestsService } from './manifests.service'
 import { IdentityGuard, identityOf } from '../auth/identity.guard'
 import {
@@ -91,7 +92,11 @@ export class ManifestsController {
   }
 
   @Get('releases/:id')
-  findRelease(@Req() req: Request, @Param('id') id: string) {
-    return this.manifests.findRelease(identityOf(req).tenantId, id)
+  async findRelease(@Req() req: Request, @Param('id') id: string) {
+    const found = await this.manifests.findRelease(identityOf(req).tenantId, id)
+    if (found === null) {
+      throw new ApiErrorException('NOT_FOUND', 'ReleaseManifest 不存在', { param: 'id' })
+    }
+    return found
   }
 }
