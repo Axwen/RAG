@@ -25,6 +25,24 @@ export const dependencyEndpointsSchema = z.object({
 
 export type DependencyEndpoints = z.infer<typeof dependencyEndpointsSchema>
 
+/**
+ * 只解析 Keycloak 接入点，供不需要完整依赖清单的模块复用同一份配置语义。
+ *
+ * auth 模块与健康检查必须使用同一组默认值和 URL 校验，避免各自解析
+ * KEYCLOAK_BASE_URL/KEYCLOAK_REALM 后出现配置漂移。
+ */
+export function loadKeycloakEndpoint(
+  env: NodeJS.ProcessEnv = process.env,
+): Pick<DependencyEndpoints, 'keycloakBaseUrl' | 'keycloakRealm'> {
+  return {
+    keycloakBaseUrl: url.parse(env.KEYCLOAK_BASE_URL ?? 'http://localhost:8080'),
+    keycloakRealm: z
+      .string()
+      .min(1)
+      .parse(env.KEYCLOAK_REALM ?? 'rag-local'),
+  }
+}
+
 /** 解析监听或依赖端口；非法值在启动阶段明确失败。 */
 export function parsePort(value: unknown, variableName: string): number {
   const parsed = portSchema.safeParse(value)
@@ -53,6 +71,7 @@ export function parseRedisUrl(value: string): { host: string; port: number } {
  */
 export function loadDependencyEndpoints(env: NodeJS.ProcessEnv = process.env): DependencyEndpoints {
   const redis = parseRedisUrl(env.REDIS_URL ?? 'redis://localhost:6379')
+  const keycloak = loadKeycloakEndpoint(env)
   return dependencyEndpointsSchema.parse({
     postgresUrl: env.DATABASE_URL,
     opensearchNode: env.OPENSEARCH_NODE ?? 'http://localhost:9200',
@@ -63,8 +82,7 @@ export function loadDependencyEndpoints(env: NodeJS.ProcessEnv = process.env): D
     redisHost: redis.host,
     redisPort: redis.port,
     minioEndpoint: env.MINIO_ENDPOINT ?? 'http://localhost:9000',
-    keycloakBaseUrl: env.KEYCLOAK_BASE_URL ?? 'http://localhost:8080',
-    keycloakRealm: env.KEYCLOAK_REALM ?? 'rag-local',
+    ...keycloak,
   })
 }
 

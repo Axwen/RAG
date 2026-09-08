@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose'
 import type { AuthConfig } from './auth.config'
 
 /**
@@ -35,18 +35,29 @@ export interface TokenClaims {
 }
 
 /** 用 fetch 收敛网络错误：Keycloak 掉线时抛 KeycloakUnavailableError 而不是 TypeError。 */
+async function fetchWithUnavailable(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (cause) {
+    // 连接被拒、DNS 失败、超时（含网络黑洞——SYN 被丢时 fetch 会挂到默认
+    // 10 秒以上）都是「依赖不可用」，对调用方是同一个 503。
+    throw new KeycloakUnavailableError(cause)
+  }
+}
+
 async function fetchOrUnavailable(
   url: string,
   init: RequestInit,
   timeoutMs: number,
 ): Promise<Response> {
-  let response: Response
-  try {
-    response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
-  } catch (cause) {
-    // 连接被拒、DNS 失败、超时（含网络黑洞——SYN 被丢时 fetch 会挂到默认
-    // 10 秒以上）都是「依赖不可用」，对调用方是同一个 503。
-    throw new KeycloakUnavailableError(cause)
+  return fetchWithUnavailable(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+}
+
+/** jose 的远程 JWKS 请求也必须沿用 auth 的超时与故障映射。 */
+async function fetchJwksOrUnavailable(url: string, init: RequestInit): Promise<Response> {
+  const response = await fetchWithUnavailable(url, init)
+  if (response.status >= 500 && response.status <= 599) {
+    throw new KeycloakUnavailableError(new Error(`JWKS 端点返回 HTTP ${response.status}`))
   }
   return response
 }
@@ -61,6 +72,10 @@ export class OidcClient {
       new URL(
         `${config.keycloakBaseUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
       ),
+      {
+        timeoutDuration: config.requestTimeoutMs,
+        [customFetch]: fetchJwksOrUnavailable,
+      },
     )
   }
 
@@ -83,6 +98,9 @@ export class OidcClient {
       this.config.requestTimeoutMs,
     )
     if (!response.ok) {
+      if (response.status >= 500 && response.status <= 599) {
+        throw new KeycloakUnavailableError(new Error(`token 端点返回 HTTP ${response.status}`))
+      }
       // 400 = code 过期/已用/verifier 不符：这是调用方可见的失败，不是依赖不可用。
       const detail = await response.text()
       throw new Error(`token 端点拒绝（HTTP ${response.status}）：${detail.slice(0, 200)}`)

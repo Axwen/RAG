@@ -67,9 +67,10 @@ export class AuthService {
     const tokens = await this.oidc.exchangeCode(code, codeVerifier)
     const claims = await this.oidc.verifyIdToken(tokens.idToken)
 
-    const result = await this.prisma.$transaction((tx) =>
-      loadIdentityContext(tx, { issuer: claims.issuer, subject: claims.subject }),
-    )
+    const result = await loadIdentityContext(this.prisma, {
+      issuer: claims.issuer,
+      subject: claims.subject,
+    })
     if (!result.ok) {
       // 未建档或被禁用：对外都是 UNAUTHORIZED，不区分文案——区分即泄漏
       // 「这个外部身份在库里存在且被禁用」。

@@ -1,5 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createServer, type Server } from 'node:http'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { parseAuthConfig } from '../src/auth/auth.config'
 import { OidcClient } from '../src/auth/oidc-client'
@@ -7,42 +6,44 @@ import { OidcClient } from '../src/auth/oidc-client'
 /**
  * verifyIdToken 的单元层（T14a）。
  *
- * JWKS 不指向真实 Keycloak，而是本地桩服务器——签名密钥对在测试里生成，
- * 桩按 JWKS 格式回它的公钥。这一层钉的是校验规则本身：iss 必须等于配置
- * 的 issuer、aud 必须是本客户端、exp 过了就拒。真实 realm 的签名与
- * 轮换行为在 tests/keycloak-oidc.test.ts。
+ * JWKS 不指向真实 Keycloak，而是由 fetch 桩按 JWKS 格式回测试生成的公钥。
+ * 这一层钉的是校验规则本身：iss 必须等于配置的 issuer、aud 必须是本客户端、
+ * exp 过了就拒。真实 realm 的签名与轮换行为在 tests/keycloak-oidc.test.ts。
  */
 
-const PORT = 38_933
-const ISSUER = `http://127.0.0.1:${PORT}/realms/rag-local`
+const BASE_URL = 'http://keycloak.test'
+const ISSUER = `${BASE_URL}/realms/rag-local`
 const AUDIENCE = 'rag-api'
 
 /** 密钥对与桩服务器在 beforeAll 里建：CJS 测试文件不允许顶层 await。 */
 let privateKey: CryptoKey
-let server: Server
 
 beforeAll(async () => {
   const pair = await generateKeyPair('RS256')
   privateKey = pair.privateKey
   const jwk = await exportJWK(pair.publicKey)
   const jwksBody = JSON.stringify({ keys: [{ ...jwk, kid: 'test-key', use: 'sig', alg: 'RS256' }] })
-  server = createServer((req, res) => {
-    if (req.url?.includes('/protocol/openid-connect/certs') === true) {
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(jwksBody)
-      return
-    }
-    res.writeHead(404)
-    res.end()
-  })
-  await new Promise<void>((resolve) => server.listen(PORT, '127.0.0.1', resolve))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string | URL) => {
+      if (String(url).includes('/protocol/openid-connect/certs')) {
+        return new Response(jwksBody, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response(null, { status: 404 })
+    }),
+  )
 })
-afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))
+afterAll(() => {
+  vi.unstubAllGlobals()
+})
 
 const config = parseAuthConfig({
   AUTH_SESSION_SECRET: 'unit-test-session-secret-0123456789abcdef',
   AUTH_REQUEST_TIMEOUT_MS: '5000',
-  KEYCLOAK_BASE_URL: `http://127.0.0.1:${PORT}`,
+  KEYCLOAK_BASE_URL: BASE_URL,
   KEYCLOAK_REALM: 'rag-local',
 })
 

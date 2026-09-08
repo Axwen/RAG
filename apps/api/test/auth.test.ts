@@ -173,10 +173,25 @@ describe('auth 配置', () => {
     ).toThrow()
   })
 
-  it('未显式配置时使用本地兜底并标注（生产必须显式提供）', () => {
+  it('未显式配置时生成本地临时密钥并标注（生产必须显式提供）', () => {
     const config = parseAuthConfig({})
     expect(config.isLocalFallbackSecret).toBe(true)
+    expect(config.sessionSecret).toHaveLength(43)
+    expect(parseAuthConfig({}).sessionSecret).not.toBe(config.sessionSecret)
     expect(config.clientId).toBe('rag-api')
     expect(config.sessionTtlSeconds).toBe(3600)
+  })
+
+  it('空字符串也按未配置处理，但生产环境仍然拒绝', () => {
+    const config = parseAuthConfig({ AUTH_SESSION_SECRET: '' })
+    expect(config.isLocalFallbackSecret).toBe(true)
+    expect(config.sessionSecret).toHaveLength(43)
+    expect(() => parseAuthConfig({ NODE_ENV: 'production', AUTH_SESSION_SECRET: '' })).toThrow(
+      /生产环境必须显式配置/,
+    )
+  })
+
+  it('生产环境未显式配置会话密钥时启动失败', () => {
+    expect(() => parseAuthConfig({ NODE_ENV: 'production' })).toThrow(/生产环境必须显式配置/)
   })
 })

@@ -1,12 +1,13 @@
+import type { PrismaClient } from '../generated/prisma/client'
 import type { ServerIdentityContext } from '@rag/contracts'
 import type { Tx } from '../tx'
 
 /**
  * 按外部身份装配服务端身份上下文（T14a / ADR-0039 决策 1、3）。
  *
- * 这是 auth 模块到业务库的唯一身份读入口：一次查询取回业务用户与全部成员
- * 事实（租户成员 + Workspace 成员，含角色引用），不提供逐表散查的捷径——
- * 散查会让「装配时必须按 Workspace 分别取角色」这条约束散落到调用方。
+ * 这是 auth 模块到业务库的唯一身份读入口：事务由数据库包持有，调用方只能
+ * 提供 PrismaClient，不能直接拿委托或自行决定事务边界。一次查询取回业务用户
+ * 与全部成员事实（租户成员 + Workspace 成员，含角色引用）。
  *
  * 两个刻意不做的事：
  * - **不自动建用户（JIT provisioning）。** 未经管理员建立的 (issuer, subject)
@@ -30,7 +31,8 @@ export interface IdentityLookupInput {
   readonly subject: string
 }
 
-export async function loadIdentityContext(
+/** 事务中的查询实现；事务边界不向 auth 模块暴露。 */
+async function queryIdentityContext(
   tx: Tx,
   input: IdentityLookupInput,
 ): Promise<IdentityLookupResult> {
@@ -71,4 +73,17 @@ export async function loadIdentityContext(
       })),
     },
   }
+}
+
+/**
+ * 在数据库包内建立事务并装配身份上下文。
+ *
+ * 身份装配暂时只有一次读取，但固定事务边界可以保证后续扩展成员/角色事实时
+ * 仍然从同一个数据库快照构造上下文，而不会让 auth 模块重新获得 `$transaction`。
+ */
+export async function loadIdentityContext(
+  client: PrismaClient,
+  input: IdentityLookupInput,
+): Promise<IdentityLookupResult> {
+  return client.$transaction((tx) => queryIdentityContext(tx, input))
 }

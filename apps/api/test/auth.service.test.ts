@@ -38,10 +38,9 @@ const context: ServerIdentityContext = {
 const loadIdentityMock = vi.mocked(loadIdentityContext)
 
 function makeService(oidc: Partial<OidcClient>): AuthService {
-  const prisma = {
-    // $transaction 只负责把 tx 传给回调；事务语义归集成层。
-    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
-  }
+  // 身份装配入口持有数据库事务边界；auth 这里只传递 PrismaClient，
+  // 不自行调用 `$transaction`。
+  const prisma = {}
   const service = new AuthService(config, prisma as never)
   ;(service as unknown as { oidc: OidcClient }).oidc = {
     exchangeCode: vi.fn(async () => ({ idToken: 'id', accessToken: 'at' })),

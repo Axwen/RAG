@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto'
+import { loadKeycloakEndpoint } from '@rag/config'
 import { z } from 'zod'
 
 /**
@@ -9,7 +11,7 @@ import { z } from 'zod'
  */
 
 const authEnvSchema = z.object({
-  /** 会话签名密钥：≥32 字节。缺省值仅供本地开发，生产必须显式提供。 */
+  /** 会话签名密钥：≥32 字节。缺省时仅生成当前进程有效的本地临时密钥。 */
   AUTH_SESSION_SECRET: z.string().min(32),
   /** 会话 TTL（秒）。到期后 /auth/session 返回 UNAUTHORIZED，需重新登录。 */
   AUTH_SESSION_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(3600),
@@ -23,8 +25,6 @@ const authEnvSchema = z.object({
    * 后者必须有显式超时，否则登录请求长时间悬而不决。
    */
   AUTH_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().max(30_000).default(5_000),
-  KEYCLOAK_BASE_URL: z.url().default('http://localhost:8080'),
-  KEYCLOAK_REALM: z.string().min(1).default('rag-local'),
 })
 
 export interface AuthConfig {
@@ -42,24 +42,29 @@ export interface AuthConfig {
   /** Authorization 端点与 token 端点（OIDC discovery 的标准路径）。 */
   readonly authorizeUrl: string
   readonly tokenUrl: string
-  /** 本地开发兜底密钥：明确标注只限本地，与 .env.example 的说明一致。 */
+  /** 未显式配置会话密钥时的本地临时密钥标记；生产环境禁止该路径。 */
   readonly isLocalFallbackSecret: boolean
 }
 
-const LOCAL_FALLBACK_SECRET = 'local-dev-only-session-secret-32bytes!!'
-
 export function parseAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig {
+  const isLocalFallbackSecret =
+    env.AUTH_SESSION_SECRET === undefined || env.AUTH_SESSION_SECRET === ''
+  if (isLocalFallbackSecret && env.NODE_ENV === 'production') {
+    throw new Error('生产环境必须显式配置 AUTH_SESSION_SECRET，禁止使用本地临时会话密钥')
+  }
+  const sessionSecret = isLocalFallbackSecret
+    ? randomBytes(32).toString('base64url')
+    : env.AUTH_SESSION_SECRET!
   const parsed = authEnvSchema.parse({
-    AUTH_SESSION_SECRET: env.AUTH_SESSION_SECRET ?? LOCAL_FALLBACK_SECRET,
+    AUTH_SESSION_SECRET: sessionSecret,
     AUTH_SESSION_TTL_SECONDS: env.AUTH_SESSION_TTL_SECONDS ?? 3600,
     AUTH_API_BASE_URL: env.AUTH_API_BASE_URL ?? 'http://localhost:3001',
     AUTH_CLIENT_ID: env.AUTH_CLIENT_ID ?? 'rag-api',
     AUTH_REQUEST_TIMEOUT_MS: env.AUTH_REQUEST_TIMEOUT_MS ?? 5_000,
-    KEYCLOAK_BASE_URL: env.KEYCLOAK_BASE_URL ?? 'http://localhost:8080',
-    KEYCLOAK_REALM: env.KEYCLOAK_REALM ?? 'rag-local',
   })
-  const base = parsed.KEYCLOAK_BASE_URL.replace(/\/+$/, '')
-  const realm = parsed.KEYCLOAK_REALM
+  const keycloak = loadKeycloakEndpoint(env)
+  const base = keycloak.keycloakBaseUrl.replace(/\/+$/, '')
+  const realm = keycloak.keycloakRealm
   return {
     sessionSecret: parsed.AUTH_SESSION_SECRET,
     sessionTtlSeconds: parsed.AUTH_SESSION_TTL_SECONDS,
@@ -71,6 +76,6 @@ export function parseAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfi
     issuer: `${base}/realms/${realm}`,
     authorizeUrl: `${base}/realms/${realm}/protocol/openid-connect/auth`,
     tokenUrl: `${base}/realms/${realm}/protocol/openid-connect/token`,
-    isLocalFallbackSecret: parsed.AUTH_SESSION_SECRET === LOCAL_FALLBACK_SECRET,
+    isLocalFallbackSecret,
   }
 }
