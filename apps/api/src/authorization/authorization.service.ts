@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common'
 import type {
   AuthorizationDecision,
+  AuthorizationDenialReason,
   AuthorizationRequest,
   AuthorizationResource,
+  AuthzReasonCode,
 } from '@rag/contracts'
+import { scopeKeyForKnowledgeSpace, stage1DeniedDataClasses } from '@rag/contracts'
 import {
   compileAllowedScopes,
   recheckCandidates,
@@ -30,6 +33,14 @@ import { PrismaService } from '../database/prisma.service'
  * 并以 DEGRADED outcome 写审计（若审计本身也不可用，则只剩日志）。
  */
 
+/** 拒绝原因 → 审计码，四类各一枚注册表码。契约测试钉住这个双射。 */
+const DENIAL_AUDIT_CODE = {
+  CAPABILITY_MISSING: 'authz.capability_denied',
+  SCOPE_DENIED: 'authz.scope_denied',
+  DATA_CLASS_DENIED: 'authz.dataclass_denied',
+  DEPENDENCY_UNAVAILABLE: 'authz.dependency_unavailable',
+} as const satisfies Record<AuthorizationDenialReason, AuthzReasonCode>
+
 @Injectable()
 export class AuthorizationService {
   private readonly logger = createLogger({ bindings: { service: 'api' } })
@@ -42,11 +53,6 @@ export class AuthorizationService {
   ): Promise<AuthorizationDecision> {
     let decision: AuthorizationDecision
     let auditOutcome: 'ALLOWED' | 'DENIED' | 'DEGRADED'
-    let reasonCode:
-      | 'authz.capability_allowed'
-      | 'authz.capability_denied'
-      | 'authz.scope_denied'
-      | 'authz.dependency_unavailable'
 
     try {
       const capabilities = await resolveCapabilities(this.prisma, {
@@ -54,13 +60,9 @@ export class AuthorizationService {
         tenantId: request.tenantId,
         ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }),
       })
-      if (!capabilities.ok) {
+      if (!capabilities.ok || !capabilities.capabilities.has(request.capability)) {
+        // 成员失效与能力缺失对调用方是同一个原因：都是「不能执行这个操作」。
         decision = { allowed: false, reason: 'CAPABILITY_MISSING' }
-        reasonCode = 'authz.capability_denied'
-        auditOutcome = 'DENIED'
-      } else if (!capabilities.capabilities.has(request.capability)) {
-        decision = { allowed: false, reason: 'CAPABILITY_MISSING' }
-        reasonCode = 'authz.capability_denied'
         auditOutcome = 'DENIED'
       } else if (request.resource !== undefined) {
         decision = await this.checkResource(
@@ -68,11 +70,9 @@ export class AuthorizationService {
           request.tenantId,
           request.resource,
         )
-        reasonCode = decision.allowed ? 'authz.capability_allowed' : 'authz.scope_denied'
         auditOutcome = decision.allowed ? 'ALLOWED' : 'DENIED'
       } else {
         decision = { allowed: true }
-        reasonCode = 'authz.capability_allowed'
         auditOutcome = 'ALLOWED'
       }
     } catch (cause) {
@@ -82,19 +82,29 @@ export class AuthorizationService {
         '授权依赖不可用，fail closed',
       )
       decision = { allowed: false, reason: 'DEPENDENCY_UNAVAILABLE' }
-      reasonCode = 'authz.dependency_unavailable'
       auditOutcome = 'DEGRADED'
     }
 
+    const reasonCode: AuthzReasonCode = decision.allowed
+      ? 'authz.capability_allowed'
+      : DENIAL_AUDIT_CODE[decision.reason]
     await this.writeDecisionAudit(request, decision, reasonCode, auditOutcome, options.traceId)
     return decision
   }
 
   /**
-   * 资源策略层（阶段 1 纯作用域型，ADR-0026）：资源所属知识空间必须在
-   * 主体的允许作用域键集合内。数据等级拒绝在这里做——文档版本的等级
-   * 不参与作用域键（键粒度到知识空间），SENSITIVE/UNKNOWN 拒绝是策略
-   * 判定不是过滤键判定。
+   * 资源策略层（ADR-0039 决策 2），两个判定：
+   *
+   * 1. 作用域：资源所属知识空间必须在主体的允许作用域键集合内。键粒度
+   *    到知识空间（ADR-0026/0037），格式由 contracts 的
+   *    `scopeKeyForKnowledgeSpace` 唯一定义，这里不手拼第二份。
+   * 2. 数据等级：document_version 的 dataClass 落在 stage1DeniedDataClasses
+   *    （UNKNOWN/SENSITIVE）时拒绝——阶段 1 无 clearance 模型，fail closed。
+   *    注意这**不是**候选复核的减法项：SENSITIVE 检索候选仍要被召回，
+   *    由 T15 准入层按执行区阻断（ADR-0025），两层职责不得互换。
+   *
+   * document_version 还要过候选复核（同一批量入口，单资源退化形态）：
+   * 版本必须真实存在于本租户。存在性 + 墓碑/有效期的未来项都在这一跳。
    */
   private async checkResource(
     businessUserId: string,
@@ -104,24 +114,24 @@ export class AuthorizationService {
     const scopes = await compileAllowedScopes(this.prisma, { businessUserId, tenantId })
     if (!scopes.ok) return { allowed: false, reason: 'SCOPE_DENIED' }
 
-    const resourceKey =
-      resource.kind === 'knowledge_space'
-        ? `t:${tenantId}:ks:${resource.knowledgeSpaceId}`
-        : `t:${tenantId}:ks:${resource.knowledgeSpaceId}`
-    if (!scopes.ok || !scopes.scopes.scopeKeys.includes(resourceKey)) {
+    const resourceKey = scopeKeyForKnowledgeSpace(tenantId, resource.knowledgeSpaceId)
+    if (!scopes.scopes.scopeKeys.includes(resourceKey)) {
       return { allowed: false, reason: 'SCOPE_DENIED' }
     }
 
-    // document_version 还要过候选复核（同一批量入口，单资源退化形态）：
-    // 版本必须真实存在于本租户。存在性 + 墓碑/有效期的未来项都在这一跳。
     if (resource.kind === 'document_version') {
       const recheck = await recheckCandidates(this.prisma, {
         tenantId,
         knowledgeSpaceId: resource.knowledgeSpaceId,
         documentVersionIds: [resource.documentVersionId],
       })
-      if (!recheck.allowed.includes(resource.documentVersionId)) {
+      const dataClass = recheck.dataClasses[resource.documentVersionId]
+      if (dataClass === undefined) {
+        // 复核减法把它剔了：不存在、跨租户或不在该知识空间。
         return { allowed: false, reason: 'SCOPE_DENIED' }
+      }
+      if (stage1DeniedDataClasses.includes(dataClass)) {
+        return { allowed: false, reason: 'DATA_CLASS_DENIED' }
       }
     }
     return { allowed: true }
@@ -131,11 +141,7 @@ export class AuthorizationService {
   private async writeDecisionAudit(
     request: AuthorizationRequest,
     decision: AuthorizationDecision,
-    reasonCode:
-      | 'authz.capability_allowed'
-      | 'authz.capability_denied'
-      | 'authz.scope_denied'
-      | 'authz.dependency_unavailable',
+    reasonCode: AuthzReasonCode,
     outcome: 'ALLOWED' | 'DENIED' | 'DEGRADED',
     traceId: string | undefined,
   ): Promise<void> {
