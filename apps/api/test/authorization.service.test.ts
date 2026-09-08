@@ -138,7 +138,7 @@ describe('资源层', () => {
       ok: true,
       scopes: { aclRevision: 3, scopeKeys: ['t:t1:ks:ks1'] },
     })
-    recheckMock.mockResolvedValue({ allowed: [], rejected: ['dv1'] })
+    recheckMock.mockResolvedValue({ allowed: [], rejected: ['dv1'], dataClasses: {} })
     const { service } = makeService()
     const decision = await service.authorize({
       ...request,
@@ -150,6 +150,60 @@ describe('资源层', () => {
       knowledgeSpaceId: 'ks1',
       documentVersionIds: ['dv1'],
     })
+  })
+
+  it('document_version 的 dataClass 落在阶段 1 拒绝集（UNKNOWN/SENSITIVE）→ DATA_CLASS_DENIED', async () => {
+    capabilitiesMock.mockResolvedValue({ ok: true, capabilities: new Set(['answer.run']) })
+    scopesMock.mockResolvedValue({
+      ok: true,
+      scopes: { aclRevision: 3, scopeKeys: ['t:t1:ks:ks1'] },
+    })
+    const { service } = makeService()
+    const run = async () =>
+      service.authorize({
+        ...request,
+        resource: { kind: 'document_version', knowledgeSpaceId: 'ks1', documentVersionId: 'dv9' },
+      })
+
+    recheckMock.mockResolvedValue({
+      allowed: ['dv9'],
+      rejected: [],
+      dataClasses: { dv9: 'SENSITIVE' },
+    })
+    expect(await run()).toEqual({ allowed: false, reason: 'DATA_CLASS_DENIED' })
+
+    recheckMock.mockResolvedValue({
+      allowed: ['dv9'],
+      rejected: [],
+      dataClasses: { dv9: 'UNKNOWN' },
+    })
+    expect(await run()).toEqual({ allowed: false, reason: 'DATA_CLASS_DENIED' })
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ reasonCode: 'authz.dataclass_denied', outcome: 'DENIED' }),
+    )
+  })
+
+  it('非敏感等级（PUBLIC/INTERNAL/CONTROLLED）放行——拒绝集只有 UNKNOWN/SENSITIVE', async () => {
+    capabilitiesMock.mockResolvedValue({ ok: true, capabilities: new Set(['answer.run']) })
+    scopesMock.mockResolvedValue({
+      ok: true,
+      scopes: { aclRevision: 3, scopeKeys: ['t:t1:ks:ks1'] },
+    })
+    const { service } = makeService()
+    for (const dataClass of ['PUBLIC', 'INTERNAL', 'CONTROLLED'] as const) {
+      recheckMock.mockResolvedValue({
+        allowed: ['dv9'],
+        rejected: [],
+        dataClasses: { dv9: dataClass },
+      })
+      expect(
+        await service.authorize({
+          ...request,
+          resource: { kind: 'document_version', knowledgeSpaceId: 'ks1', documentVersionId: 'dv9' },
+        }),
+      ).toEqual({ allowed: true })
+    }
   })
 })
 
