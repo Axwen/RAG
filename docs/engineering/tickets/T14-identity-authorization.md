@@ -17,6 +17,13 @@ T14a 结束时增设一个临时人工门禁（[HG-01a](../manual-acceptance-gat
 
 T14b 不得早于 [T11a](T11-audit-telemetry.md#批次划分) 收口：本票据 DoD 要求授权决策写同步领域审计，原因码要落在 T11a 的中央注册表（[ADR-0040](../../adr/0040-domain-audit-and-runtime-telemetry.md) 决策 3），没有注册表就只能在 `auth` 包里私拍一套码，之后再迁移。
 
+T14b 落地边界（2026-09-08 代码评审后补记，防止批次行点了某项、读者却不知道它落在哪一层）：
+
+- **数据等级拒绝已落地**：资源策略层对 `document_version` 的 `dataClass` 做 UNKNOWN/SENSITIVE 拒绝——阶段 1 没有 per-subject clearance 模型，fail closed 是默认（拒绝原因 `DATA_CLASS_DENIED`，审计码 `authz.dataclass_denied`）。检索候选复核**不做**这个减法：敏感候选仍可召回，执行区阻断在 T15 准入层（[ADR-0025](../../adr/0025-data-class-routing-enforcement-point.md)），两层职责不得互换。
+- **复核超时**：查库抛错 → fail closed 已在单元层钉住；「超时」需要一个带 deadline 的调用方，接线点在 T6 检索链路的查询编排，T14b 不预造。
+- **多角色 E2E**：多角色能力并集与跨租户 Workspace 拒绝已在真库集成层钉住（`tests/authorization-integration.test.ts`）；完整浏览器 E2E 随 T16 Web 面与 HG-01 核验补（Playwright 尚未引入）。
+- **统一授权入口的调用点**：入口已全局可用，受保护路由的接线归 T6——与 T12a 五条事务入口「先有库层、调用方归后票」同一形态，不是缺口悬空。
+
 ## 范围
 
 - `apps/api/src/modules/auth/`：Authorization Code + PKCE、JWKS 校验、会话过期与 Keycloak 不可用映射。
