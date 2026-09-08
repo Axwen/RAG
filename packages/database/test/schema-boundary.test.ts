@@ -200,6 +200,21 @@ describe('审计契约与库结构不漂移（ADR-0040 / T11a）', () => {
     }
   })
 
+  it('成员角色外键同时约束租户，迁移触发器约束 RoleScope', () => {
+    expect(migrations).toContain(
+      'CONSTRAINT "tenant_memberships_tenant_role_fkey" FOREIGN KEY ("tenantId", "tenantRoleId")',
+    )
+    expect(migrations).toContain(
+      'REFERENCES "roles"("tenantId", "id") ON DELETE RESTRICT ON UPDATE CASCADE',
+    )
+    expect(migrations).toContain(
+      'CONSTRAINT "workspace_memberships_tenant_role_fkey" FOREIGN KEY ("tenantId", "roleId")',
+    )
+    expect(migrations).toContain('CREATE TRIGGER tenant_memberships_role_scope_guard')
+    expect(migrations).toContain('CREATE TRIGGER workspace_memberships_role_scope_guard')
+    expect(migrations).toContain('CREATE TRIGGER roles_scope_change_guard')
+  })
+
   it('成员→角色绑定内嵌在 membership 表上，没有 UserRole 关联表', () => {
     // 7 张表是 ADR-0039 定下的最小模型；多出来的关联表说明「同 Workspace 多角色」
     // 这个扩展点被顺手实现了，而它需要先改 ADR 再改估算。
