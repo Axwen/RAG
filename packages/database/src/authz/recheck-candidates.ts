@@ -14,6 +14,10 @@ import type { Tx } from '../tx'
  * 删除墓碑、Legal Hold 与有效期随 T5/T8 的列落地逐项加入——列出现时
  * 只在这个查询的 WHERE 里加条件，形状保持批量单查询。
  *
+ * 数据等级不是复核的减法项（ADR-0025 的阻断点在 T15 准入层，不在召回）：
+ * 查询顺带带回允许候选的 `dataClass`，供统一授权入口的资源策略读，
+ * 检索链路忽略它。
+ *
  * 数据库不可用时的 fail closed 不在这里：查询抛异常向上传播，由调用方
  * （检索链路）映射 evidence unavailable，绝不以「跳过复核」放行候选。
  */
@@ -32,7 +36,7 @@ export async function recheckCandidates(
   input: CandidateRecheckInput,
 ): Promise<CandidateRecheckResult> {
   if (input.documentVersionIds.length === 0) {
-    return { allowed: [], rejected: [] }
+    return { allowed: [], rejected: [], dataClasses: {} }
   }
 
   // document_versions 的 (tenantId, id) 唯一索引让这次 IN 查询走索引扫描；
@@ -45,9 +49,13 @@ export async function recheckCandidates(
         ? {}
         : { document: { knowledgeSpaceId: input.knowledgeSpaceId } }),
     },
-    select: { id: true },
+    select: { id: true, dataClass: true },
   })
   const allowedSet = new Set(found.map((row) => row.id))
+  const dataClasses: Record<string, (typeof found)[number]['dataClass']> = {}
+  for (const row of found) {
+    dataClasses[row.id] = row.dataClass
+  }
 
   const allowed: string[] = []
   const rejected: string[] = []
@@ -63,5 +71,5 @@ export async function recheckCandidates(
       rejected.push(id)
     }
   }
-  return { allowed, rejected }
+  return { allowed, rejected, dataClasses }
 }

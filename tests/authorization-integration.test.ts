@@ -287,4 +287,45 @@ describe('候选复核（ADR-0026 第二段）', () => {
     expect(narrowed.allowed).toEqual([])
     expect(narrowed.rejected).toEqual([versionIn.id])
   })
+
+  it('数据等级不是减法项：SENSITIVE/UNKNOWN 过真库复核照样放行，dataClasses 如实上报', async () => {
+    // ADR-0025 的阻断点在 T15 准入层——复核若在召回侧剔敏感候选，敏感内容
+    // 就失去了进入本地执行区的路由机会。等级只作为元数据随行，供统一
+    // 授权入口的资源策略（stage1DeniedDataClasses）读取。
+    const doc = await prisma.document.create({
+      data: { id: randomUUID(), tenantId, knowledgeSpaceId: spaceIn },
+    })
+    const makeVersion = (dataClass: 'SENSITIVE' | 'UNKNOWN' | 'CONTROLLED') =>
+      prisma.documentVersion.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          documentId: doc.id,
+          version: dataClass === 'SENSITIVE' ? 1 : dataClass === 'UNKNOWN' ? 2 : 3,
+          sourceFormat: 'pdf',
+          dataClass,
+          contentHash: `h-${randomUUID()}`,
+          objectKey: `s3://int/${randomUUID()}`,
+          sizeBytes: 100,
+        },
+        select: { id: true },
+      })
+    const [sensitive, unknown, controlled] = await Promise.all([
+      makeVersion('SENSITIVE'),
+      makeVersion('UNKNOWN'),
+      makeVersion('CONTROLLED'),
+    ])
+
+    const result = await recheckCandidates(prisma, {
+      tenantId,
+      documentVersionIds: [sensitive.id, unknown.id, controlled.id],
+    })
+    expect(result.allowed).toEqual([sensitive.id, unknown.id, controlled.id])
+    expect(result.rejected).toEqual([])
+    expect(result.dataClasses).toEqual({
+      [sensitive.id]: 'SENSITIVE',
+      [unknown.id]: 'UNKNOWN',
+      [controlled.id]: 'CONTROLLED',
+    })
+  })
 })
