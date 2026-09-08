@@ -18,6 +18,8 @@ import type { ServerIdentityContext } from '@rag/contracts'
 
 export interface SessionPayload {
   readonly context: ServerIdentityContext
+  /** 多租户主体显式选择的当前租户；签名保护，不能由请求参数直接覆盖。 */
+  readonly activeTenantId?: string
   /** Unix 秒。过期即失效，与 Cookie 自身的 Max-Age 双保险（见 auth.controller）。 */
   readonly expiresAt: number
 }

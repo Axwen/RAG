@@ -77,6 +77,11 @@ describe('AuthService.sessionView', () => {
     expect(view.businessUserId).toBe('u1')
     expect(view).not.toHaveProperty('issuer')
   })
+
+  it('投影活动租户', () => {
+    const service = makeService({})
+    expect(service.sessionView(context, 't1').activeTenantId).toBe('t1')
+  })
 })
 
 describe('AuthService.establishIdentity', () => {
@@ -126,5 +131,50 @@ describe('AuthService.establishIdentity', () => {
     )
     // 不可用发生在身份装配之前。
     expect(loadIdentityMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('AuthService.selectTenant', () => {
+  const selectableContext: ServerIdentityContext = {
+    ...context,
+    tenantMemberships: [{ tenantId: 't1', status: 'ACTIVE', tenantRole: null }],
+  }
+
+  it('重新装配业务身份，并仅接受目标 ACTIVE 成员关系', async () => {
+    loadIdentityMock.mockResolvedValue({ ok: true, context: selectableContext })
+    const service = makeService({})
+    expect(await service.selectTenant(context, 't1')).toEqual(selectableContext)
+    expect(loadIdentityMock).toHaveBeenCalledWith(expect.anything(), {
+      issuer: context.issuer,
+      subject: context.subject,
+    })
+  })
+
+  it('目标成员不存在或非 ACTIVE 时拒绝选择', async () => {
+    loadIdentityMock.mockResolvedValue({ ok: true, context: selectableContext })
+    const service = makeService({})
+    await expect(service.selectTenant(context, 'other')).rejects.toMatchObject({
+      name: 'TenantSelectionRejectedError',
+    })
+
+    loadIdentityMock.mockResolvedValue({
+      ok: true,
+      context: {
+        ...selectableContext,
+        tenantMemberships: [{ tenantId: 't1', status: 'REVOKED', tenantRole: null }],
+      },
+    })
+    await expect(service.selectTenant(context, 't1')).rejects.toMatchObject({
+      name: 'TenantSelectionRejectedError',
+    })
+  })
+
+  it('身份被禁用时按登录同一口径拒绝', async () => {
+    loadIdentityMock.mockResolvedValue({ ok: false, reason: 'USER_DISABLED' })
+    const service = makeService({})
+    await expect(service.selectTenant(context, 't1')).rejects.toMatchObject({
+      name: 'IdentityRejectedError',
+      reason: 'USER_DISABLED',
+    })
   })
 })

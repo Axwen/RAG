@@ -24,13 +24,11 @@ import { PrismaService } from '../database/prisma.service'
  * 「这件事涉及的数据可不可见」）。
  *
  * 每次判定写一行同步领域审计（T14 DoD）：允许与拒绝都写，原因码取
- * T11a 中央注册表的 authz.*。审计写失败的语义分方向——拒绝路径的结论
- * 已经安全，审计失败只进日志；允许路径审计写不进去就不得放行（fail
- * closed，决策翻转为 DEPENDENCY_UNAVAILABLE）。「Trace/Telemetry 故障
- * 不影响拒绝结果」的同一条纪律：拒绝永远成立。
+ * T11a 中央注册表的 authz.*。领域审计是业务事务的一部分，任何方向的
+ * 审计写失败都必须让本次业务操作失败（ADR-0040），不得按遥测语义吞掉。
  *
  * 依赖不可用（数据库查询抛错）：fail closed，返回 DEPENDENCY_UNAVAILABLE
- * 并以 DEGRADED outcome 写审计（若审计本身也不可用，则只剩日志）。
+ * 并以 DEGRADED outcome 写审计；审计写入本身失败时继续向上抛出。
  */
 
 /** 拒绝原因 → 审计码，四类各一枚注册表码。契约测试钉住这个双射。 */
@@ -69,6 +67,7 @@ export class AuthorizationService {
           request.businessUserId,
           request.tenantId,
           request.resource,
+          request.workspaceId,
         )
         auditOutcome = decision.allowed ? 'ALLOWED' : 'DENIED'
       } else {
@@ -110,8 +109,13 @@ export class AuthorizationService {
     businessUserId: string,
     tenantId: string,
     resource: AuthorizationResource,
+    workspaceId: string | undefined,
   ): Promise<AuthorizationDecision> {
-    const scopes = await compileAllowedScopes(this.prisma, { businessUserId, tenantId })
+    const scopes = await compileAllowedScopes(this.prisma, {
+      businessUserId,
+      tenantId,
+      ...(workspaceId === undefined ? {} : { workspaceId }),
+    })
     if (!scopes.ok) return { allowed: false, reason: 'SCOPE_DENIED' }
 
     const resourceKey = scopeKeyForKnowledgeSpace(tenantId, resource.knowledgeSpaceId)
@@ -137,7 +141,7 @@ export class AuthorizationService {
     return { allowed: true }
   }
 
-  /** 决策审计。拒绝路径审计失败只记日志；允许路径审计失败把决策翻转为 fail closed。 */
+  /** 决策审计属于业务结果；写入失败一律向上抛。 */
   private async writeDecisionAudit(
     request: AuthorizationRequest,
     decision: AuthorizationDecision,
@@ -151,34 +155,20 @@ export class AuthorizationService {
         : request.resource.kind === 'knowledge_space'
           ? { type: 'knowledge_space', id: request.resource.knowledgeSpaceId }
           : { type: 'document_version', id: request.resource.documentVersionId }
-    try {
-      await this.prisma.$transaction((tx) =>
-        writeAuditEvent(tx, {
-          tenantId: request.tenantId,
-          reasonCode,
-          outcome,
-          actor: { businessUserId: request.businessUserId },
-          ...(subject === undefined ? {} : { subject }),
-          detail: {
-            capability: request.capability,
-            workspaceId: request.workspaceId ?? null,
-            denialReason: decision.allowed ? null : decision.reason,
-          },
-          ...(traceId === undefined ? {} : { traceId }),
-        }),
-      )
-    } catch (cause) {
-      if (!decision.allowed) {
-        // 拒绝已成立，审计失败不推翻它——但必须留痕。
-        this.logger.error(
-          { err: cause instanceof Error ? cause.message : String(cause), reasonCode, traceId },
-          '授权拒绝的审计写入失败（拒绝结论不受影响）',
-        )
-        return
-      }
-      // 允许路径审计写不进去：不放行。向上抛让调用方得到 5xx（fail closed），
-      // 而不是把「已允许但无审计」的行返回给业务代码。
-      throw cause
-    }
+    await this.prisma.$transaction((tx) =>
+      writeAuditEvent(tx, {
+        tenantId: request.tenantId,
+        reasonCode,
+        outcome,
+        actor: { businessUserId: request.businessUserId },
+        ...(subject === undefined ? {} : { subject }),
+        detail: {
+          capability: request.capability,
+          workspaceId: request.workspaceId ?? null,
+          denialReason: decision.allowed ? null : decision.reason,
+        },
+        ...(traceId === undefined ? {} : { traceId }),
+      }),
+    )
   }
 }

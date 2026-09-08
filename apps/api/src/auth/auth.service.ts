@@ -79,8 +79,24 @@ export class AuthService {
     return result.context
   }
 
-  sessionView(context: ServerIdentityContext): SessionView {
-    return toSessionView(context)
+  async selectTenant(
+    context: ServerIdentityContext,
+    tenantId: string,
+  ): Promise<ServerIdentityContext> {
+    const result = await loadIdentityContext(this.prisma, {
+      issuer: context.issuer,
+      subject: context.subject,
+    })
+    if (!result.ok) throw new IdentityRejectedError(result.reason)
+    const active = result.context.tenantMemberships.some(
+      (membership) => membership.tenantId === tenantId && membership.status === 'ACTIVE',
+    )
+    if (!active) throw new TenantSelectionRejectedError()
+    return result.context
+  }
+
+  sessionView(context: ServerIdentityContext, activeTenantId?: string): SessionView {
+    return toSessionView(context, activeTenantId)
   }
 }
 
@@ -95,5 +111,12 @@ export class IdentityRejectedError extends Error {
   constructor(readonly reason: 'USER_NOT_FOUND' | 'USER_DISABLED') {
     super('身份校验未通过')
     this.name = 'IdentityRejectedError'
+  }
+}
+
+export class TenantSelectionRejectedError extends Error {
+  constructor() {
+    super('目标租户不是当前身份的活跃成员关系')
+    this.name = 'TenantSelectionRejectedError'
   }
 }

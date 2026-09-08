@@ -21,8 +21,9 @@ T14b 落地边界（2026-09-08 代码评审后补记，防止批次行点了某�
 
 - **数据等级拒绝已落地**：资源策略层对 `document_version` 的 `dataClass` 做 UNKNOWN/SENSITIVE 拒绝——阶段 1 没有 per-subject clearance 模型，fail closed 是默认（拒绝原因 `DATA_CLASS_DENIED`，审计码 `authz.dataclass_denied`）。检索候选复核**不做**这个减法：敏感候选仍可召回，执行区阻断在 T15 准入层（[ADR-0025](../../adr/0025-data-class-routing-enforcement-point.md)），两层职责不得互换。
 - **复核超时**：查库抛错 → fail closed 已在单元层钉住；「超时」需要一个带 deadline 的调用方，接线点在 T6 检索链路的查询编排，T14b 不预造。
+- **候选复核的删除墓碑、Legal Hold、有效期**：这些字段及状态机属于 T5/T8 的文档与删除模型；当前复核只验证存在性、租户和知识空间，模型落地后由相应票据补齐并回到 T14 候选复核闭合检查。
 - **多角色 E2E**：多角色能力并集与跨租户 Workspace 拒绝已在真库集成层钉住（`tests/authorization-integration.test.ts`）；完整浏览器 E2E 随 T16 Web 面与 HG-01 核验补（Playwright 尚未引入）。
-- **统一授权入口的调用点**：入口已全局可用，受保护路由的接线归 T6——与 T12a 五条事务入口「先有库层、调用方归后票」同一形态，不是缺口悬空。
+- **统一授权入口的调用点**：Manifest/Release 受保护端点已接入统一入口；检索与其它后续领域调用点仍由各自票据接线，不能据此宣称 T14b 全部闭合。
 
 ## 范围
 
@@ -39,7 +40,7 @@ T14b 落地边界（2026-09-08 代码评审后补记，防止批次行点了某�
 
 - `BusinessUser`：本系统的业务用户主表，使用 `(issuer, subject)` 映射 Keycloak 身份，保存展示资料、业务状态和审计关联；不保存密码。
 - `TenantMembership`：业务用户与租户的成员关系、状态和租户级管理能力。
-- `Workspace` / `WorkspaceMembership`：客服、研发、普通员工等角色工作台及其成员关系；同一用户可加入多个 Workspace。
+- `Workspace` / `WorkspaceMembership` / `WorkspaceKnowledgeSpace`：客服、研发、普通员工等角色工作台、成员关系及知识空间策略绑定；同一用户可加入多个 Workspace，指定 Workspace 时作用域只取其绑定空间。
 - `Role` / `Permission` / `RolePermission`：租户或 Workspace 范围内的功能角色和稳定能力权限码；阶段 1 以角色绑定为主，不建立无边界的全局用户角色。
 - KnowledgeSpace、文档版本等领域资源继续由各自资源策略授权，不强行塞进通用 RBAC 表。
 
@@ -97,7 +98,7 @@ T14b 落地边界（2026-09-08 代码评审后补记，防止批次行点了某�
 ## DoD
 
 - F-08、F-18、F-20、F-25 对应安全检查全部有代码和测试证据。
-- 授权决策写同步领域审计（原因码取自 [T11a](T11-audit-telemetry.md#批次划分) 的中央注册表），Trace/Telemetry 故障不影响拒绝结果。
+- 授权决策写同步领域审计（原因码取自 [T11a](T11-audit-telemetry.md#批次划分) 的中央注册表）；领域审计写失败必须让业务失败，遥测故障不得改变既有拒绝结论。
 - 没有业务模块自行解析 Token 或绕过统一授权服务。
 - **T1a 迁移期兼容退场**：`tenantId` 从 Manifest/Release 入参 schema 中移除，租户只从服务端身份上下文推导，并有测试钉住「请求体携带 `tenantId` 不生效或被拒绝」。没有这条，迁移期兼容就是永久后门。
 - **按 id 查询必须带租户谓词**：所有领域对象的按 id 读取与写入（`approve*`、`GET /releases/:id` 等）都在 WHERE 里带上从身份上下文推导的 `tenantId`，不得以「UUIDv7 不可猜测」当作隔离手段。T1a 代码评审已确认这些路径目前只按裸 id 查询：跨租户 approve 会把对方的 Manifest 永久锁成不可变（数据库不可变触发器），跨租户读 Release 会泄漏 `memberSetUri` 与索引名。每类对象至少一条测试：用租户 A 的身份带租户 B 的 id 请求，得到 `NOT_FOUND` 而不是 `FORBIDDEN`（后者会确认该 id 存在）。

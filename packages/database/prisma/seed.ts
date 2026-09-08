@@ -396,6 +396,21 @@ async function seed(): Promise<void> {
         },
         update: {},
       })
+      await prisma.workspaceKnowledgeSpace.upsert({
+        where: {
+          tenantId_workspaceId_knowledgeSpaceId: {
+            tenantId: TENANT_ID,
+            workspaceId: desk.workspaceId,
+            knowledgeSpaceId: SPACE_ID,
+          },
+        },
+        create: {
+          tenantId: TENANT_ID,
+          workspaceId: desk.workspaceId,
+          knowledgeSpaceId: SPACE_ID,
+        },
+        update: {},
+      })
     }
 
     console.warn(

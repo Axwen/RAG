@@ -3,6 +3,7 @@ import type { Request } from 'express'
 import { ApiErrorException } from '../common/api-error.exception'
 import { ManifestsService } from './manifests.service'
 import { IdentityGuard, identityOf } from '../auth/identity.guard'
+import { AuthorizationService } from '../authorization/authorization.service'
 import {
   answerManifestCreateSchema,
   ingestionManifestCreateSchema,
@@ -20,80 +21,101 @@ import {
 @Controller()
 @UseGuards(IdentityGuard)
 export class ManifestsController {
-  constructor(private readonly manifests: ManifestsService) {}
+  constructor(
+    private readonly manifests: ManifestsService,
+    private readonly authorization: AuthorizationService,
+  ) {}
+
+  private async requireCapability(request: Request, capability: string) {
+    const identity = identityOf(request)
+    const decision = await this.authorization.authorize({
+      businessUserId: identity.context.businessUserId,
+      tenantId: identity.tenantId,
+      capability,
+    })
+    if (decision.allowed) return identity
+    if (decision.reason === 'DEPENDENCY_UNAVAILABLE') {
+      throw new ApiErrorException('DEPENDENCY_UNAVAILABLE', '授权服务暂不可用，请稍后重试')
+    }
+    throw new ApiErrorException('FORBIDDEN', '当前身份没有执行此操作的权限')
+  }
 
   @Post('manifests/ingestion')
   @HttpCode(201)
-  createIngestion(@Req() req: Request, @Body() body: unknown) {
+  async createIngestion(@Req() req: Request, @Body() body: unknown) {
+    const identity = await this.requireCapability(req, 'document.review')
     return this.manifests.createIngestion(
-      identityOf(req).tenantId,
+      identity.tenantId,
       ingestionManifestCreateSchema.parse(body),
     )
   }
 
   @Post('manifests/ingestion/:id/approve')
   @HttpCode(200)
-  approveIngestion(@Req() req: Request, @Param('id') id: string) {
-    return this.manifests.approveIngestion(identityOf(req).tenantId, id)
+  async approveIngestion(@Req() req: Request, @Param('id') id: string) {
+    const identity = await this.requireCapability(req, 'document.review')
+    return this.manifests.approveIngestion(identity.tenantId, id)
   }
 
   @Post('manifests/retrieval')
   @HttpCode(201)
-  createRetrieval(@Req() req: Request, @Body() body: unknown) {
+  async createRetrieval(@Req() req: Request, @Body() body: unknown) {
+    const identity = await this.requireCapability(req, 'document.review')
     return this.manifests.createRetrieval(
-      identityOf(req).tenantId,
+      identity.tenantId,
       retrievalManifestCreateSchema.parse(body),
     )
   }
 
   @Post('manifests/retrieval/:id/approve')
   @HttpCode(200)
-  approveRetrieval(@Req() req: Request, @Param('id') id: string) {
-    return this.manifests.approveRetrieval(identityOf(req).tenantId, id)
+  async approveRetrieval(@Req() req: Request, @Param('id') id: string) {
+    const identity = await this.requireCapability(req, 'document.review')
+    return this.manifests.approveRetrieval(identity.tenantId, id)
   }
 
   @Post('manifests/answer')
   @HttpCode(201)
-  createAnswer(@Req() req: Request, @Body() body: unknown) {
-    return this.manifests.createAnswer(
-      identityOf(req).tenantId,
-      answerManifestCreateSchema.parse(body),
-    )
+  async createAnswer(@Req() req: Request, @Body() body: unknown) {
+    const identity = await this.requireCapability(req, 'document.review')
+    return this.manifests.createAnswer(identity.tenantId, answerManifestCreateSchema.parse(body))
   }
 
   @Post('manifests/answer/:id/approve')
   @HttpCode(200)
-  approveAnswer(@Req() req: Request, @Param('id') id: string) {
-    return this.manifests.approveAnswer(identityOf(req).tenantId, id)
+  async approveAnswer(@Req() req: Request, @Param('id') id: string) {
+    const identity = await this.requireCapability(req, 'document.review')
+    return this.manifests.approveAnswer(identity.tenantId, id)
   }
 
   @Post('manifests/pipelines')
   @HttpCode(201)
-  createPipeline(@Req() req: Request, @Body() body: unknown) {
+  async createPipeline(@Req() req: Request, @Body() body: unknown) {
+    const identity = await this.requireCapability(req, 'document.review')
     return this.manifests.createPipeline(
-      identityOf(req).tenantId,
+      identity.tenantId,
       pipelineManifestCreateSchema.parse(body),
     )
   }
 
   @Post('manifests/pipelines/:id/approve')
   @HttpCode(200)
-  approvePipeline(@Req() req: Request, @Param('id') id: string) {
-    return this.manifests.approvePipeline(identityOf(req).tenantId, id)
+  async approvePipeline(@Req() req: Request, @Param('id') id: string) {
+    const identity = await this.requireCapability(req, 'document.review')
+    return this.manifests.approvePipeline(identity.tenantId, id)
   }
 
   @Post('releases')
   @HttpCode(201)
-  createRelease(@Req() req: Request, @Body() body: unknown) {
-    return this.manifests.createRelease(
-      identityOf(req).tenantId,
-      releaseManifestCreateSchema.parse(body),
-    )
+  async createRelease(@Req() req: Request, @Body() body: unknown) {
+    const identity = await this.requireCapability(req, 'release.approve')
+    return this.manifests.createRelease(identity.tenantId, releaseManifestCreateSchema.parse(body))
   }
 
   @Get('releases/:id')
   async findRelease(@Req() req: Request, @Param('id') id: string) {
-    const found = await this.manifests.findRelease(identityOf(req).tenantId, id)
+    const identity = await this.requireCapability(req, 'release.approve')
+    const found = await this.manifests.findRelease(identity.tenantId, id)
     if (found === null) {
       throw new ApiErrorException('NOT_FOUND', 'ReleaseManifest 不存在', { param: 'id' })
     }

@@ -4,6 +4,7 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Param,
   Post,
   Query,
   Req,
@@ -12,7 +13,12 @@ import {
 import type { CookieOptions, Request, Response } from 'express'
 import { createLogger } from '@rag/observability'
 import { ApiErrorException } from '../common/api-error.exception'
-import { AuthService, IdentityRejectedError, InvalidStateException } from './auth.service'
+import {
+  AuthService,
+  IdentityRejectedError,
+  InvalidStateException,
+  TenantSelectionRejectedError,
+} from './auth.service'
 import { KeycloakUnavailableError } from './oidc-client'
 import type { AuthConfig } from './auth.config'
 import { AUTH_CONFIG } from './auth.providers'
@@ -105,12 +111,24 @@ export class AuthController {
         state,
       )
       const expiresAt = Math.floor(Date.now() / 1000) + this.config.sessionTtlSeconds
+      const activeMemberships = context.tenantMemberships.filter(
+        (membership) => membership.status === 'ACTIVE',
+      )
+      const activeTenantId =
+        activeMemberships.length === 1 ? activeMemberships[0]!.tenantId : undefined
       res.cookie(
         SESSION_COOKIE_NAME,
-        signSession({ context, expiresAt }, this.config.sessionSecret),
+        signSession(
+          {
+            context,
+            expiresAt,
+            ...(activeTenantId === undefined ? {} : { activeTenantId }),
+          },
+          this.config.sessionSecret,
+        ),
         { ...this.sessionCookieOptions, maxAge: this.config.sessionTtlSeconds * 1000 },
       )
-      res.status(HttpStatus.OK).json(this.auth.sessionView(context))
+      res.status(HttpStatus.OK).json(this.auth.sessionView(context, activeTenantId))
     } catch (cause) {
       // 三类失败映射到不同错误码，其余交全局过滤器（INTERNAL_ERROR）：
       // - Keycloak 不可用 → 503 DEPENDENCY_UNAVAILABLE（可重试，调用方应提示稍后再试）
@@ -150,7 +168,46 @@ export class AuthController {
       // 过期、伪造、缺失统一 401：会话过期是七类场景之一，语义在响应码上。
       throw new ApiErrorException('UNAUTHORIZED', '未登录或会话已过期')
     }
-    res.status(HttpStatus.OK).json(this.auth.sessionView(parsed.payload.context))
+    res
+      .status(HttpStatus.OK)
+      .json(this.auth.sessionView(parsed.payload.context, parsed.payload.activeTenantId))
+  }
+
+  @Post('tenants/:tenantId/select')
+  @HttpCode(HttpStatus.OK)
+  async selectTenant(
+    @Req() req: Request,
+    @Param('tenantId') tenantId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const parsed = parseSessionCookie(
+      readCookie(req.headers.cookie, SESSION_COOKIE_NAME),
+      this.config.sessionSecret,
+    )
+    if (!parsed.ok) {
+      throw new ApiErrorException('UNAUTHORIZED', '未登录或会话已过期')
+    }
+    try {
+      const context = await this.auth.selectTenant(parsed.payload.context, tenantId)
+      const remainingSeconds = parsed.payload.expiresAt - Math.floor(Date.now() / 1000)
+      res.cookie(
+        SESSION_COOKIE_NAME,
+        signSession(
+          { context, activeTenantId: tenantId, expiresAt: parsed.payload.expiresAt },
+          this.config.sessionSecret,
+        ),
+        { ...this.sessionCookieOptions, maxAge: remainingSeconds * 1000 },
+      )
+      res.status(HttpStatus.OK).json(this.auth.sessionView(context, tenantId))
+    } catch (cause) {
+      if (cause instanceof IdentityRejectedError) {
+        throw new ApiErrorException('UNAUTHORIZED', '当前身份已失效，请重新登录')
+      }
+      if (cause instanceof TenantSelectionRejectedError) {
+        throw new ApiErrorException('FORBIDDEN', '目标租户不是当前身份的活跃成员关系')
+      }
+      throw cause
+    }
   }
 
   @Post('logout')

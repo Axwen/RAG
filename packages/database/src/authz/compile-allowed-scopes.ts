@@ -10,11 +10,10 @@ import type { Tx } from '../tx'
  * 接线归 T6）。集合与版本必须来自同一次读取——分两次查会出现「集合是
  * 旧版本、revision 是新版本」的错配，缓存就压不住失效窗口。
  *
- * 阶段 1 的推导：ACTIVE 租户成员关系 → 该租户全部知识空间的键。
- * Workspace 成员关系不改变数据作用域（工作台是能力/角色边界，不是数据
- * 边界；知识空间与 Workspace 的绑定是未来扩展点，届时按 ADR-0039 决策 3
- * 的「切换 Workspace 不得继承上一个 Workspace 的资源范围」逐 Workspace
- * 推导，不得跨 Workspace 合并）。数据等级拒绝在资源策略层，不进键。
+ * 阶段 1 的推导：未指定 Workspace 时，ACTIVE 租户成员关系 → 该租户全部
+ * 知识空间的键；指定 Workspace 时，还必须具备 ACTIVE Workspace 成员关系，
+ * 且只返回该 Workspace 显式绑定的知识空间。切换 Workspace 不继承上一个
+ * Workspace 的资源范围（ADR-0039 决策 3）。数据等级拒绝在资源策略层，不进键。
  *
  * 与 resolveCapabilities 的分工：那边先查用户再查成员（要区分
  * USER_NOT_FOUND），这边一次 join 取齐——统一授权入口先过能力层，走到
@@ -29,19 +28,21 @@ export type ScopeCompilation =
   | { readonly ok: true; readonly scopes: AllowedScopes }
   | {
       readonly ok: false
-      readonly reason: 'USER_DISABLED' | 'NO_ACTIVE_TENANT_MEMBERSHIP'
+      readonly reason:
+        'USER_DISABLED' | 'NO_ACTIVE_TENANT_MEMBERSHIP' | 'NO_ACTIVE_WORKSPACE_MEMBERSHIP'
     }
 
 export interface ScopeCompilationInput {
   readonly businessUserId: string
   readonly tenantId: string
+  readonly workspaceId?: string
 }
 
 export async function compileAllowedScopes(
   reader: Reader,
   input: ScopeCompilationInput,
 ): Promise<ScopeCompilation> {
-  // 一次 join 取齐：用户状态、成员状态、revision、知识空间列表。
+  // 一次 join 取齐：用户状态、两层成员状态、revision、知识空间绑定。
   const membership = await reader.tenantMembership.findUnique({
     where: {
       tenantId_businessUserId: {
@@ -52,19 +53,45 @@ export async function compileAllowedScopes(
     select: {
       status: true,
       businessUser: { select: { status: true } },
-      tenant: { select: { aclRevision: true, knowledgeSpaces: { select: { id: true } } } },
+      tenant: {
+        select: {
+          aclRevision: true,
+          knowledgeSpaces: { select: { id: true } },
+          workspaces: {
+            where: input.workspaceId === undefined ? { id: { in: [] } } : { id: input.workspaceId },
+            select: {
+              members: {
+                where: { businessUserId: input.businessUserId, status: 'ACTIVE' },
+                select: { id: true },
+              },
+              knowledgeSpaces: { select: { knowledgeSpaceId: true } },
+            },
+          },
+        },
+      },
     },
   })
   if (membership === null) return { ok: false, reason: 'NO_ACTIVE_TENANT_MEMBERSHIP' }
   if (membership.businessUser.status === 'DISABLED') return { ok: false, reason: 'USER_DISABLED' }
   if (membership.status !== 'ACTIVE') return { ok: false, reason: 'NO_ACTIVE_TENANT_MEMBERSHIP' }
 
+  let knowledgeSpaceIds: readonly string[]
+  if (input.workspaceId === undefined) {
+    knowledgeSpaceIds = membership.tenant.knowledgeSpaces.map((space) => space.id)
+  } else {
+    const workspace = membership.tenant.workspaces[0]
+    if (workspace === undefined || workspace.members.length === 0) {
+      return { ok: false, reason: 'NO_ACTIVE_WORKSPACE_MEMBERSHIP' }
+    }
+    knowledgeSpaceIds = workspace.knowledgeSpaces.map((binding) => binding.knowledgeSpaceId)
+  }
+
   return {
     ok: true,
     scopes: {
       aclRevision: membership.tenant.aclRevision,
-      scopeKeys: membership.tenant.knowledgeSpaces.map((space) =>
-        scopeKeyForKnowledgeSpace(input.tenantId, space.id),
+      scopeKeys: knowledgeSpaceIds.map((knowledgeSpaceId) =>
+        scopeKeyForKnowledgeSpace(input.tenantId, knowledgeSpaceId),
       ),
     },
   }

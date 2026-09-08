@@ -109,6 +109,23 @@ describe('资源层', () => {
     })
   })
 
+  it('指定 Workspace 时把它传给作用域编译', async () => {
+    capabilitiesMock.mockResolvedValue({ ok: true, capabilities: new Set(['answer.run']) })
+    scopesMock.mockResolvedValue({
+      ok: true,
+      scopes: { aclRevision: 3, scopeKeys: ['t:t1:ks:ks1'] },
+    })
+    const { service } = makeService()
+    expect(await service.authorize({ ...resourceRequest, workspaceId: 'workspace-1' })).toEqual({
+      allowed: true,
+    })
+    expect(scopesMock).toHaveBeenCalledWith(expect.anything(), {
+      businessUserId: 'u1',
+      tenantId: 't1',
+      workspaceId: 'workspace-1',
+    })
+  })
+
   it('资源不在作用域 → SCOPE_DENIED，成员失效同样 SCOPE_DENIED（不区分泄漏存在性）', async () => {
     capabilitiesMock.mockResolvedValue({ ok: true, capabilities: new Set(['answer.run']) })
     scopesMock.mockResolvedValue({
@@ -222,15 +239,11 @@ describe('fail closed 纪律', () => {
     )
   })
 
-  it('拒绝路径的审计写失败不推翻拒绝', async () => {
+  it('拒绝路径的审计写失败也必须让业务失败', async () => {
     capabilitiesMock.mockResolvedValue({ ok: true, capabilities: new Set() })
     auditMock.mockRejectedValue(new Error('audit down'))
     const { service } = makeService()
-    // 不抛：拒绝已成立。
-    expect(await service.authorize(request)).toEqual({
-      allowed: false,
-      reason: 'CAPABILITY_MISSING',
-    })
+    await expect(service.authorize(request)).rejects.toThrow('audit down')
   })
 
   it('允许路径的审计写失败必须不放行（向上抛，调用方得到 5xx）', async () => {
