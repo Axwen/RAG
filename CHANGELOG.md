@@ -6,6 +6,12 @@
 
 ### Added
 
+- **T14b 统一授权入口与资源策略**（ADR-0039/0026）：授权契约与 `acl_scope_key` 定形（`t:{tenantId}:ks:{ksId}`，索引侧 T5 与查询侧 T6 共用）；`tenants.aclRevision` 列与 `bumpAclRevision`（成员变更同事务递增，Redis 缓存键失效依据）；授权查库四入口（能力解析、作用域编译、候选复核、revision 递增）；全局 `AuthorizationService` 统一授权入口（能力权限与资源策略两层，每次判定写同步领域审计，允许路径审计失败不放行，依赖不可用 fail closed）。
+
+### Changed
+
+- **`tenantId` 从 Manifest/Release 请求体退场（T14 DoD）**：租户上下文只从服务端身份推导（`IdentityGuard`），请求体携带的 `tenantId` 被忽略（测试钉住）；所有按 id 的读取与写入带 `(id, tenantId)` 谓词，跨租户 id 得到 `NOT_FOUND` 而非 `FORBIDDEN`。`manifests`/`releases` 端点自此需要有效会话（401 信封）。`smoke:api` 相应改走完整 OIDC 登录链路。
+
 - **T14a 身份接入与业务身份模型**（ADR-0039）：业务身份 7 张表、初始迁移及角色边界加固迁移（BusinessUser/TenantMembership/Workspace/WorkspaceMembership/Role/Permission/RolePermission；成员角色使用复合租户外键，RoleScope 由数据库触发器约束，`business_users` 与 `permissions` 为身份层仅有的跨租户表）；`loadIdentityContext` 按 `(issuer, subject)` 在数据库包持有的事务中装配服务端身份上下文；`@rag/contracts` 的身份上下文与 SessionView 契约；`apps/api` 的 OIDC 授权码 + PKCE + JWKS 会话端点（会话过期 401，Keycloak 网络故障和 5xx 返回 503，token/JWKS 请求共用 `AUTH_REQUEST_TIMEOUT_MS`）；生产环境会话密钥缺失时 fail-fast，本地缺失时生成进程级随机密钥；Keycloak 七类场景测试（五类真实容器集成 + 两类 fetch 桩单元）和 RoleScope 真 PostgreSQL 集成测试；开发种子可随 Keycloak issuer 配置自愈，`init-keycloak.sh` 提供固定 UUID 用户（partialImport）与 `rag-api` 客户端。能力权限判定与 `tenantId` 退场归 T14b。
 
 - **T17 Video RAG 公共基座 V0a**：新增模态无关 Evidence/Locator/Provider/Embedding Channel/Retrieval/Citation/Evaluation 契约与 `rag-core` 纯逻辑；保留文档 RAG 的 PostgreSQL/OpenSearch/RabbitMQ/MinIO/Keycloak 主线，不引入真实媒体运行时。
