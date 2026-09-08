@@ -9,6 +9,7 @@
  * - T12a：模型预算账本的五条事务入口
  * - T14：ACL 主体、授权判定与审计
  * - T14a：身份装配入口（`loadIdentityContext`）
+ * - T14b：授权查库入口（能力解析、作用域编译、候选复核、revision 递增）
  *
  * 事务入口只从这里导出：调用方拿到的是 `reserveBudget`/`writeAuditEvent` 这样的函数，
  * 拿不到 `PrismaClient` 也拿不到表结构。业务模块自己拼 SQL 改账本或补审计都是缺陷。
@@ -16,6 +17,7 @@
 export const DATABASE_PACKAGE = '@rag/database' as const
 
 export * from './audit'
+export * from './authz'
 export * from './budget'
 export * from './client'
 export * from './env'
