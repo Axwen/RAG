@@ -211,6 +211,7 @@ model KnowledgeSpace {
   documents        Document[]
   indexPartitions  IndexPartition[]
   releaseManifests ReleaseManifest[]
+  workspaces       WorkspaceKnowledgeSpace[]
 
   @@unique([tenantId, slug])
   @@unique([tenantId, id])
@@ -540,17 +541,34 @@ model TenantMembership {
 // 角色工作台（客服/研发/普通员工是不同的 Workspace，不是全局角色，
 // ADR-0002/0039）。Workspace 是租户内实体，走租户级外键口径。
 model Workspace {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  tenantId  String   @db.Uuid
-  slug      String
-  name      String
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  members   WorkspaceMembership[]
+  id              String                    @id @default(uuid(7)) @db.Uuid
+  tenantId        String                    @db.Uuid
+  slug            String
+  name            String
+  createdAt       DateTime                  @default(now()) @db.Timestamptz(6)
+  tenant          Tenant                    @relation(fields: [tenantId], references: [id])
+  members         WorkspaceMembership[]
+  knowledgeSpaces WorkspaceKnowledgeSpace[]
 
   @@unique([tenantId, slug])
   @@unique([tenantId, id])
   @@map("workspaces")
+}
+
+// Workspace 与知识空间的策略绑定。tenantId 同时进入两条外键，数据库层
+// 保证 Workspace 和 KnowledgeSpace 必须属于同一租户。
+model WorkspaceKnowledgeSpace {
+  id               String         @id @default(uuid(7)) @db.Uuid
+  tenantId         String         @db.Uuid
+  workspaceId      String         @db.Uuid
+  knowledgeSpaceId String         @db.Uuid
+  createdAt        DateTime       @default(now()) @db.Timestamptz(6)
+  workspace        Workspace      @relation(fields: [tenantId, workspaceId], references: [tenantId, id], onDelete: Restrict)
+  knowledgeSpace   KnowledgeSpace @relation(fields: [tenantId, knowledgeSpaceId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, workspaceId, knowledgeSpaceId])
+  @@map("workspace_knowledge_spaces")
 }
 
 // 业务用户与 Workspace 的成员关系；roleId 指向 scope=WORKSPACE 的角色。

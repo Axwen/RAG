@@ -226,6 +226,24 @@ describe('审计契约与库结构不漂移（ADR-0040 / T11a）', () => {
     expect(migrations).toContain('CREATE TRIGGER roles_scope_change_guard')
   })
 
+  it('WorkspaceKnowledgeSpace 用两条租户级复合外键约束策略绑定', () => {
+    const model = schema.slice(schema.indexOf('model WorkspaceKnowledgeSpace {'))
+    const body = model.slice(0, model.indexOf('\n}'))
+    expect(body).toMatch(/tenantId\s+String\s+@db\.Uuid/)
+    expect(body).toMatch(
+      /workspace\s+Workspace\s+@relation\(fields: \[tenantId, workspaceId\], references: \[tenantId, id\]/,
+    )
+    expect(body).toMatch(
+      /knowledgeSpace\s+KnowledgeSpace\s+@relation\(fields: \[tenantId, knowledgeSpaceId\], references: \[tenantId, id\]/,
+    )
+    expect(migrations).toContain(
+      'FOREIGN KEY ("tenantId", "workspaceId") REFERENCES "workspaces"("tenantId", "id")',
+    )
+    expect(migrations).toContain(
+      'FOREIGN KEY ("tenantId", "knowledgeSpaceId") REFERENCES "knowledge_spaces"("tenantId", "id")',
+    )
+  })
+
   it('成员→角色绑定内嵌在 membership 表上，没有 UserRole 关联表', () => {
     // 7 张表是 ADR-0039 定下的最小模型；多出来的关联表说明「同 Workspace 多角色」
     // 这个扩展点被顺手实现了，而它需要先改 ADR 再改估算。
