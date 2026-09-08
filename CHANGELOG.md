@@ -8,6 +8,8 @@
 
 - **T14b 统一授权入口与资源策略**（ADR-0039/0026）：授权契约与 `acl_scope_key` 定形（`t:{tenantId}:ks:{ksId}`，索引侧 T5 与查询侧 T6 共用）；`tenants.aclRevision` 列与 `bumpAclRevision`（成员变更同事务递增，Redis 缓存键失效依据）；授权查库四入口（能力解析、作用域编译、候选复核、revision 递增）；全局 `AuthorizationService` 统一授权入口（能力权限与资源策略两层，每次判定写同步领域审计，允许路径审计失败不放行，依赖不可用 fail closed）。
 
+- **T14b 数据等级拒绝（资源策略层，代码评审补齐）**（ADR-0039 决策 2 / ADR-0025）：`document_version` 的 `dataClass` 为 UNKNOWN/SENSITIVE 时统一授权入口拒绝（阶段 1 无 per-subject clearance 模型的 fail-closed 默认），拒绝原因 `DATA_CLASS_DENIED`、审计码 `authz.dataclass_denied` 入中央注册表。候选复核只随行 `dataClasses` 元数据、**不做**等级减法——敏感候选仍可召回，执行区阻断在 T15 准入层，两层职责不得互换。`documentVersionDataClasses` 契约常量与 Prisma `DataClass` 枚举的漂移由 schema 文本断言钉住。新增 `tests/manifests-tenant-isolation.test.ts`：四类 `approve*` 与 `GET /releases/:id` 用租户 A 身份带租户 B 的 id 在真 PostgreSQL 得 `NOT_FOUND`（T14 DoD 点名的两条高危路径，此前只有「id 不存在」用例）。
+
 ### Changed
 
 - **`tenantId` 从 Manifest/Release 请求体退场（T14 DoD）**：租户上下文只从服务端身份推导（`IdentityGuard`），请求体携带的 `tenantId` 被忽略（测试钉住）；所有按 id 的读取与写入带 `(id, tenantId)` 谓词，跨租户 id 得到 `NOT_FOUND` 而非 `FORBIDDEN`。`manifests`/`releases` 端点自此需要有效会话（401 信封）。`smoke:api` 相应改走完整 OIDC 登录链路。
@@ -114,6 +116,15 @@
   [报告](docs/engineering/plan-devex-review-20260901-boomerang.md)，DX 6/10 → 8/10。
 
 ### Fixed
+
+- **T14b 代码评审修复**：`AuthorizationService.checkResource` 手拼作用域键改走 contracts 的
+  `scopeKeyForKnowledgeSpace` 唯一编码器（顺带删除两臂相同的三元死代码与提前返回后的
+  不可达重查）；服务层两处手写的 `authz.*` 原因码联合类型收敛为 contracts 导出的
+  `AuthzReasonCode`（注册表加码而视图跟不上时编译期报错）；`compileAllowedScopes` 删除
+  声明了却产不出的 `USER_NOT_FOUND`（编译侧一次 join 区分不了它；失败口径收窄为
+  `resolveCapabilities` 的子集，类型级断言钉住防漂移）；`compile-allowed-scopes` 的
+  ADR-0039 决策引用修成原文（「切换 Workspace 不得继承上一个 Workspace 的资源范围」）；
+  `scripts/smoke-api.sh` 两份近乎逐字的 OIDC 登录块抽成 `oidc_login()` 函数。
 
 - **依赖漏洞门禁是在抛硬币：`pnpm audit` 打的端点正在被 npm 下线**（`security.yml`
   `deps-audit`，详见 [ci-cd.md §6.8](docs/engineering/ci-cd.md)）。日志里是 npm 自己的通告
