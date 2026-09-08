@@ -6,7 +6,7 @@
 
 ### Added
 
-- **T14a 身份接入与业务身份模型**（ADR-0039）：业务身份 7 张表及独立迁移（BusinessUser/TenantMembership/Workspace/WorkspaceMembership/Role/Permission/RolePermission，`business_users` 与 `permissions` 为身份层仅有的跨租户表）；`loadIdentityContext` 按 `(issuer, subject)` 装配服务端身份上下文；`@rag/contracts` 的身份上下文与 SessionView 契约；`apps/api` 的 OIDC 授权码 + PKCE + JWKS 会话端点（会话过期 401、Keycloak 不可用 503，`AUTH_REQUEST_TIMEOUT_MS` 兜网络黑洞）；Keycloak 七类场景测试（五类真实容器集成 + 两类本地桩单元）；开发种子与 `init-keycloak.sh` 固定 UUID 用户（partialImport）与 `rag-api` 客户端。能力权限判定与 `tenantId` 退场归 T14b。
+- **T14a 身份接入与业务身份模型**（ADR-0039）：业务身份 7 张表、初始迁移及角色边界加固迁移（BusinessUser/TenantMembership/Workspace/WorkspaceMembership/Role/Permission/RolePermission；成员角色使用复合租户外键，RoleScope 由数据库触发器约束，`business_users` 与 `permissions` 为身份层仅有的跨租户表）；`loadIdentityContext` 按 `(issuer, subject)` 在数据库包持有的事务中装配服务端身份上下文；`@rag/contracts` 的身份上下文与 SessionView 契约；`apps/api` 的 OIDC 授权码 + PKCE + JWKS 会话端点（会话过期 401，Keycloak 网络故障和 5xx 返回 503，token/JWKS 请求共用 `AUTH_REQUEST_TIMEOUT_MS`）；生产环境会话密钥缺失时 fail-fast，本地缺失时生成进程级随机密钥；Keycloak 七类场景测试（五类真实容器集成 + 两类 fetch 桩单元）和 RoleScope 真 PostgreSQL 集成测试；开发种子可随 Keycloak issuer 配置自愈，`init-keycloak.sh` 提供固定 UUID 用户（partialImport）与 `rag-api` 客户端。能力权限判定与 `tenantId` 退场归 T14b。
 
 - **T17 Video RAG 公共基座 V0a**：新增模态无关 Evidence/Locator/Provider/Embedding Channel/Retrieval/Citation/Evaluation 契约与 `rag-core` 纯逻辑；保留文档 RAG 的 PostgreSQL/OpenSearch/RabbitMQ/MinIO/Keycloak 主线，不引入真实媒体运行时。
 
