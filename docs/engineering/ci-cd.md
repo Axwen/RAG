@@ -1008,6 +1008,32 @@ OSV 请求 1 次成功：最快 0.8s / 中位 0.8s / 最慢 0.8s，墙钟 0.8s�
 整个 job **9 秒**（含 checkout），对照 §6.8 的 10m29s 与 §6.9 的 7m05s。runner 上的 0.8s 比本机的
 1.4s 还快，说明前三轮的墙钟从来不是依赖图大小的问题。
 
+### 6.11 第十一轮（2026-09-09）：PR #38 合并后的 Dependabot 安全更新失败
+
+PR #38（`docs: record hg-01 acceptance`）本身的 CI、Integration、Security 和 CodeQL 检查全部通过；
+合并到 `main` 后，GitHub 另外触发的 Dependabot Updates 任务 `34306363546` 失败。它不在 PR 的
+required checks 列表里，失败信号只出现在 Dependabot 更新页和 `gh run list` 的 `event: dynamic` 记录中。
+
+失败日志的根因是依赖约束，不是 Actions 脚本：`@nestjs/platform-express@12.0.1` 精确依赖
+`multer@2.2.0`，而安全通告给出的最低修复版本是 `2.3.0`。Dependabot 因此报告
+`security_update_not_possible`，其中 `latest-resolvable-version` 为 `2.2.0`、
+`lowest-non-vulnerable-version` 为 `2.3.0`。
+
+修复分支在根 `package.json` 增加版本范围 override：
+
+```json
+"multer@<2.3.0": "2.3.0"
+```
+
+并用官方 npm registry 重新生成 `pnpm-lock.yaml`。本地验证结果：`pnpm install --lockfile-only`
+解析成功；`pnpm install --frozen-lockfile --registry=https://registry.npmjs.org --ignore-scripts`
+成功；`pnpm why multer --recursive` 只剩 `multer@2.3.0`。当前开发环境的默认 `npmmirror` 尚未同步
+该 tarball，离线安装失败属于镜像同步限制，不改变官方 registry 和 CI 的可解析结果。
+
+这次故障的处理口径：安全修复版本优先于等待上游 Nest 发版；使用带下界的 override，避免将来
+`@nestjs/platform-express` 自行升级后被永久钉死；PR 合并后继续观察 Dependabot dynamic run，确认
+安全更新任务恢复成功。依赖图中的其它告警仍由 `scripts/check-npm-advisories.sh` 的 critical 阻断策略处理。
+
 ## 7. 明确不做的事（阶段 1）
 
 写在这里是为了避免把"没做"读成"漏了"：

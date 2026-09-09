@@ -28,7 +28,7 @@ PROJECT_STATE.md          ← 当前进度与全局不变量，先读它
 不是当前任务清单。当前范围看
 [`docs/engineering/stage1-implementation-tickets.md`](docs/engineering/stage1-implementation-tickets.md)。
 
-## 2. 会让 CI 变红的九条硬纪律
+## 2. 会让 CI 变红的十条硬纪律
 
 main 上有 **6 条 required checks**，全绿才能合。逐条对应本地命令见第 3 节。
 
@@ -54,6 +54,11 @@ main 上有 **6 条 required checks**，全绿才能合。逐条对应本地命�
    `traceparent`，不回显任意客户端头。
 9. **`ERROR_STATUS` 是双射**（`packages/contracts/src/errors.ts`）：一个错误码占一个 HTTP
    状态码。**新增一个映射到已被占用状态码的错误码会打破双射**，要复用已有码 + `doc_url` 区分。
+10. **交付前必须完成文档同步审计。** 对照本次 diff 检查 `PROJECT_STATE.md`、当前 Ticket、
+    阶段路线图、用户/运维入口和 `CHANGELOG.md`：事实、接口、行为、配置、执行顺序或门禁状态
+    发生变化时，同一 PR 必须更新对应文档；如果确认没有文档影响，PR 和最终汇报必须明确写
+    “无文档影响”。实现批次完成时至少同步项目状态、当前 Ticket、阶段路线图和用户可见/运维行为。
+    人工验收记录只在用户明确给出结论后更新，历史验收事实不回写。
 
 ## 3. 本地验证（提 PR 前跑这些）
 
@@ -151,18 +156,15 @@ model SomeThing {
 
 ## 8. 现在做到哪了
 
-看 [`PROJECT_STATE.md`](PROJECT_STATE.md) 的「当前状态」段是权威口径。截至 2026-09-03：
+看 [`PROJECT_STATE.md`](PROJECT_STATE.md) 的「当前状态」段是权威口径。截至 2026-09-09：
 
 - T0 Monorepo 基线、T1a Manifest/Prisma Core 已验收（T1a 是 `ACCEPTED_WITH_ACTIONS`）。
-- **HG-01 门禁未通过**，还差 T12a（预算账本与配置骨架）、T11a（同步审计骨架）、
-  T14a/T14b（身份与授权），四项代码均未开始，前置文档已补齐。
-- 顺序：T12a → T11a → T14a → HG-01a（临时门禁）→ T14b → HG-01。
-- `packages/database/src` 现在只有 `client.ts`/`index.ts`/`env.ts`/`health.ts`——
-  **没有 repository 或 service 层的先例**。所以两个白地入口的签名已经在票据里定死，
-  照签名实现，不要自创形状：
-  - 预算五条事务入口 → [T12 票据·事务入口契约](docs/engineering/tickets/T12-performance-budget.md#事务入口契约)
-    （T15 每次模型调用都建在它上面），预扣估值的单价与汇率见同一票据的
-    [预扣估值价格表与汇率](docs/engineering/tickets/T12-performance-budget.md#预扣估值价格表与汇率)，
-    标注为初始值可校准。
-  - 唯一的审计写入口 → [T11 票据·审计写入口契约](docs/engineering/tickets/T11-audit-telemetry.md#审计写入口契约)
-    （预算四类审计、授权决策、注入命中都调它，且必须与业务写在同一个 `tx` 上）。
+- **T12a、T11a、T14a/T14b 已完成，HG-01 于 2026-09-09 获用户 `ACCEPTED`**；验收记录见
+  [`docs/engineering/acceptance/hg-01-t14b-authorization.md`](docs/engineering/acceptance/hg-01-t14b-authorization.md)。
+- T2/T10/T3/T1b 已解锁，但当前尚未启动，需等待用户明确下一批次；完成后仍须暂停并等待
+  HG-02 人工验收，不因 HG-01 通过而自动推进。
+- `packages/database/src` 已形成预算、审计、身份和授权事务入口：`budget/`、`audit/`、
+  `identity/`、`authz/`；调用方沿用票据中冻结的入口契约，不自创 repository/service 形状。
+- 合并 PR #38 后的 Dependabot npm 安全更新任务于 2026-09-09 失败：`@nestjs/platform-express@12.0.1`
+  精确依赖 `multer@2.2.0`，而最低修复版本为 `2.3.0`。当前修复分支已用
+  `pnpm.overrides` 和锁文件将 `<2.3.0` 提升到 `2.3.0`；CI 需在 PR 上重新确认。

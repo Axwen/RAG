@@ -4,14 +4,14 @@
 
 「可观测性」这个词盖住了两件性质相反的事。领域审计是业务事实的一部分：写不进去，业务就不该提交。运行遥测是诊断信息：丢了不许影响业务。本票据把这条原则从一句话变成两条互不依赖的代码路径——一条焊在业务事务里，一条挂在 Outbox 上，且在包依赖图上互相看不见。决策依据见 [ADR-0040](../../adr/0040-domain-audit-and-runtime-telemetry.md)（载体、数据形状与原因码口径）与 [ADR-0035](../../adr/0035-stage1-runtime-protocol-ratification.md) 第 13 行（同步/异步载体原则）。
 
-现状是六处 ADR 在写它、零处定义它：`packages/database/prisma/schema.prisma` 的 10 个模型里没有审计表，`packages/observability/src` 只有 health/logger/redaction 三个模块，`packages/contracts/src` 只有 errors 与 manifests。[T12](T12-performance-budget.md) 的四类预算原因码和 [T14](T14-identity-authorization.md) 的授权决策审计都在等这个入口。
+开工前的背景是六处 ADR 在写它、零处定义它；这部分保留在票据中用于解释设计动机。当前 T11a 已完成：`domain_audit_event`、中央原因码注册表和 `packages/database/src/audit/write-audit-event.ts` 同事务写入口已落地，T12a 的四类预算原因码与 T14b 授权决策已接入。T11b 仍等待 T3 的 Outbox 与消费者，不在本批次提前实现。
 
 ## 批次划分
 
 按执行顺序拆两批，判据是「Outbox 到底存不存在」：
 
-- **T11a 同步审计骨架** — `packages/contracts/src/audit/` 的事件形状与原因码注册表、`domain_audit_event` schema 与迁移、`packages/database` 的同事务写入口、[T12a](T12-performance-budget.md#批次划分) 四类预算原因码作为首个接入面。这一批是 HG-01 门禁四项之一：T12a 与 T14 的 DoD 都要求写同步领域审计，本批不落地，那两张票据只能各自拍一个形状，之后再迁移。
-- **T11b 异步遥测与恢复** — `apps/api/src/modules/telemetry/`、遥测事件走 Outbox 投递与消费者、观测栈独立 Compose Profile、关闭消费者后业务与审计仍提交、Outbox 恢复后补投不重复。
+- **T11a 同步审计骨架（已完成，纳入 HG-01）** — `packages/contracts/src/audit/` 的事件形状与原因码注册表、`domain_audit_event` schema 与迁移、`packages/database` 的同事务写入口、[T12a](T12-performance-budget.md#批次划分) 四类预算原因码和 T14b 授权决策接入均已落地，并在 HG-01 人工验收中通过。
+- **T11b 异步遥测与恢复（未开始）** — `apps/api/src/modules/telemetry/`、遥测事件走 Outbox 投递与消费者、观测栈独立 Compose Profile、关闭消费者后业务与审计仍提交、Outbox 恢复后补投不重复；等待 T3 的 `outbox_event` 与 Relay。
 
 T11a 不得推迟到 T12a 之后收口：账本的四类审计写入没有入口就落不了地，T12a 的 DoD 关不掉。T11b 不得提前到 T3 之前：`outbox_event` 表与 Relay 归 T3（HG-02 批次），此时提前只能造一套将来要删的临时投递，而 [ADR-0040](../../adr/0040-domain-audit-and-runtime-telemetry.md) 决策 7 明确不为遥测另立投递机制。
 
@@ -143,7 +143,7 @@ export function writeAuditEvent(
 ## 依赖与时点
 
 - 依赖 [T0](T0-monorepo-foundation.md)（配置包、Compose、`packages/observability` 骨架）与 T1a（Prisma/迁移口径、租户模型、错误信封的 `traceId` 口径）。
-- **T11a 是 HG-01 门禁四项之一**（T1a + T14 + T11 同步审计 + T12 Ledger/配置骨架，见[人工验收门禁](../manual-acceptance-gate.md#阶段-1-门禁点)）。当前批次执行顺序是 T12a → T11a → T14a → T14b。
+- **T11a 已作为 HG-01 门禁四项之一完成**（T1a + T14 + T11 同步审计 + T12 Ledger/配置骨架，见[人工验收门禁](../manual-acceptance-gate.md#阶段-1-门禁点)）；HG-01 已于 2026-09-09 获用户 `ACCEPTED`。T11b 仍在 T3 之后的收口批次。
 - 与 T12a 的先后关系按 [T12 票据](T12-performance-budget.md) 第 27、79 行的口径：T12a 的账本 schema 与事务入口可以先落，但它的四类审计写入必须与 T11a 同批合并，不留到 T11 之后。两张表的迁移合到同一次迁移评审，避免同一批次评审两次 schema。
 - 闭合记录第 16 节 T11 的时点写「同步领域审计随 T2/T3 的业务事务落地」。本票据按当前批次细化：**骨架（契约、表、写入口）在 T11a 内落地，接入面随各域票据推进**——T12a 预算四类在本批，T2 状态命令在 HG-02，T13 注入随 T4/T6/T7，T8 删除与恢复随管理收口批次。两处不矛盾：原时点约束的是审计写入随业务事务出现，不是骨架也要等到 T2。
 - T11b 依赖 T3 的 `outbox_event` 与 RabbitMQ 消费者，落在 HG-02 之后；[门禁表](../manual-acceptance-gate.md#阶段-1-门禁点) HG-06 的「T11 收口」指的就是 T11b 的恢复演练。
