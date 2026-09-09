@@ -4,14 +4,14 @@
 
 把「本地可用性」的四条硬边界从文档变成会拒绝请求的代码：无界候选与 N+1 查询、缓存过期授权、用户级并发/频次失控、模型费用失控。其中费用部分是唯一一条**钱已经花掉就收不回来**的边界，所以它不是限流器而是一本账：任何模型调用前先在 PostgreSQL 里预扣，调用后按供应商实际用量结算，崩溃由 lease 回收。决策依据见 [ADR-0029](../../adr/0029-model-budget-ledger-and-limits.md)（预算账本与硬上限）与 [ADR-0034](../../adr/0034-per-user-rate-limit-and-concurrency-quota.md)（用户级限流与并发配额）。
 
-[T0](T0-monorepo-foundation.md) 已把 5/16/500 元落成可校验配置（`packages/config/src/resource-limits.ts` 的 `budgetLimitsSchema`），但只做到「配置写错会启动失败」；运行时没有任何东西读它。本票据补上账本、事务入口和门禁。
+[T0](T0-monorepo-foundation.md) 已把 5/16/500 元落成可校验配置（`packages/config/src/resource-limits.ts` 的 `budgetLimitsSchema`）。T12a 已补上账本 schema、事务入口、预扣估值与领域审计接线，并通过 HG-01；T12b 的运行时限流、缓存失效和性能报告仍留待 T6/T9 等后续链路。
 
 ## 批次划分
 
 按执行顺序拆两批，判据是「T15 ModelAdapter 到底卡在哪一部分上」：
 
-- **T12a 预算账本与配置骨架** — `model_budget_ledger` schema 与迁移、预扣/结算/释放/lease 回收的事务入口、配置硬上限补全（池三分与 ADR-0034 配额值）。这一批是 [T15](T15-model-adapter.md) 的前置：T15 的依赖项就是 Budget Ledger 的 schema 与事务入口，本票据不先落地，T15 之后的每次模型调用都没有账本可查。同时是 HG-01 门禁四项之一。
-- **T12b 限流、缓存与性能报告** — 用户级并发/频次的运行时强制、Redis 作用域缓存按 `aclRevision` 失效、批量查询计数门禁、分项延迟与完整性能报告。检索侧随 T6 验证，完整报告在 T9 后收口。
+- **T12a 预算账本与配置骨架（已完成，纳入 HG-01）** — `model_budget_ledger` schema 与迁移、预扣/结算/释放/lease 回收的事务入口、配置硬上限补全（池三分与 ADR-0034 配额值）已落地，并在 HG-01 人工验收中通过。它是 [T15](T15-model-adapter.md) 的前置，但真实模型调用接线仍属于 T15。
+- **T12b 限流、缓存与性能报告（未开始）** — 用户级并发/频次的运行时强制、Redis 作用域缓存按 `aclRevision` 失效、批量查询计数门禁、分项延迟与完整性能报告。检索侧随 T6 验证，完整报告在 T9 后收口。
 
 T12a 不得为了等 T12b 而推迟：账本是唯一一条钱花掉就收不回来的门禁，晚一批就是晚在最贵的地方。T12b 不得提前到 T6 之前收口：那时既没有真实检索链路也没有评测语料，量出来的分项延迟没有意义。
 
@@ -211,9 +211,9 @@ tokens ≈ 候选数 × 108
 ## 依赖与时点
 
 - 依赖 [T0](T0-monorepo-foundation.md)（配置包、Compose、Redis）与 T1a（Prisma/迁移口径、租户模型）。
-- **T12a 必须在 [T15](T15-model-adapter.md) 前完成**，且是 [HG-01 门禁](../manual-acceptance-gate.md#阶段-1-门禁点)四项之一（T1a + T12a Ledger/配置骨架 + T11a 同步审计骨架 + T14a/T14b）。
+- **T12a 已在 [T15](T15-model-adapter.md) 前完成**，并作为 [HG-01 门禁](../manual-acceptance-gate.md#阶段-1-门禁点)四项之一于 2026-09-09 获用户 `ACCEPTED`（T1a + T12a Ledger/配置骨架 + T11a 同步审计骨架 + T14a/T14b）。
 - 领域审计写入与 [T11a](T11-audit-telemetry.md#批次划分) 的同步审计入口同批交付：账本 schema 与四条事务入口可以先落，四类审计写入必须与 T11a 同批合并，两张表的迁移合到同一次迁移评审。本票据只定义原因码与调用点。
-- T12b 的检索侧验证随 T6，完整性能报告在 T9 链路具备后收口；`AnswerRun`/SSE 并发限额随 T7 的 SSE 端点落地后才能端到端验证。
+- T12b 的检索侧验证随 T6，完整性能报告在 T9 链路具备后收口；`AnswerRun`/SSE 并发限额随 T7 的 SSE 端点落地后才能端到端验证。当前 T12b 尚未开始。
 - 用户级配额的身份上下文来自 [T14](T14-identity-authorization.md)：限额主体是 `businessUser`，不是请求体里的 `tenantId`。
 
 ## 验证

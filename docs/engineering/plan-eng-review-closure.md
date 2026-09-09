@@ -582,18 +582,18 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
   - 计划文件：`apps/worker/src/main.ts`、`apps/worker/src/profiles/`、`infra/compose/`、`packages/config/`。
   - 验证：并行压测确认独立队列、并发、in-flight、RSS、prefetch 和预算池，超限只排队/暂停。
   - 时点：Worker Profile 启动入口和配置必须在 T3/T4 前完成；完整并行压测可在 T9 链路具备后收口。
-- [ ] **T11 (P1, human: ~4d / CC: ~1d)** — Audit/Telemetry — 分离同步领域审计和异步运行遥测。
+- [x] **T11 (P1, human: ~4d / CC: ~1d)** — Audit/Telemetry — 分离同步领域审计和异步运行遥测（T11a 已完成；T11b 留待 T3 之后）。
   - 来源：Code Quality/Test Review，遥测故障不能阻止业务状态提交，也不能造成领域审计缺失。
   - 计划文件：`apps/api/src/modules/audit/`、`apps/api/src/modules/telemetry/`、`packages/observability/`，另加 `packages/contracts/src/audit/` 与 `packages/database/`（审计契约、原因码注册表与 `domain_audit_event` 迁移）。
   - 范围补充：见 [T11 Ticket](tickets/T11-audit-telemetry.md)。按执行顺序拆为 T11a 同步审计骨架（~2d / ~0.5d，HG-01 门禁内）和 T11b 异步遥测与恢复（~2d / ~0.5d，依赖 T3 的 Outbox）两批。审计写入口全仓唯一且只接受已开启的事务句柄，写失败即业务回滚；遥测失败必须被吞且不得进业务事务；`@rag/observability` 不得导出审计入口，审计入口不得依赖遥测导出器；原因码集中登记在 `packages/contracts/src/audit/reason-codes.ts`，库内不得出现未注册码；审计行不可变、不随业务删除而删除，`detail` 不落正文/Prompt/片段/凭证；频次类软门只计指标不写审计（ADR-0040、ADR-0035 第 13 行、ADR-0034 第 11 行）。
   - 验证：关闭 Trace/指标消费者后状态与审计仍提交，Outbox 恢复后遥测补投且不重复；另加注入审计写失败后业务整体回滚、包依赖方向断言、`detail` 脱敏与频次软门无审计写入的反向断言。
-  - 时点：同步领域审计随 T2/T3 的业务事务落地；异步遥测消费者和恢复验证可以后置。按当前批次细化为——骨架（契约、表、写入口）在 HG-01 的 T11a 内落地，接入面随各域票据推进（T12a 预算四类同批，T2 状态命令在 HG-02，T13 注入随 T4/T6/T7，T8 删除随管理收口）；T11b 落在 HG-02 之后，HG-06 的「T11 收口」即指 T11b。
-- [ ] **T12 (P1, human: ~4d / CC: ~1d)** — Performance/Budget — 落地查询、缓存、延迟和费用硬门禁。
+  - 时点：T11a 骨架（契约、表、写入口）已在 HG-01 内落地，T12a 预算四类和 T14b 授权决策已接入；T2 状态命令在 HG-02，T13 注入随 T4/T6/T7，T8 删除随管理收口。T11b 落在 HG-02 之后，HG-06 的「T11 收口」即指 T11b。
+- [x] **T12 (P1, human: ~4d / CC: ~1d)** — Performance/Budget — 落地查询、缓存、延迟和费用硬门禁（T12a 已完成；T12b 留待 T6/T9 之后）。
   - 来源：Performance Review，N+1、无界候选、缓存过期授权和模型费用失控均会破坏本地可用性。
   - 计划文件：`packages/config/`、`apps/api/src/modules/retrieval/`、`apps/api/src/modules/model/`、`tests/performance/`。
   - 范围补充：见 [T12 Ticket](tickets/T12-performance-budget.md)。按执行顺序拆为 T12a 预算账本与配置骨架（~2d / ~0.5d）和 T12b 限流、缓存与性能报告（~2d / ~0.5d）两批。余额事实源只在 PostgreSQL `model_budget_ledger`，Redis 只用于展示与快速拒绝；预扣先于调用，结算以供应商返回的 `cost` 为准，崩溃由 lease 回收；rerank 预扣估值由候选数计算。并发类限额不得只依赖 Redis（本地信号量 + PostgreSQL 可恢复 lease）；用户级配额落既有 `RATE_LIMITED`/429，不为预算新增打破 `ERROR_STATUS` 双射的错误码（ADR-0029、ADR-0034）。
   - 验证：配置 schema、批量查询计数、Redis 作用域缓存按 `aclRevision` 失效、分项延迟报告、用户级限流以及 5/16/500 元预算账本熔断。
-  - 时点：Budget Ledger schema、预扣/结算/lease 必须在 ModelAdapter 前完成；检索性能随 T6 验证，完整性能报告在 T9 后收口。
+  - 时点：Budget Ledger schema、预扣/结算/lease 已在 ModelAdapter 前完成并纳入 HG-01；检索性能随 T6 验证，完整性能报告在 T9 后收口，T12b 当前未开始。
 - [ ] **T13 (P1, human: ~4d / CC: ~1d)** — Untrusted Content — 落地不可信内容隔离与三处注入检测。
   - 来源：设计复审第 9 项，注入原先只有控制项与测试项，没有检测位置、状态字段、失败行为和 DoD（ADR-0032）。
   - 计划文件：`packages/rag-core/src/safety/`、`apps/worker/src/profiles/ingestion/scan/`、`apps/api/src/modules/retrieval/`、`apps/api/src/modules/answer/`、`evals/injection/`。
@@ -607,7 +607,7 @@ P0 失败模式没有测试、没有错误处理或对用户静默时禁止进�
   - 计划文件：`package.json`、`pnpm-workspace.yaml`、`apps/{api,web,worker}`、`packages/{contracts,database,rag-core,config,observability}`、`services/parser/`、`infra/compose/`、CI 配置。
   - 范围补充：见 [T0 Ticket](tickets/T0-monorepo-foundation.md)。冻结 Node `22.23.1`、pnpm `10.34.5`、Python `3.12.3`；Compose 复用探针实测的 Keycloak `26.2.5`、OpenSearch `2.19.1`、RabbitMQ `3.13-management`，PostgreSQL、Redis、MinIO 无探针冻结版本，实现时选定明确标签并记录依据，不用 `latest`。
   - 验证：干净检出冻结安装、根 lint/typecheck/Vitest/pytest/build/Prisma validate、六个 core 中间件 healthy、初始化可重复执行、CI 不读取仓库外凭证也不触发付费模型调用。
-- [ ] **T14 (P1, human: ~8d / CC: ~2d)** — Identity/Business User/Authorization — 把 Keycloak 外部身份事实融入自有业务用户与统一授权体系，支撑多租户、多 Workspace 和后续客服/研发/普通员工领域。
+- [x] **T14 (P1, human: ~8d / CC: ~2d)** — Identity/Business User/Authorization — 把 Keycloak 外部身份事实融入自有业务用户与统一授权体系（T14a/T14b 已完成并通过 HG-01）。
   - 来源：探针收尾复审，PROBE-001 只验证了外部身份事实，业务用户映射、Workspace 成员和 `acl_scope_key` 编译此前没有票据归属。范围于 2026-08-31 按 [ADR-0039](../adr/0039-business-identity-and-unified-authorization.md) 扩为自有业务身份体系，估算同步上调 +2d / +0.5d。
   - 计划文件：`apps/api/src/modules/auth/`、`apps/api/src/modules/authorization/`、`packages/contracts/src/auth/`、`packages/database/prisma/schema.prisma` 与新增迁移目录、`apps/web/src/features/auth/`。
   - 范围补充：见 [T14 Ticket](tickets/T14-identity-authorization.md)。Keycloak/OIDC 只负责认证和稳定 `issuer + subject`；BusinessUser、租户/Workspace 成员、角色/能力权限和资源策略由 PostgreSQL 维护。Token、角色或 Keycloak Group 不等于业务授权；能力权限码只判断能否执行操作、不参与 `acl_scope_key` 编译；查询前编译作用域预过滤、候选合并后批量权威复核，任何依赖不可用或超时 fail closed（ADR-0026、ADR-0037）。研发文档、制度流程资料等后续域复用统一身份上下文，不复制登录和用户体系；组织结构与非文档型资源为已识别扩展点，阶段 1 不建表。其中约 2d 由 T6 转移而来。按执行顺序拆为 T14a 身份接入与业务身份模型（~4.75d / ~1.2d）和 T14b 统一授权入口与资源策略（~3.25d / ~0.8d）两批，两批之和仍按 ~8d / ~2d 记；两批之间设临时人工门禁 [HG-01a](manual-acceptance-gate.md#阶段-1-门禁点)。T14b 的授权拒绝原因码登记在 T11a 的中央注册表，不在 `packages/contracts/src/auth/` 另立一套（ADR-0040 决策 3）。T14b 落地边界（Manifest/Release 已接统一授权入口；候选墓碑、Legal Hold、有效期等待 T5/T8；复核超时接线等待 T6；多角色浏览器 E2E 归 T16/HG-01 核验）见[票据批次划分](tickets/T14-identity-authorization.md#批次划分)。
