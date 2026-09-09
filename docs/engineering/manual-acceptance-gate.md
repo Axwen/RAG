@@ -59,7 +59,7 @@ REJECTED -> IMPLEMENTING -> READY_FOR_HUMAN
 
 | 门禁 | 完成范围 | 通过后才可启动 |
 |---|---|---|
-| HG-01 | T1a + [T12a](tickets/T12-performance-budget.md#批次划分) Ledger/配置骨架 + [T11a](tickets/T11-audit-telemetry.md#批次划分) 同步审计骨架 + [T14a/T14b](tickets/T14-identity-authorization.md#批次划分)（当前并行批次） | T2/T10/T3/T1b |
+| HG-01 | T1a + [T12a](tickets/T12-performance-budget.md#批次划分) Ledger/配置骨架 + [T11a](tickets/T11-audit-telemetry.md#批次划分) 同步审计骨架 + [T14a/T14b](tickets/T14-identity-authorization.md#批次划分)；2026-09-09 `ACCEPTED`（[验收记录](acceptance/hg-01-t14b-authorization.md)） | T2/T10/T3/T1b |
 | HG-01a（临时） | [T14a](tickets/T14-identity-authorization.md#批次划分) 身份接入与 7 张业务身份表迁移；2026-09-08 `ACCEPTED`（[验收记录](acceptance/hg-01a-t14a-identity-foundation.md)） | T14b 统一授权入口 |
 | HG-02 | T2 + T10 Worker 基础 + T3 + T1b | T15/T4a/T5 主批次 |
 | HG-03 | T15 + T4a + T13(parse) + T5；T4b 按 PROBE-007 状态纳入或单列 | T9/T6 检索批次 |
