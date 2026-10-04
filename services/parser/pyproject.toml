@@ -4,7 +4,7 @@ version = "0.0.0"
 description = "阶段 1 独立解析服务。T0 只建立 uv 项目、健康入口与容器构建入口。"
 requires-python = "==3.12.*"
 dependencies = [
-    "fastapi==0.141.1",
+    "fastapi==0.142.2",
     "pydantic==2.13.5",
     "pydantic-settings==2.15.0",
     "uvicorn==0.52.4",
