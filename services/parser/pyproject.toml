@@ -7,7 +7,7 @@ dependencies = [
     "fastapi==0.141.1",
     "pydantic==2.13.5",
     "pydantic-settings==2.15.0",
-    "uvicorn==0.52.4",
+    "uvicorn==0.54.0",
 ]
 
 # DeepDOC（RAGFlow 固定提交）与其 xgboost / infinity 依赖不在 T0 范围。
